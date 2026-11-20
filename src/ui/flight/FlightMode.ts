@@ -158,6 +158,9 @@ export class FlightMode {
     this.controls.enabled = true;
     this.fv.setGrid(gridPaper);
     this.replaying = null;
+    // the design from the folding table is the plane now (it already has any damage from
+    // earlier throws): a damaged plane still waiting from the last visit must not replace it
+    this.pending = null;
     try {
       this.mine = prepare(design, this.cfg);
     } catch (e) {
