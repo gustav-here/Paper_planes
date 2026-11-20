@@ -673,3 +673,13 @@ button.warn-chip {
 button.warn-chip[hidden] {
   display: none;
 }
+
+#fl-repair[hidden] {
+  display: none;
+}
+#fl-repair {
+  margin-left: 8px;
+}
+.result-card .verify button {
+  margin-left: 6px;
+}

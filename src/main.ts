@@ -28,6 +28,7 @@ const flight: FlightMode = new FlightMode(stage, loop.stepper, () => {
 });
 
 flight.onDamage = (ops) => editor.addDamage(ops);
+flight.onRepair = () => editor.repairDamage();
 
 editor.onFly = (design, gridPaper) => {
   editor.active = false;

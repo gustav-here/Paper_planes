@@ -54,6 +54,10 @@ export interface PaperConfig {
   /** Rotational stiffness of a single-layer crease per metre of crease (N·m/rad per m).
    *  80 g/m² paper: bending stiffness D ≈ E t³/12 ≈ 2.5·10⁻⁴ N·m over a few-mm crease zone. */
   creaseStiffnessPerM: number;
+  /** Bending stiffness of flat, uncreased 80 g/m² paper, D ≈ E t³/12 with E ≈ 3 GPa, t ≈ 0.1 mm (N·m). */
+  bendingStiffness: number;
+  /** Width of the zone a crease bends over (m); creaseStiffnessPerM ≈ D / creaseZoneM. */
+  creaseZoneM: number;
   /** Structural damping of creases as a time constant (s): c = k·τ. */
   creaseDampingS: number;
   /** A crease bent further than this from its rest angle yields permanently (deg). */
@@ -138,6 +142,8 @@ export const DEFAULT_CONFIG: PhysicsConfig = {
   },
   paper: {
     creaseStiffnessPerM: 0.08,
+    bendingStiffness: 2.5e-4,
+    creaseZoneM: 0.003,
     creaseDampingS: 0.01,
     creaseYieldDeg: 15,
     servoStiffnessFactor: 20,

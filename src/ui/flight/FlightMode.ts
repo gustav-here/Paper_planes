@@ -67,6 +67,8 @@ export class FlightMode {
   readonly view: View;
   /** Called after a live flight with the damage it caused, as design ops (stage 6). */
   onDamage: ((ops: Op[]) => void) | null = null;
+  /** Called when the player repairs the plane in throw mode. */
+  onRepair: (() => void) | null = null;
   /** The damaged plane, used from the next throw on. */
   private pending: Prepared | null = null;
   private world: World;
@@ -156,8 +158,9 @@ export class FlightMode {
     $('fl-title').textContent = p.design.name + (p.design.flexible ? ' · flexibelt' : ' · stelt') + (damaged ? ` · skadat (${damaged})` : '');
     const probe = createSimulator(p, cfg, this.launch);
     this.fv.setModel(p.model, probe.panels, p.af.mass, p.af.mesh.elements.length);
+    this.updateRepair();
     $('aim-controls').innerHTML = p.af.controls.length
-      ? `Styr klaffarna med <kbd>↑</kbd><kbd>↓</kbd> (höjd) och <kbd>←</kbd><kbd>→</kbd> (skevning).`
+      ? `Styr klaffarna med <kbd>↓</kbd> nosen upp, <kbd>↑</kbd> nosen ned och <kbd>←</kbd><kbd>→</kbd> (skevning).`
       : '';
   }
 
@@ -194,6 +197,7 @@ export class FlightMode {
     this.updateModeInfo();
     if (resetCamera) this.aimCamera();
     this.updateStats();
+    this.updateRepair();
   }
 
   private throwNow(replay: LeaderEntry | null = null) {
@@ -222,7 +226,15 @@ export class FlightMode {
     $('result-card').classList.remove('visible');
     this.stepper.reset();
     this.setPaused(false);
-    this.lastTarget.set(...this.sim.position());
+    // carry the camera (and the player's orbit offset) along to the new release point
+    const start = new THREE.Vector3(...this.sim.position());
+    if (this.cam === 'follow') {
+      const d = start.clone().sub(this.lastTarget);
+      this.camera.position.add(d);
+      this.controls.target.add(d);
+    }
+    this.lastTarget.copy(start);
+    this.updateRepair();
   }
 
   /** Replay a stored throw exactly (verifies its score). */
@@ -246,7 +258,8 @@ export class FlightMode {
     const sim = this.sim;
     if (!this.replaying) {
       const k = this.keys;
-      sim.controls.set(sim.stepIndex, (k.up ? 1 : 0) - (k.down ? 1 : 0), (k.right ? 1 : 0) - (k.left ? 1 : 0));
+      // like a control stick: ↓ (pull) = nose up, ↑ (push) = nose down
+      sim.controls.set(sim.stepIndex, (k.down ? 1 : 0) - (k.up ? 1 : 0), (k.right ? 1 : 0) - (k.left ? 1 : 0));
     }
     this.prevPoses = this.curPoses;
     this.prevPos = sim.position();
@@ -283,6 +296,7 @@ export class FlightMode {
         }
       }
     }
+    this.updateRepair();
     const flights = log.firstImpact
       ? saveFlight({
           date: new Date().toISOString(),
@@ -432,7 +446,7 @@ export class FlightMode {
       : [`<tr><td colspan="2">Planet landade aldrig inom tidsgränsen.</td></tr>`];
     const dmg = sim.damage();
     const damageNote = dmg.length
-      ? `<p class="verify bad">Planet skadades: ${dmg.map((d) => ({ crumple: 'skrynklat', bend: 'böjt veck', tear: 'rivet' })[d.kind]).join(', ')}. Skadan finns kvar tills du viker om.</p>`
+      ? `<p class="verify bad">Planet skadades: ${dmg.map((d) => ({ crumple: 'skrynklat', bend: 'böjt veck', tear: 'rivet' })[d.kind]).join(', ')}. Skadan finns kvar tills du reparerar eller viker om. <button id="res-repair">🔧 Reparera</button></p>`
       : '';
 
     let modeHtml = '';
@@ -521,6 +535,8 @@ export class FlightMode {
     if (again) again.onclick = () => this.throwNow();
     const aim = card.querySelector('#res-aim') as HTMLButtonElement | null;
     if (aim) aim.onclick = () => this.toAim(true);
+    const repair = card.querySelector('#res-repair') as HTMLButtonElement | null;
+    if (repair) repair.onclick = () => this.repair();
     const back = card.querySelector('#res-back') as HTMLButtonElement | null;
     if (back) back.onclick = () => this.onExit();
     const mode = this.round?.mode ?? this.replaying?.mode ?? null;
@@ -559,7 +575,40 @@ export class FlightMode {
   private setScale(s: number) {
     this.scale = s;
     ($('fl-speed') as HTMLSelectElement).value = String(s);
+    $('fl-slow').classList.toggle('on', s === 0.5);
     if (!this.paused) this.stepper.timeScale = s;
+  }
+
+  private damagedOps(): number {
+    const p = this.pending ?? this.mine;
+    return p ? p.design.ops.filter((o) => o.id.startsWith('dmg-')).length : 0;
+  }
+
+  private updateRepair() {
+    const b = $<HTMLButtonElement>('fl-repair');
+    const n = this.damagedOps();
+    b.hidden = n === 0 || !!this.replaying;
+    b.disabled = this.phase === 'flying';
+    b.textContent = `🔧 Reparera (${n})`;
+  }
+
+  /** Remove all damage: the plane is as the player folded it again. */
+  private repair() {
+    const p = this.pending ?? this.mine;
+    if (!p || this.phase === 'flying' || this.replaying) return;
+    const design: DesignFile = { ...p.design, ops: p.design.ops.filter((o) => !o.id.startsWith('dmg-')) };
+    try {
+      this.mine = prepare(design, cfg);
+    } catch (e) {
+      alert(`Kunde inte reparera: ${String(e)}`);
+      return;
+    }
+    this.pending = null;
+    this.use(this.mine);
+    this.onRepair?.();
+    const note = document.querySelector('#result-card .verify.bad');
+    if (note) note.outerHTML = `<p class="verify ok">🔧 Planet är reparerat.</p>`;
+    if (this.phase === 'aim') this.updateAimPose();
   }
 
   private setDebug(on: boolean) {
@@ -636,6 +685,11 @@ export class FlightMode {
       mode.blur();
     };
     $('fl-debug').onclick = () => this.setDebug(!this.debug);
+    $('fl-repair').onclick = () => this.repair();
+    $('fl-slow').onclick = () => {
+      this.setScale(this.scale === 0.5 ? 1 : 0.5);
+      $('fl-slow').blur();
+    };
 
     const arrow = (e: KeyboardEvent, down: boolean) => {
       const map: Record<string, keyof FlightMode['keys']> = { ArrowUp: 'up', ArrowDown: 'down', ArrowLeft: 'left', ArrowRight: 'right' };

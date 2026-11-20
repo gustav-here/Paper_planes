@@ -286,6 +286,15 @@ export class EditorApp implements ToolContext {
     this.applyTints();
   }
 
+  cycleFoldScope() {
+    const sel = $<HTMLSelectElement>('fold-scope');
+    const opts = [...sel.options].map((o) => o.value);
+    sel.value = opts[(opts.indexOf(this.options.foldScope) + 1) % opts.length];
+    this.options.foldScope = sel.value as EditorOptions['foldScope'];
+    this.toast(`Lager: ${sel.selectedOptions[0].textContent}`, 'info');
+    this.tools.fold.refresh();
+  }
+
   toggleControl(opId: string) {
     const op = this.history.appliedOps.find((o) => o.id === opId);
     if (!op || op.type !== 'fold') return;
@@ -494,6 +503,12 @@ export class EditorApp implements ToolContext {
     this.syncView();
   }
 
+  /** The plane was repaired in throw mode. */
+  repairDamage() {
+    this.history.damage = [];
+    this.syncView();
+  }
+
   /** Hand the committed model over to the throw mode. */
   private fly() {
     this.cancelTool();
@@ -599,7 +614,11 @@ export class EditorApp implements ToolContext {
     document.querySelectorAll<HTMLButtonElement>('.tools button').forEach((b) => (b.onclick = () => this.setTool(b.dataset.tool as ToolName)));
 
     const scope = $<HTMLSelectElement>('fold-scope');
-    scope.onchange = () => (this.options.foldScope = scope.value as EditorOptions['foldScope']);
+    scope.onchange = () => {
+      this.options.foldScope = scope.value as EditorOptions['foldScope'];
+      scope.blur();
+      this.tools.fold.refresh();
+    };
     const fm = $<HTMLInputElement>('fold-mirror');
     fm.onchange = () => {
       this.options.foldMirror = fm.checked;

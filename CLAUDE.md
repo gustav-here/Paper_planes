@@ -56,6 +56,9 @@ Webbläsarspel: vik ett pappersflygplan av ett A4 och kasta det. Flygbeteendet s
   canardroder. ±25° med 125°/s.
 - Flexibelt papper (`DesignFile.flexible`): gångjärnsförsedda stela paneler i reducerade
   koordinater med linjärt implicit Euler. Stelt papper är standard och används av valideringen.
+- Fold-scope `all` = alla lager vid den *dragna* linjen och det som sitter fast i dem (snitt begränsar).
+- Snittflikar (`physics/slits.ts`): plant papper mellan två snittändar blir ett gångjärn med plan
+  pappersböjstyvhet i flexibelt papper (fasetterna delas i `prepare`).
 - Skador blir vanliga operationer (`dmg-…`) efter spelarens egna och gäller tills planet viks om.
 - Simulatorer implementerar `Simulator` (`physics/simulator.ts`). Använd `prepare`/`createSimulator`
   (`physics/factory.ts`) i stället för att skapa dem direkt.

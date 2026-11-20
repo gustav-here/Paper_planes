@@ -57,6 +57,8 @@ export interface ToolContext {
   /** Mark/unmark a fold op as a control flap. */
   toggleControl(opId: string): void;
   highlightClip(id: string | null): void;
+  /** Next fold scope (Lager) in the menu order. */
+  cycleFoldScope(): void;
 }
 
 export interface Tool {

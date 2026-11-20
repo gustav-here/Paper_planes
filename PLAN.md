@@ -705,3 +705,33 @@ Resultat med standardkonfigurationen (släpp från 10 m, olika kastfarter):
     spelarens egna. Ett skadat plan är fortfarande bara papper, och samma fysik flyger det.
   - Kastläget flyger det skadade planet från nästa kast. Vikläget visar "⚠ Skadat (n) · Reparera",
     och skadorna försvinner vid nästa vikning, ångra eller laddning.
+
+## 20. Snittflikar, lagerval och kastläget (efter etapp 6)
+- **"Alla lager" följer den dragna linjen.** Vecket tar alla lager som har en kant på den dragna
+  delen av linjen och det som sitter fast i dem. Snitt begränsar alltså vecket: fliken mellan två
+  snitt viks ensam, också i kölen där båda lagren klipps. Papper på den rörliga sidan som inte når
+  linjen ligger kvar, utom lager som ligger inklämda mellan de rörliga lagren. En linje som når en
+  hårsmån förbi snittändarna (mindre än 1 mm) räknas inte. Tidigare tog "Alla lager" allt på den
+  rörliga sidan av den oändliga linjen.
+- **Lagerval efter linjen.** Lagret kan bytas efter att linjen är dragen, i menyn eller med L.
+  När man pekar på en sida markeras det papper som skulle vikas. Om vecket inte går att göra
+  förklarar hjälptexten varför.
+- **Linjens plan.** Linjen läggs i det pappersplan som störst del av den dras över (nio
+  provpunkter längs linjen), inte i planet där dragningen började. Annars kunde linjen sväva i
+  en uppvikt klaffs plan.
+- **Snittflikar i flexibelt papper** (`physics/slits.ts`). Två snittändar som vetter mot
+  varandra över plant, oveckat papper bildar ett gångjärn, om linjen mellan dem frigör en bit
+  papper. Lager som klippts tillsammans räknas ihop. Fasetterna delas längs linjen i `prepare`.
+  - Styvheten är plan pappersböjning, ett fast inspänt plattelement: k = 3·D·w/ℓ, med
+    D = 2,5·10⁻⁴ N·m. ℓ är flikens längd, men högst remsans bredd och minst veckzonen (3 mm).
+  - Gångjärnet ger inte plastiskt efter. Snittändarna ligger på gångjärnet, så stora moment
+    river dem vidare, liksom hårda nedslag nära en snittände.
+  - Ett ensamt snitt i plant papper ändrar inte styvheten i modellen. Panelerna är stela, och
+    plattböjning av hela ytor modelleras inte. Snitt som korsar ett veck gör gångjärnet kortare
+    och därmed vekare.
+  - Stelt papper bortser från snittflikar.
+- **Kastläget:**
+  - Kameran följer med till nytt kast och behåller samma vinkel.
+  - "🔧 Reparera" finns i listen och på resultatkortet.
+  - "🐢 Slow time" växlar mellan ½× och 1×.
+  - ↓ ger nosen upp och ↑ nosen ned, som en styrspak.

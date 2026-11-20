@@ -2,6 +2,7 @@ import * as V from '../../core/math/vec3';
 import type { Vec3 } from '../../core/math/vec3';
 import { applyAffine, applyAffineLinear } from '../../core/math/transform';
 import { applyOp, foldAngleLimit } from '../../core/paper/replay';
+import { facetContains } from '../../core/paper/model';
 import { PaperError } from '../../core/paper/errors';
 import type { FoldKind, FoldOp } from '../../core/paper/ops';
 import { foldIsSelfMirror } from '../../core/paper/symmetry';
@@ -17,7 +18,7 @@ type State =
   | { k: 'idle' }
   | { k: 'drawing' }
   | { k: 'p2p'; A: Vec3; plane: Plane }
-  | { k: 'ready'; p0: Vec3; p1: Vec3; N: Vec3; hoverSide: Vec3 | null }
+  | { k: 'ready'; p0: Vec3; p1: Vec3; N: Vec3; hoverSide: Vec3 | null; hoverPick?: Vec3 | null }
   | {
       k: 'angling';
       p0: Vec3;
@@ -40,6 +41,8 @@ type State =
 const PX_PER_DEG = 0.6;
 const SNAP_ANGLES = [45, 90, 135, 180];
 const BLOCKED = 'Fliken kan inte vikas åt det hållet: annat papper är i vägen.';
+
+const SCOPE_NAMES: Record<FoldOp['scope'], string> = { top: 'Översta flik', all: 'Alla lager', bottom: 'Understa flik', flap: 'Klickad flik' };
 
 const kindOf = (signed: number): FoldKind => (signed >= 0 ? 'valley' : 'mountain');
 
@@ -65,7 +68,12 @@ export class FoldTool implements Tool {
   }
 
   refresh() {
-    if (this.s.k === 'ready') this.drawOverlay();
+    if (this.s.k === 'ready') {
+      this.readyHint();
+      this.hoverKey = '';
+      this.updateHover(this.s);
+      this.drawOverlay();
+    }
     if (this.s.k === 'idle') this.idleHint();
   }
 
@@ -78,6 +86,7 @@ export class FoldTool implements Tool {
   }
 
   private reset() {
+    this.clearHover();
     this.s = { k: 'idle' };
     this.draw.reset();
     this.ctx.overlay.clear();
@@ -118,6 +127,7 @@ export class FoldTool implements Tool {
       if (!q) return;
       const side = this.sideOf(s, q);
       if (!side) return;
+      this.clearHover();
       const hit = this.ctx.hitPaper(e);
       const pick = hit?.point ?? q;
       const limit: Record<FoldKind, number> = { valley: 180, mountain: 180 };
@@ -169,6 +179,8 @@ export class FoldTool implements Tool {
     if (s.k === 'ready') {
       const q = rayPlane(this.ctx.ray(e), { point: s.p0, normal: s.N });
       s.hoverSide = q ? this.sideOf(s, q) : null;
+      s.hoverPick = this.ctx.hitPaper(e)?.point ?? q;
+      this.updateHover(s);
       this.drawOverlay();
       return;
     }
@@ -215,6 +227,10 @@ export class FoldTool implements Tool {
   }
 
   key(e: KeyboardEvent): boolean {
+    if ((e.key === 'l' || e.key === 'L') && this.s.k !== 'angling') {
+      this.ctx.cycleFoldScope();
+      return true;
+    }
     if (e.key === 'Escape') {
       if (this.s.k === 'angling') {
         const s = this.s;
@@ -230,8 +246,52 @@ export class FoldTool implements Tool {
   private toReady(p0: Vec3, p1: Vec3, N: Vec3) {
     this.draw.reset();
     this.s = { k: 'ready', p0, p1, N, hoverSide: null };
-    this.ctx.hint('Tryck på sidan som ska vikas och dra uppåt (dal) eller nedåt (berg). Esc avbryter.');
+    this.hoverKey = '';
+    this.readyHint();
     this.drawOverlay();
+  }
+
+  private readyHint() {
+    const name = SCOPE_NAMES[this.ctx.options.foldScope];
+    this.ctx.hint(`Tryck på sidan som ska vikas och dra uppåt (dal) eller nedåt (berg). Lager: ${name} (byt med L eller i menyn). Esc avbryter.`);
+  }
+
+  private hoverKey = '';
+
+  /** Highlight the paper that would fold if the player pressed on the hovered side. */
+  private updateHover(s: Extract<State, { k: 'ready' }>) {
+    const side = s.hoverSide;
+    if (!side) {
+      if (this.hoverKey) {
+        this.clearHover();
+        this.readyHint();
+      }
+      return;
+    }
+    const o = this.ctx.options;
+    const pickFacet = o.foldScope === 'flap' && s.hoverPick ? (this.ctx.model().facets.find((f) => facetContains(f, s.hoverPick!, -1e-7, 1e-4))?.id ?? -1) : 0;
+    const key = `${Math.sign(V.dot(side, V.cross(s.N, V.sub(s.p1, s.p0))))}|${o.foldScope}|${o.foldMirror}|${pickFacet}`;
+    if (key === this.hoverKey) return;
+    this.hoverKey = key;
+    try {
+      const r = applyOp(this.ctx.model(), this.makeOp({ ...s, side, pick: s.hoverPick ?? V.lerp(s.p0, s.p1, 0.5) }, 'valley', 0, 'hover'), { penetration: 'none' });
+      const ids = r.model.facets.filter((f) => f.foldPath.some((id) => id.startsWith('hover'))).map((f) => f.id);
+      this.ctx.setPreview(r.model);
+      this.ctx.setHoverFacets(ids);
+      this.readyHint();
+    } catch (err) {
+      this.ctx.setPreview(null);
+      this.ctx.setHoverFacets(null);
+      const why = err instanceof PaperError ? ERROR_TEXT[err.code] : String(err);
+      this.ctx.hint(`Den sidan går inte att vika med lager ”${SCOPE_NAMES[o.foldScope]}”: ${why} Byt lager med L eller välj andra sidan.`);
+    }
+  }
+
+  private clearHover() {
+    if (!this.hoverKey) return;
+    this.hoverKey = '';
+    this.ctx.setPreview(null);
+    this.ctx.setHoverFacets(null);
   }
 
   private sideOf(s: { p0: Vec3; p1: Vec3; N: Vec3 }, q: Vec3): Vec3 | null {

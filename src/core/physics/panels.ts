@@ -10,13 +10,15 @@ import { resolveClip } from '../paper/clips';
 import { computeMassProperties } from './massProperties';
 import type { Airframe } from './airframe';
 import type { PaperConfig } from './config';
+import { onTab, slitTabs } from './slits';
 
 /**
  * Flexible paper as hinged rigid panels. A panel is paper that cannot bend in this model:
  * facets joined by flat seams or pressed-flat (180°) creases, and layers squeezed by a clip.
  * Creases at other angles are hinges with the rotational stiffness of a paper crease
  * (proportional to the total crease length over all layers). Control flaps hinge on their fold
- * and are driven by a stiff servo spring.
+ * and are driven by a stiff servo spring. The strip between two facing cut ends (a slit tab, see
+ * slits.ts) is a hinge with the bending stiffness of flat paper.
  */
 export interface Panel {
   facets: number[];
@@ -39,6 +41,8 @@ export interface Hinge {
   axis: Vec3;
   /** Total crease length over all layers (m). */
   length: number;
+  /** A fold crease, or flat paper bending between two cut ends (no plastic yield there). */
+  kind: 'crease' | 'slit';
   /** Rotational stiffness (N·m/rad) and damping (N·m·s/rad). */
   stiffness: number;
   damping: number;
@@ -121,11 +125,16 @@ export function buildPanels(model: PaperModel, af: Airframe, paper: PaperConfig)
   const uf = new UnionFind();
   for (const f of model.facets) uf.find(f.id);
   const hingeLinks: typeof links = [];
+  const tabs = slitTabs(model);
+  const slitLinks = new Set<(typeof links)[number]>();
   for (const l of links) {
     const fa = byId.get(l.a)!;
     const fb = byId.get(l.b)!;
     const sameControl = (control.get(l.a) ?? -1) === (control.get(l.b) ?? -1);
-    if (sameControl && coplanar(fa, fb)) uf.union(l.a, l.b);
+    if (tabs.some((t) => onTab(l.seg, t))) {
+      slitLinks.add(l);
+      hingeLinks.push(l);
+    } else if (sameControl && coplanar(fa, fb)) uf.union(l.a, l.b);
     else hingeLinks.push(l);
   }
   // layers lying flat on each other move together (pressed stacks)
@@ -217,14 +226,15 @@ export function buildPanels(model: PaperModel, af: Airframe, paper: PaperConfig)
   const rootPanel = props.reduce((best, p, i) => (p.mass > props[best].mass ? i : best), 0);
 
   // hinges (pairs of panels), then orient the tree away from the root
-  const pairPts = new Map<string, { pts: Vec3[]; length: number; control: number; facets: Map<number, number> }>();
+  const pairPts = new Map<string, { pts: Vec3[]; length: number; slit: boolean; control: number; facets: Map<number, number> }>();
   for (const l of hingeLinks) {
     const pa = panelOf.get(l.a)!;
     const pb = panelOf.get(l.b)!;
     if (pa === pb) continue;
     const key = pa < pb ? `${pa}:${pb}` : `${pb}:${pa}`;
     const f = byId.get(l.a)!;
-    const e = pairPts.get(key) ?? { pts: [], length: 0, control: -1, facets: new Map<number, number>() };
+    const e = pairPts.get(key) ?? { pts: [], length: 0, slit: true, control: -1, facets: new Map<number, number>() };
+    if (!slitLinks.has(l)) e.slit = false;
     if (!e.facets.has(pa)) e.facets.set(pa, l.a);
     if (!e.facets.has(pb)) e.facets.set(pb, l.b);
     e.pts.push(toModel(f, l.seg[0]), toModel(f, l.seg[1]));
@@ -266,7 +276,17 @@ export function buildPanels(model: PaperModel, af: Airframe, paper: PaperConfig)
         if (V.dot(axis, g.hingeA) < 0) axis = V.negate(axis);
       }
       const isControl = e.control >= 0 && af.controls[e.control].facets.includes(panels[other].facets[0]);
-      const k = paper.creaseStiffnessPerM * e.length * (isControl ? paper.servoStiffnessFactor : 1);
+      const slit = e.slit && !isControl;
+      let k = paper.creaseStiffnessPerM * e.length * (isControl ? paper.servoStiffnessFactor : 1);
+      if (slit) {
+        // cantilever plate: root rotation under a tip load ⇒ k = 3·D·w/ℓ, with ℓ the tab length
+        // (bending spreads over the tab), but not longer than the strip is wide (a big piece on a
+        // narrow strip bends in the strip) and not shorter than a crease zone
+        const reach = Math.max(...panelFacets[other].flatMap((f) => facetVertices(f).map((p) => V.distToLine(p, a, axis))));
+        const span = V.dist(a, b);
+        const ell = Math.max(paper.creaseZoneM, Math.min(reach, span));
+        k = (3 * paper.bendingStiffness * e.length) / ell;
+      }
       const ends = cutEnds.filter((c) => V.distToLine(c.model, a, axis) < 3e-3 && segParam(c.model, a, b) > -0.003 && segParam(c.model, a, b) < V.dist(a, b) + 0.003);
       hinges.push({
         parent: u,
@@ -274,6 +294,7 @@ export function buildPanels(model: PaperModel, af: Airframe, paper: PaperConfig)
         point: a,
         axis,
         length: e.length,
+        kind: slit ? 'slit' : 'crease',
         stiffness: k,
         damping: k * paper.creaseDampingS,
         control: isControl ? e.control : -1,

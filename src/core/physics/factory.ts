@@ -10,6 +10,7 @@ import { FlightSim } from './simulation';
 import { MultiBodySim, buildFlexAirframe } from './multibody';
 import type { FlexAirframe } from './multibody';
 import type { Simulator } from './simulator';
+import { slitTabs, splitAtTabs } from './slits';
 
 /** Everything built once per design (shared by all throws of that design). */
 export interface Prepared {
@@ -21,7 +22,9 @@ export interface Prepared {
 }
 
 export function prepare(design: DesignFile, cfg: PhysicsConfig): Prepared {
-  const model = replayDesign(design).models.at(-1)!;
+  let model = replayDesign(design).models.at(-1)!;
+  // flexible paper: the strip between two facing cut ends becomes a hinge edge
+  if (design.flexible) model = splitAtTabs(model, slitTabs(model));
   const af = buildAirframe(model, design.orientation, cfg, design.ops);
   return { design, model, af, flex: design.flexible ? buildFlexAirframe(model, af, cfg) : null };
 }

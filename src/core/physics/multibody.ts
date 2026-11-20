@@ -611,7 +611,8 @@ export class MultiBodySim implements Simulator {
     if (!this.cfg.paper.damage) return;
     const y = this.cfg.paper.creaseYieldDeg / RAD;
     this.fx.set.hinges.forEach((hg, j) => {
-      if (hg.control >= 0) return;
+      // flat paper bending over a whole tab stays elastic; only creases yield
+      if (hg.control >= 0 || hg.kind === 'slit') return;
       const dev = this.theta[j] - this.rest[j];
       if (Math.abs(dev) > y) this.rest[j] += dev - Math.sign(dev) * y;
     });

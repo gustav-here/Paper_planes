@@ -49,7 +49,7 @@
       <section class="options" id="opts-fold">
         <h3>Vik</h3>
         <p>Dra uppåt för dalveck (mot dig), nedåt för bergsveck (bort från dig).</p>
-        <label>Lager
+        <label title="Vilka lager som viks. Kan bytas efter att linjen är dragen (L).">Lager (L)
           <select id="fold-scope">
             <option value="top" selected>Översta flik</option>
             <option value="all">Alla lager</option>
@@ -94,6 +94,7 @@
       <header class="flight-only flight-bar">
         <button id="fl-back" title="Tillbaka till vikningen (Esc)">← Vikning</button>
         <div class="brand"><span id="fl-title"></span></div>
+        <button id="fl-repair" hidden title="Ta bort skadorna från kasten">🔧 Reparera</button>
         <select id="fl-mode" aria-label="Spelläge" title="Spelläge">
           <option value="free">Fritt kast</option>
           <option value="time">Längst flygtid</option>
@@ -114,6 +115,7 @@
             <option value="side">Kamera: från sidan</option>
             <option value="free">Kamera: fri</option>
           </select>
+          <button id="fl-slow" class="toggle" title="Slow time: tiden går hälften så fort (2 / 1)">🐢 Slow time</button>
           <button id="fl-debug" class="toggle" title="Felsökning: tyngdpunkt, hastighet, krafter och grafer (D)">🛠 Felsökning</button>
         </div>
       </header>

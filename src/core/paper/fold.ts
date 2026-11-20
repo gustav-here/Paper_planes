@@ -117,11 +117,15 @@ export function applyFold(model: PaperModel, op: FoldOp, opts: FoldOptions = {})
 
   // 3. Moving set.
   let moving: Set<number>;
-  if (op.scope === 'all') {
-    moving = new Set(positive.map((f) => f.id));
-  } else {
-    const seed = op.scope === 'flap' ? seedFromPick(positive, op, N) : seedAtLine(positive, fr, op.scope);
-    moving = new Set([seed.id]);
+  {
+    // 'all' = every layer at the drawn line and what hangs on it. Cuts limit it, so the tab
+    // between two slits folds alone; paper on the moving side that does not reach the drawn
+    // line stays (unless it is sandwiched, see below).
+    const seeds =
+      op.scope === 'all'
+        ? seedsAlongLine(positive, fr)
+        : [op.scope === 'flap' ? seedFromPick(positive, op, N) : seedAtLine(positive, fr, op.scope)];
+    moving = new Set(seeds.map((f) => f.id));
     const grow = (start: number[]) => {
       const stack = [...start];
       while (stack.length) {
@@ -133,7 +137,7 @@ export function applyFold(model: PaperModel, op: FoldOp, opts: FoldOptions = {})
         }
       }
     };
-    grow([seed.id]);
+    grow(seeds.map((f) => f.id));
     // Loose flaps sandwiched between moving layers come along (you cannot fold around them).
     for (;;) {
       const mov = positive.filter((f) => moving.has(f.id));
@@ -238,6 +242,38 @@ function restack(facets: Facet[], moving: Set<number>, preArrival: (f: Facet) =>
       facets[idx] = { ...facets[idx], layer: facets[idx].layer + shift };
     }
   }
+}
+
+/** Length (m) of a facet edge lying on the fold line that overlaps the drawn segment [0, len]. */
+function overlapWithLine(f: Facet, fr: FoldFrame, restrict: boolean): number {
+  const { p0, d, len } = fr;
+  const vs = facetVertices(f);
+  let best = 0;
+  for (let i = 0; i < vs.length; i++) {
+    const a = vs[i];
+    const b = vs[(i + 1) % vs.length];
+    if (V.distToLine(a, p0, d) > 1e-7 || V.distToLine(b, p0, d) > 1e-7) continue;
+    const ta = V.dot(V.sub(a, p0), d);
+    const tb = V.dot(V.sub(b, p0), d);
+    const lo = restrict ? Math.max(Math.min(ta, tb), 0) : Math.min(ta, tb);
+    const hi = restrict ? Math.min(Math.max(ta, tb), len) : Math.max(ta, tb);
+    best = Math.max(best, hi - lo);
+  }
+  return best;
+}
+
+/**
+ * Every facet on the moving side with an edge on the drawn part of the line (all layers there).
+ * A facet that only grazes the drawn segment's end (a line drawn a hair past the end of a slit)
+ * does not count.
+ */
+function seedsAlongLine(positive: Facet[], fr: FoldFrame): Facet[] {
+  const minOverlap = Math.min(1e-3, fr.len * 0.25);
+  let seeds = positive.filter((f) => overlapWithLine(f, fr, true) > minOverlap);
+  if (seeds.length === 0) seeds = positive.filter((f) => overlapWithLine(f, fr, true) > 1e-6);
+  if (seeds.length === 0) seeds = positive.filter((f) => overlapWithLine(f, fr, false) > 1e-6);
+  if (seeds.length === 0) throw new PaperError('noLayerAtLine');
+  return seeds;
 }
 
 /** Topmost/bottommost facet (seen from N) on the moving side that touches the drawn line. */
