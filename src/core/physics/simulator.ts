@@ -18,6 +18,8 @@ export interface PanelPose {
 export interface PanelBend {
   normal: Vec3;
   at(p: Vec3): { w: number; grad: Vec3 };
+  /** Fast form for many points: writes [w, ∇w x, y, z] at (x, y, z) into `out`. */
+  evalInto(x: number, y: number, z: number, out: Float64Array): void;
 }
 
 /** Something that happened to the paper during a flight and leaves permanent damage. */

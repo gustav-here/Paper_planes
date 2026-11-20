@@ -56,6 +56,10 @@ export interface ClipOp {
   massKg: number;
   /** Paper clip (default) or a strip of tape folded over the edge. */
   kind?: 'clip' | 'tape';
+  /** Tape laid flat across a seam between two pieces in one plane (two wing halves). */
+  bridge?: boolean;
+  /** Which way a clip leans if paper leaving its plane is in the way (see Clip.lean). */
+  lean?: 1 | -1;
 }
 
 export interface UnclipOp {
@@ -122,6 +126,8 @@ function checkOp(o: unknown, i: number): Op {
       if (!isVec(op.at, 2) || !isVec(op.edgeDir, 2) || !isNum(op.massKg) || op.massKg <= 0)
         fail(`ops[${i}] clip invalid`);
       if (op.kind !== undefined && op.kind !== 'clip' && op.kind !== 'tape') fail(`ops[${i}].kind invalid`);
+      if (op.bridge !== undefined && (typeof op.bridge !== 'boolean' || op.kind !== 'tape')) fail(`ops[${i}].bridge invalid`);
+      if (op.lean !== undefined && op.lean !== 1 && op.lean !== -1) fail(`ops[${i}].lean invalid`);
       return op as unknown as ClipOp;
     case 'unclip':
       if (typeof op.target !== 'string') fail(`ops[${i}].target missing`);

@@ -19,7 +19,7 @@ import type { ControlConfig, ControlInput } from './controls';
 import { launchState } from './launch';
 import type { LaunchParams } from './launch';
 import { buildPanels, panelContacts } from './panels';
-import { bendingContacts, buildPanelModes, deflectionAt, limitStiffness } from './bendModes';
+import { bendField, bendingContacts, buildPanelModes, deflectionAt, limitStiffness } from './bendModes';
 import type { PanelModes } from './bendModes';
 import type { PanelSet } from './panels';
 import type { DamageEvent, PanelBend, PanelPose, Simulator } from './simulator';
@@ -79,8 +79,8 @@ function firstFacetOf(_m: PaperModel, set: PanelSet, panel: number): number {
 }
 
 const RAD = 180 / Math.PI;
-/** Steps between refreshes of the aerodynamic damping matrix (1/80 s). */
-const D_REFRESH = 3;
+/** Steps between refreshes of the aerodynamic damping matrix (1/40 s; flights change < 0.5 % against 1/80 s). */
+const D_REFRESH = 6;
 /** Spacing of the floor-contact points over a bending panel (m). */
 const BEND_CONTACT_SPACING = 0.04;
 const skew = (a: Vec3): Mat3 => [0, -a[2], a[1], a[2], 0, -a[0], -a[1], a[0], 0];
@@ -178,6 +178,7 @@ export class MultiBodySim implements Simulator {
     this.deform = { disp: new Float64Array(nel), slope: new Float64Array(nel * 3), vel: new Float64Array(nel) };
     this.buildJoints();
     this.buildBendTables();
+    this.buildContactBounds();
     this.panels = set.panels.map((p) => p.facets);
     const s = launchState(fx.af, launch);
     this.x0 = s.x;
@@ -874,6 +875,21 @@ export class MultiBodySim implements Simulator {
 
   // ---------------------------------------------------------------- floor, walls, ceiling
 
+  /** Per panel: a sphere (model space) that holds all its contact points, however it bends. */
+  private contactBounds: { center: Vec3; radius: number; ids: number[] }[] = [];
+
+  private buildContactBounds() {
+    this.contactBounds = this.fx.set.panels.map((_, i) => {
+      const ids = this.fx.contacts.flatMap((c, j) => (c.panel === i ? [j] : []));
+      if (!ids.length) return { center: [0, 0, 0] as Vec3, radius: 0, ids };
+      const center = V.scale(ids.reduce((a, j) => V.add(a, this.fx.contacts[j].p), [0, 0, 0] as Vec3), 1 / ids.length);
+      let r = 0;
+      for (const j of ids) r = Math.max(r, V.dist(center, this.fx.contacts[j].p));
+      // bending moves points along the normal by at most about the panel's size (see the limit)
+      return { center, radius: (this.modesOf[i] ? 1.5 : 1) * r + 0.005, ids };
+    });
+  }
+
   private contact(dt: number, Mfull: number[], K: Kin) {
     const { contacts, af } = this.fx;
     const gcfg = this.cfg.ground;
@@ -881,10 +897,26 @@ export class MultiBodySim implements Simulator {
     type C = { i: number; p: Vec3; J: number[][]; depth: number; target: number; jn: number; jt: Vec3; facet: number; pm: Vec3; n: Vec3; plough: number };
     const active: C[] = [];
     const minGap = gcfg.planes.map(() => Infinity);
-    for (const ct of contacts) {
+    // only panels whose bounding sphere reaches a surface need their points checked
+    const near: number[] = [];
+    this.contactBounds.forEach((b, i) => {
+      if (!b.ids.length) return;
+      const c = V.add(this.x0, M3.mulVec(K.R0, V.sub(applyRigid(K.M[i], b.center), com)));
+      if (gcfg.planes.some((pl) => V.dot(pl.n, c) - pl.d < b.radius)) near.push(...b.ids);
+    });
+    const fields = new Map<number, PanelBend>();
+    const wOut = new Float64Array(4);
+    for (const j of near) {
+      const ct = contacts[j];
       // the paper's own bending moves its corners too
       const pm = this.modesOf[ct.panel];
-      const pBent = pm ? V.addScaled(ct.p, pm.normal, deflectionAt(pm, this.qm, ct.p).w) : ct.p;
+      let pBent = ct.p;
+      if (pm) {
+        let fld = fields.get(ct.panel);
+        if (!fld) fields.set(ct.panel, (fld = bendField(pm, this.qm)));
+        fld.evalInto(ct.p[0], ct.p[1], ct.p[2], wOut);
+        pBent = V.addScaled(ct.p, pm.normal, wOut[0]);
+      }
       const p = V.add(this.x0, M3.mulVec(K.R0, V.sub(applyRigid(K.M[ct.panel], pBent), com)));
       gcfg.planes.forEach((pl, k) => {
         const gap = V.dot(pl.n, p) - pl.d;
@@ -896,19 +928,40 @@ export class MultiBodySim implements Simulator {
     if (!active.length) return;
     const n = this.n;
     const Minv = invert(Mfull, n);
-    const vel = (c: C): Vec3 => [0, 1, 2].map((r) => c.J[r].reduce((s, x, k) => s + x * this.u[k], 0)) as Vec3;
-    const gen = (c: C, d: Vec3): number[] => {
-      const out = new Array<number>(n).fill(0);
-      for (let k = 0; k < n; k++) out[k] = c.J[0][k] * d[0] + c.J[1][k] * d[1] + c.J[2][k] * d[2];
+    const u = this.u;
+    /*
+     * Per point, once: W = M⁻¹Jᵀ (how the rates answer a unit impulse along x, y, z) and the
+     * point's 3×3 inverse mass JM⁻¹Jᵀ. Each iteration is then linear in n.
+     */
+    const pre = active.map((c) => {
+      const W = c.J.map((row) => mulVecN(Minv, row, n));
+      const Kc = [0, 1, 2].map((r) => [0, 1, 2].map((q) => {
+        let sum = 0;
+        for (let k = 0; k < n; k++) sum += c.J[r][k] * W[q][k];
+        return sum;
+      }));
+      return { W, Kc };
+    });
+    const vel = (c: C): Vec3 => {
+      const out: Vec3 = [0, 0, 0];
+      for (let r = 0; r < 3; r++) {
+        const row = c.J[r];
+        let sum = 0;
+        for (let k = 0; k < n; k++) sum += row[k] * u[k];
+        out[r] = sum;
+      }
       return out;
     };
-    const apply = (gvec: number[], lambda: number) => {
-      const du = mulVecN(Minv, gvec, n);
-      for (let k = 0; k < n; k++) this.u[k] += du[k] * lambda;
+    /** Apply the world impulse P at point ci. */
+    const apply = (ci: number, P: Vec3) => {
+      const W = pre[ci].W;
+      for (let k = 0; k < n; k++) u[k] += W[0][k] * P[0] + W[1][k] * P[1] + W[2][k] * P[2];
     };
-    const invMass = (gvec: number[]) => {
-      const mg = mulVecN(Minv, gvec, n);
-      return gvec.reduce((s, x, k) => s + x * mg[k], 0);
+    const invMass = (ci: number, d: Vec3) => {
+      const Kc = pre[ci].Kc;
+      let sum = 0;
+      for (let r = 0; r < 3; r++) for (let q = 0; q < 3; q++) sum += d[r] * Kc[r][q] * d[q];
+      return sum;
     };
     let impact = 0;
     let hardest: C | null = null;
@@ -926,35 +979,27 @@ export class MultiBodySim implements Simulator {
         hardestVel = v;
       }
     }
-    // the normal direction's impulse vector and effective inverse mass stay fixed
-    const normal = active.map((c) => {
-      const gn = gen(c, c.n);
-      return { gn, w: invMass(gn) };
-    });
+    const wn = active.map((c, ci) => invMass(ci, c.n));
     for (let it = 0; it < gcfg.iterations; it++) {
       for (const [ci, c] of active.entries()) {
-        const { gn, w: wn } = normal[ci];
         const vn = V.dot(vel(c), c.n);
-        let dj = (c.target - vn) / wn;
+        let dj = (c.target - vn) / wn[ci];
         const old = c.jn;
         c.jn = Math.max(0, old + dj);
         dj = c.jn - old;
-        if (dj !== 0) apply(gn, dj);
+        if (dj !== 0) apply(ci, V.scale(c.n, dj));
         const v = vel(c);
         const vt = V.rejectFrom(v, c.n);
         const vtl = V.length(vt);
         if (vtl < 1e-9) continue;
         const t = V.scale(vt, 1 / vtl);
-        const gt = gen(c, t);
-        const want = V.addScaled(c.jt, t, -vtl / invMass(gt));
+        const want = V.addScaled(c.jt, t, -vtl / invMass(ci, t));
         const maxF = gcfg.friction * c.jn + c.plough;
         const wl = V.length(want);
         const next = wl > maxF ? V.scale(want, maxF / wl) : want;
         const delta = V.sub(next, c.jt);
         c.jt = next;
-        // apply the tangential impulse along its own direction
-        const dl = V.length(delta);
-        if (dl > 0) apply(gen(c, V.scale(delta, 1 / dl)), dl);
+        if (V.length(delta) > 0) apply(ci, delta);
       }
     }
     gcfg.planes.forEach((pl, k) => {
@@ -1041,7 +1086,7 @@ export class MultiBodySim implements Simulator {
   /** How each panel's paper is bent right now, or null for a panel without bending shapes. */
   panelBending(): (PanelBend | null)[] {
     const q = [...this.qm];
-    return this.modesOf.map((pm) => (pm ? { normal: pm.normal, at: (p: Vec3) => deflectionAt(pm, q, p) } : null));
+    return this.modesOf.map((pm) => (pm ? bendField(pm, q) : null));
   }
 
   /** Largest bending deflection of any panel right now (m), for display and tests. */

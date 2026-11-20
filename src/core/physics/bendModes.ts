@@ -4,6 +4,7 @@ import { canonicalNormal, facetArea, facetNormal, facetVertices } from '../paper
 import type { Facet, PaperModel } from '../paper/model';
 import type { AeroMesh } from './aeroMesh';
 import type { PaperConfig } from './config';
+import type { PanelBend } from './simulator';
 import type { PanelSet } from './panels';
 
 /*
@@ -87,6 +88,8 @@ export interface PanelModes {
 const MIN_AREA = 0.0025; // 25 cm²: smaller pieces (elevators, tabs) are stiff enough
 const FLAT_COS = Math.cos((12 * Math.PI) / 180);
 const POISSON = 0.3;
+/** Spacing of the integration points (m): the shapes are low-order polynomials, so this is plenty. */
+const SAMPLE_SPACING = 0.012;
 /** Shapes stiffer than this (natural frequency, Hz) count as rigid. */
 const MAX_FREQ_HZ = 120;
 
@@ -211,7 +214,7 @@ export function buildPanelModes(
     let n: Vec3 = [0, 0, 0];
     for (const f of facets) n = V.addScaled(n, canonicalNormal(facetNormal(f)), facetArea(f));
     n = V.normalize(n);
-    const pts = samples(facets, 0.006);
+    const pts = samples(facets, SAMPLE_SPACING);
     let shapes: Poly[];
     let eu: Vec3;
     let ev: Vec3;
@@ -427,4 +430,59 @@ export function deflectionAt(pm: PanelModes, q: ArrayLike<number>, p: Vec3): { w
     gv += a * P.wv(u, v);
   });
   return { w, grad: V.add(V.scale(pm.eu, gu), V.scale(pm.ev, gv)) };
+}
+
+/**
+ * The panel's current bending as one polynomial (all shapes summed with their amplitudes), for
+ * evaluating at many points (drawing).
+ */
+export function bendField(pm: PanelModes, q: ArrayLike<number>): PanelBend {
+  let sum = new Poly([]);
+  pm.shapes.forEach((P, k) => (sum = sum.plus(P, q[pm.first + k])));
+  const terms = sum.terms.filter(([, , c]) => c !== 0);
+  const ti = terms.map(([i]) => i);
+  const tj = terms.map(([, j]) => j);
+  const tc = terms.map(([, , c]) => c);
+  const maxPow = Math.max(1, ...ti, ...tj);
+  const pu = new Float64Array(maxPow + 1);
+  const pv = new Float64Array(maxPow + 1);
+  const [ox, oy, oz] = pm.origin;
+  const [ux, uy, uz] = pm.eu;
+  const [vx, vy, vz] = pm.ev;
+  const evalInto = (x: number, y: number, z: number, out: Float64Array) => {
+    const rx = x - ox;
+    const ry = y - oy;
+    const rz = z - oz;
+    const u = rx * ux + ry * uy + rz * uz;
+    const v = rx * vx + ry * vy + rz * vz;
+    pu[0] = pv[0] = 1;
+    for (let k = 1; k <= maxPow; k++) {
+      pu[k] = pu[k - 1] * u;
+      pv[k] = pv[k - 1] * v;
+    }
+    let w = 0;
+    let wu = 0;
+    let wv = 0;
+    for (let t = 0; t < tc.length; t++) {
+      const i = ti[t];
+      const j = tj[t];
+      const c = tc[t];
+      w += c * pu[i] * pv[j];
+      if (i > 0) wu += c * i * pu[i - 1] * pv[j];
+      if (j > 0) wv += c * j * pu[i] * pv[j - 1];
+    }
+    out[0] = w;
+    out[1] = wu * ux + wv * vx;
+    out[2] = wu * uy + wv * vy;
+    out[3] = wu * uz + wv * vz;
+  };
+  const tmp = new Float64Array(4);
+  return {
+    normal: pm.normal,
+    evalInto,
+    at: (p: Vec3) => {
+      evalInto(p[0], p[1], p[2], tmp);
+      return { w: tmp[0], grad: [tmp[1], tmp[2], tmp[3]] };
+    },
+  };
 }

@@ -141,6 +141,10 @@ export class EditorApp implements ToolContext {
     return this.history.current;
   }
 
+  nose(): Vec3 {
+    return this.history.meta.orientation.nose;
+  }
+
   previousModel(): PaperModel {
     return this.history.previous;
   }

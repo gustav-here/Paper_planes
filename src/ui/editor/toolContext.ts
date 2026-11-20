@@ -32,6 +32,8 @@ export interface ToolContext {
   readonly options: EditorOptions;
   readonly overlay: Overlay;
   model(): PaperModel;
+  /** The plane's nose direction (model space). */
+  nose(): Vec3;
   /** Show a temporary model (e.g. while dragging the fold angle); null = show the committed model. */
   setPreview(m: PaperModel | null): void;
   /** Apply and record an operation. Returns null (and shows the error) on failure. */

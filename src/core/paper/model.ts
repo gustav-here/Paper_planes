@@ -43,6 +43,13 @@ export interface Clip {
   massKg: number;
   /** Paper clip (default) or tape folded over the edge. Both hold the layers together. */
   kind?: 'clip' | 'tape';
+  /** Tape laid flat across a seam (two wing halves), `at` on one side's edge. */
+  bridge?: boolean;
+  /**
+   * Which way a clip leans when paper leaving its plane is in the way (+1: turned from `inward`
+   * towards normal × inward, −1: the other way). The editor picks backwards, away from the nose.
+   */
+  lean?: 1 | -1;
 }
 
 export interface PaperModel {

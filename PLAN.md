@@ -912,3 +912,31 @@ Resultat med standardkonfigurationen (släpp från 10 m, olika kastfarter):
 - **Visning:** i kastläget ritas papperet med trianglar på högst 12 mm (`PaperView` med `maxEdge`).
   Varje bildruta flyttas hörnen och kantlinjerna längs böjningen
   (`Simulator.panelBending` → `FlightView.setPanelBending`), och ljusnormalerna lutas med ∇w.
+
+## 27. Snabbare beräkning, gem som lutar bakåt och ny tejp
+- **Snabbare beräkning.** Det flexibla dart-planet gick från ungefär 2,0 till 0,8 ms per steg i
+  luften (Node). Ett steg är 1/240 s, så det är ungefär fem gånger snabbare än realtid.
+  - **Golvkontakt:** varje panel har en omslutande sfär. Bara paneler som når en yta får sina
+    punkter kontrollerade. Impulsmatriserna M⁻¹Jᵀ och JM⁻¹Jᵀ räknas en gång per punkt, så varje
+    iteration blir linjär i antalet frihetsgrader.
+  - **Böjning:** formerna summeras till ett polynom per panel (`bendField`) som räknas utan att
+    skapa nya listor. Det används både i kontakten och i ritningen. Ritningen räknar varje unik
+    punkt en gång och har fasta gränssfärer. För en dart tar det 1,3 ms per bildruta i stället
+    för 4,8 ms.
+  - **Luftens dämpning:** matrisen räknas om var sjätte steg (1/40 s). Flygningarna ändras mindre
+    än 0,5 % jämfört med var tredje steg.
+  - **Böjformerna:** integrationspunkterna ligger med 12 mm mellanrum i stället för 6 mm, så de
+    byggs ungefär dubbelt så snabbt.
+- **Gem som lutar bakåt** (`resolveClip`): ett gem kan inte gå genom papper som lämnar dess plan,
+  till exempel vingen ovanför kölen. Gemmet vrids då i sitt plan, runt punkten på kanten, så lite
+  som behövs för att inte korsa vecket där vingen börjar (högst 80°).
+  - Editorn sparar riktningen bakåt från nosen i operationen (`lean`). Om gemmet aldrig får plats
+    bakåt lutar det framåt. På en dart (kölen är 25 mm hög och gemmet 28 mm) lutar det ungefär 36°.
+- **Tejp, alltid 2 cm lång** (19 mm bred, 0,02 g):
+  - **Över skarven mellan vinghalvorna** (`bridge`): tejpen läggs ovanpå, 10 mm på varje halva,
+    även när halvorna står i ett grunt V (högst 35° ur planet). Den håller ihop papper på båda
+    sidor om ryggen, så mittvecket hålls stängt där (återfjädringen) och vingarna sitter ihop.
+  - **Över en kant** (ryggen, nosen, en vinge): förhandsvisningen hänger hälften i luften. När man
+    trycker fast tejpen viks den fria halvan över till andra sidan.
+  - **Det som sticker ut** utanför pappret, till exempel framför nosen, klipps bort automatiskt
+    (`tapeShape`: tejpen skärs med pappret under den).

@@ -1,13 +1,19 @@
-import { CLIP_SPEC, TAPE_SPEC, findClipPlacement, resolveClip } from '../../core/paper/clips';
+import * as V from '../../core/math/vec3';
+import { CLIP_SPEC, TAPE_SPEC, findClipPlacement, findTapePlacement, resolveClip } from '../../core/paper/clips';
 import type { ClipPlacement } from '../../core/paper/clips';
+import type { Clip } from '../../core/paper/model';
 import { createClipObject } from '../../render/ClipMesh';
 import { edgesOf } from '../../render/modelCache';
 import type { Tool, ToolContext } from './toolContext';
 
 /**
- * Paper clip / tape tool: slide a 1 g clip (or a 0.03 g strip of tape) along any stack edge and
+ * Paper clip / tape tool: slide a 1 g clip (or a 2 cm strip of tape) along any stack edge and
  * left-click to attach it. Both hold the layers together. Removal is a right-click, handled by
  * the editor for every tool.
+ *  - A clip that would run into paper leaving its plane (a wing above the keel) leans back.
+ *  - Tape over a seam (the two wing halves seen from above) presses the halves together and is
+ *    laid flat across. Tape over an edge hangs half in the air until it is pressed on, then the
+ *    free half folds over to the other side; what sticks out past the paper is cut off.
  */
 export class ClipTool implements Tool {
   private placement: ClipPlacement | null = null;
@@ -33,9 +39,26 @@ export class ClipTool implements Tool {
   refresh() {
     this.ctx.hint(
       this.kind === 'tape'
-        ? 'För musen längs en kant och klicka för att tejpa ihop lagren där (0,03 g). Högerklicka på tejpen för att ta bort den.'
-        : 'För musen längs en kant och klicka för att fästa ett gem (1 g). Högerklicka på ett gem för att ta bort det.',
+        ? 'Håll tejpen över skarven mellan vinghalvorna för att tejpa ihop dem, eller över en kant för att vika den över kanten. Klicka för att trycka fast. Högerklicka på tejpen för att ta bort den.'
+        : 'För musen längs en kant och klicka för att fästa ett gem (1 g). Gemet lutar bakåt om en vinge är i vägen. Högerklicka på ett gem för att ta bort det.',
     );
+  }
+
+  /** The clip (or tape) to place at the current placement. */
+  private holder(id: string): Clip | null {
+    const pl = this.placement;
+    if (!pl) return null;
+    // a clip in the way of a wing leans backwards: away from the nose
+    const along = V.cross(pl.normal, pl.inward);
+    const lean: 1 | -1 = V.dot(along, this.ctx.nose()) <= 0 ? 1 : -1;
+    return {
+      id,
+      at: pl.at,
+      edgeDir: pl.edgeDir,
+      massKg: this.spec.massKg,
+      ...(this.kind === 'tape' ? { kind: 'tape' as const } : { lean }),
+      ...(pl.bridge ? { bridge: true } : {}),
+    };
   }
 
   move(e: PointerEvent) {
@@ -48,25 +71,21 @@ export class ClipTool implements Tool {
     const hit = this.ctx.hitPaper(e);
     if (hit) this.ctx.setFrame(hit.frame);
     const m = this.ctx.model();
-    this.placement = hit ? findClipPlacement(m, hit.point, 0.015, edgesOf(m), this.spec) : null;
-    if (!this.placement) {
-      this.ctx.setGhost(null);
-      return;
-    }
-    const rc = resolveClip(m, { id: 'ghost', at: this.placement.at, edgeDir: this.placement.edgeDir, massKg: this.spec.massKg, kind: this.kind });
+    this.placement = hit
+      ? this.kind === 'tape'
+        ? findTapePlacement(m, hit.point, 0.015, edgesOf(m))
+        : findClipPlacement(m, hit.point, 0.015, edgesOf(m), this.spec)
+      : null;
+    const ghost = this.holder('ghost');
+    const rc = ghost && resolveClip(m, ghost);
     this.ctx.setGhost(rc ? createClipObject(m, rc, true) : null);
   }
 
   down() {
     if (!this.placement) return;
-    this.ctx.commit({
-      type: 'clip',
-      id: this.ctx.nextId(this.kind === 'tape' ? 'tejp' : 'gem'),
-      at: this.placement.at,
-      edgeDir: this.placement.edgeDir,
-      massKg: this.spec.massKg,
-      ...(this.kind === 'tape' ? { kind: 'tape' as const } : {}),
-    });
+    const clip = this.holder(this.ctx.nextId(this.kind === 'tape' ? 'tejp' : 'gem'));
+    if (!clip) return;
+    this.ctx.commit({ type: 'clip', ...clip });
     this.placement = null;
     this.ctx.setGhost(null);
   }

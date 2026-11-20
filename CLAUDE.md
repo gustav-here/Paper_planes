@@ -78,6 +78,9 @@ Webbläsarspel: vik ett pappersflygplan av ett A4 och kasta det. Flygbeteendet s
   (`ploughKgPerM`: lös regolit på Månen bromsar med ρ·A·v_t², oberoende av g).
 - Procedurtexturer i `render/venues` ritas på 2D-canvas utan `filter` (det kraschade
   grafikprocessen).
+- Gem lutar bakåt (`Clip.lean`) så lite som behövs för att inte gå genom papper som lämnar dess plan.
+  Tejp är alltid 2 cm. Den läggs platt över skarven mellan vinghalvorna (`bridge`) eller viks över
+  en kant, och det som sticker ut utanför pappret klipps bort. Se PLAN.md §27.
 - Skador blir vanliga operationer (`dmg-…`) efter spelarens egna och gäller tills planet viks om.
 - Simulatorer implementerar `Simulator` (`physics/simulator.ts`). Använd `prepare`/`createSimulator`
   (`physics/factory.ts`) i stället för att skapa dem direkt.

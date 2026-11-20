@@ -51,12 +51,15 @@ interface Bendable {
 }
 
 function bendable(obj: THREE.Mesh | THREE.LineSegments, pos: number[], nor?: number[]): Bendable {
-  const index = new Map<string, number>();
+  const index = new Map<number, number>();
   const uniq: number[] = [];
   const map = new Uint32Array(pos.length / 3);
   for (let i = 0; i < pos.length; i += 3) {
-    // 0.01 mm grid: copies of a point land in the same cell
-    const key = `${Math.round(pos[i] * 1e5)},${Math.round(pos[i + 1] * 1e5)},${Math.round(pos[i + 2] * 1e5)}`;
+    // 0.01 mm grid (±1 m fits in 2·10⁵ cells per axis): copies of a point land in the same cell
+    const cx = Math.round(pos[i] * 1e5) + 100000;
+    const cy = Math.round(pos[i + 1] * 1e5) + 100000;
+    const cz = Math.round(pos[i + 2] * 1e5) + 100000;
+    const key = (cx * 200001 + cy) * 200001 + cz;
     let k = index.get(key);
     if (k === undefined) {
       k = uniq.length / 3;
@@ -65,6 +68,10 @@ function bendable(obj: THREE.Mesh | THREE.LineSegments, pos: number[], nor?: num
     }
     map[i / 3] = k;
   }
+  // bounds that hold the paper however it bends, so they need no update per frame
+  obj.geometry.computeBoundingSphere();
+  const bs = obj.geometry.boundingSphere;
+  if (bs) bs.radius = bs.radius * 1.5 + 0.01;
   return { obj, base: new Float32Array(pos), baseNormal: nor ? new Float32Array(nor) : undefined, uniq: new Float32Array(uniq), map };
 }
 
@@ -233,17 +240,20 @@ export class PaperView {
         const nu = it.uniq.length / 3;
         const W = new Float32Array(nu);
         const G = new Float32Array(nu * 3);
+        const out = new Float64Array(4);
         for (let k = 0; k < nu; k++) {
-          const { w, grad } = b.at([it.uniq[3 * k], it.uniq[3 * k + 1], it.uniq[3 * k + 2]]);
-          W[k] = w;
-          G[3 * k] = grad[0];
-          G[3 * k + 1] = grad[1];
-          G[3 * k + 2] = grad[2];
+          b.evalInto(it.uniq[3 * k], it.uniq[3 * k + 1], it.uniq[3 * k + 2], out);
+          W[k] = out[0];
+          G[3 * k] = out[1];
+          G[3 * k + 1] = out[2];
+          G[3 * k + 2] = out[3];
         }
         for (let i = 0; i < arr.length; i += 3) {
           const k = it.map[i / 3];
           const w = W[k];
-          const grad = [G[3 * k], G[3 * k + 1], G[3 * k + 2]];
+          const gx = G[3 * k];
+          const gy = G[3 * k + 1];
+          const gz = G[3 * k + 2];
           arr[i] = it.base[i] + bn[0] * w;
           arr[i + 1] = it.base[i + 1] + bn[1] * w;
           arr[i + 2] = it.base[i + 2] + bn[2] * w;
@@ -253,9 +263,9 @@ export class PaperView {
             const n0y = it.baseNormal[i + 1];
             const n0z = it.baseNormal[i + 2];
             const s = n0x * bn[0] + n0y * bn[1] + n0z * bn[2];
-            const x = n0x - s * grad[0];
-            const y = n0y - s * grad[1];
-            const z = n0z - s * grad[2];
+            const x = n0x - s * gx;
+            const y = n0y - s * gy;
+            const z = n0z - s * gz;
             const l = Math.hypot(x, y, z) || 1;
             nor[i] = x / l;
             nor[i + 1] = y / l;
@@ -265,7 +275,6 @@ export class PaperView {
       }
       pos.needsUpdate = true;
       if (nAttr) nAttr.needsUpdate = true;
-      it.obj.geometry.computeBoundingSphere();
     }
     this.bent = !!b;
   }
