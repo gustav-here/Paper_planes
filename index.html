@@ -1,0 +1,87 @@
+<!doctype html>
+<html lang="sv">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Pappersflygplan</title>
+    <link rel="stylesheet" href="/src/ui/hud/styles.css" />
+  </head>
+  <body>
+    <div id="app">
+      <canvas id="viewport"></canvas>
+
+      <header class="topbar">
+        <div class="brand">Pappersflygplan <span>· vikning</span></div>
+        <div class="group">
+          <button id="btn-undo" title="Ångra (Ctrl/Cmd+Z)">↶ Ångra</button>
+          <button id="btn-redo" title="Gör om (Shift+Ctrl/Cmd+Z)">↷ Gör om</button>
+        </div>
+        <div class="group">
+          <button id="btn-flip-long" title="Vänd 90° runt långsidan (F)">⇅ Vänd 90°</button>
+          <button id="btn-flip-short" title="Vänd 90° runt kortsidan (Shift+F)">⇆ Vänd 90°</button>
+          <button id="btn-rotate" title="Rotera 90° (R)">⟳ Rotera</button>
+          <button id="btn-xray" class="toggle" title="Röntgen: genomskinligt papper (X)">◐ Röntgen</button>
+          <button id="btn-reset-view" title="Återställ kamera">⌂</button>
+        </div>
+        <div class="group">
+          <input id="design-name" type="text" value="Min modell" aria-label="Modellens namn" />
+          <select id="preset-select" aria-label="Förinställda modeller">
+            <option value="">Förinställda…</option>
+          </select>
+          <button id="btn-new" title="Börja om med ett platt ark">Nytt ark</button>
+          <button id="btn-save" title="Spara som JSON">Spara</button>
+          <button id="btn-load" title="Ladda JSON">Ladda</button>
+          <input id="file-input" type="file" accept=".json,application/json" hidden />
+        </div>
+      </header>
+
+      <aside class="tools">
+        <button data-tool="fold" title="Vik (V)"><span class="ico">⟋</span>Vik</button>
+        <button data-tool="cut" title="Sax (S)"><span class="ico">✂</span>Sax</button>
+        <button data-tool="clip" title="Gem (G)"><span class="ico">📎</span>Gem</button>
+        <button data-tool="view" title="Vy – rotera kameran med vänster knapp (O)"><span class="ico">👁</span>Vy</button>
+      </aside>
+
+      <section class="options" id="opts-fold">
+        <h3>Vik</h3>
+        <div class="seg" id="fold-kind">
+          <button data-kind="valley" title="Dalveck (D): fliken viks mot dig">Dal</button>
+          <button data-kind="mountain" title="Bergsveck (B): fliken viks bort från dig">Berg</button>
+        </div>
+        <label>Lager
+          <select id="fold-scope">
+            <option value="all">Alla lager</option>
+            <option value="top">Översta flik</option>
+            <option value="bottom">Understa flik</option>
+            <option value="flap">Klickad flik</option>
+          </select>
+        </label>
+        <label class="check"><input type="checkbox" id="fold-mirror" /> Spegla (M)</label>
+        <label class="check"><input type="checkbox" id="fold-p2p" /> Punkt → punkt (P)</label>
+      </section>
+
+      <section class="options" id="opts-cut">
+        <h3>Sax</h3>
+        <label>Djup
+          <select id="cut-depth">
+            <option value="all">Alla lager</option>
+            <option value="top">Översta lagret</option>
+          </select>
+        </label>
+        <label class="check"><input type="checkbox" id="cut-mirror" /> Spegla (M)</label>
+      </section>
+
+      <section class="options" id="opts-clip">
+        <h3>Gem</h3>
+        <p>1 g. För musen längs en kant och klicka för att fästa. Högerklicka på ett gem för att ta bort det (fungerar med alla verktyg).</p>
+      </section>
+
+      <div class="hint" id="hint"></div>
+      <div class="toasts" id="toasts"></div>
+      <div class="angle-label" id="angle-label"></div>
+      <div class="snap-dot" id="snap-dot"></div>
+      <footer class="status" id="status"></footer>
+    </div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
