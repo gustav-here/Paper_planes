@@ -3,8 +3,8 @@ import * as V from '../../../src/core/math/vec3';
 import { makeDart, makeGlider } from '../../../src/core/presets';
 import { replayDesign, applyOp } from '../../../src/core/paper/replay';
 import { relaxCreases } from '../../../src/core/paper/springback';
-import { findClipPlacement, TAPE_SPEC } from '../../../src/core/paper/clips';
-import { facetNormal, totalArea } from '../../../src/core/paper/model';
+import { CLIP_SPEC, findClipPlacement, TAPE_SPEC } from '../../../src/core/paper/clips';
+import { facetCentroid, facetNormal, totalArea } from '../../../src/core/paper/model';
 import type { PaperModel } from '../../../src/core/paper/model';
 import { computeMassProperties } from '../../../src/core/physics/massProperties';
 
@@ -34,6 +34,9 @@ describe('crease springback', () => {
       .filter((f) => Math.abs(facetNormal(f)[1]) > 0.9)
       .map((f) => Math.asin(Math.abs(facetNormal(f)[2])) * DEG);
     expect(Math.max(...tilts) - Math.min(...tilts)).toBeLessThan(0.5);
+    // both halves turn away from the middle: one by +gap/2, the other by −gap/2
+    const signed = r.facets.filter((f) => Math.abs(facetNormal(f)[1]) > 0.9).map((f) => Math.asin(facetNormal(f)[2] * Math.sign(facetNormal(f)[1])) * DEG);
+    expect(Math.max(...signed) + Math.min(...signed)).toBeCloseTo(0, 1);
   });
 
   it('keeps paper, mass and centre of mass (it only bends)', () => {
@@ -53,11 +56,38 @@ describe('crease springback', () => {
     expect(JSON.stringify(relaxCreases(folded, dart.ops, 0.05))).toBe(JSON.stringify(relaxCreases(folded, dart.ops, 0.05)));
   });
 
-  it('tape over the keel edge holds the centre fold shut', () => {
-    const p = findClipPlacement(folded, [-0.1, 0, 0], 0.02, undefined, TAPE_SPEC)!;
-    expect(p).not.toBeNull();
-    const ops = [...dart.ops, { type: 'clip' as const, id: 'tejp1', at: p.at, edgeDir: p.edgeDir, massKg: TAPE_SPEC.massKg, kind: 'tape' as const }];
-    const taped = applyOp(folded, ops.at(-1)!).model;
-    expect(keelGap(relaxCreases(taped, ops, 0.05))).toBeLessThan(0.01);
+  it('a clip or tape holds the centre fold shut only where it sits; further back it twists open', () => {
+    // opening of the keel about the centre fold (along x) among keel facets within 2 mm of x
+    // (a twisted surface also tilts a little along x; that is not the gap)
+    const gapNear = (m: PaperModel, x: number, w = 0.002) => {
+      const tilts = m.facets
+        .filter((f) => Math.abs(facetNormal(f)[1]) > 0.9 && Math.abs(facetCentroid(f)[0] - x) < w)
+        .map((f) => Math.asin(facetNormal(f)[2] * Math.sign(facetNormal(f)[1])) * DEG);
+      return Math.max(...tilts) - Math.min(...tilts);
+    };
+    const free = relaxCreases(folded, dart.ops, 0.05);
+    for (const spec of [TAPE_SPEC, CLIP_SPEC]) {
+      const p = findClipPlacement(folded, [0.1, 0, 0], 0.02, undefined, spec)!;
+      expect(p).not.toBeNull();
+      const op = { type: 'clip' as const, id: 'h1', at: p.at, edgeDir: p.edgeDir, massKg: spec.massKg, ...(spec === TAPE_SPEC ? { kind: 'tape' as const } : {}) };
+      const ops = [...dart.ops, op];
+      const held = applyOp(folded, op).model;
+      const r = relaxCreases(held, ops, 0.05);
+      expect(gapNear(r, p.position[0])).toBeLessThan(0.5);
+      // behind it the gap grows steadily (a tight V from the clip) to the full gap at the tail
+      const x0 = p.position[0];
+      const tail = -0.125;
+      const g1 = gapNear(r, x0 + (tail - x0) / 3, 0.012);
+      const g2 = gapNear(r, x0 + (2 * (tail - x0)) / 3, 0.012);
+      const gEnd = gapNear(r, tail, 0.012);
+      expect(g1).toBeGreaterThan(0.5);
+      expect(g2).toBeGreaterThan(g1 + 1);
+      expect(gEnd).toBeGreaterThan(g2 + 1);
+      const full = gapNear(free, 0, 1);
+      expect(gEnd).toBeLessThan(full + 0.3);
+      expect(gEnd).toBeGreaterThan(0.6 * full);
+      // the paper is not torn apart: it still covers the same area
+      expect(totalArea(r)).toBeCloseTo(totalArea(held), 10);
+    }
   });
 });

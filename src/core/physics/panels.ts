@@ -150,7 +150,7 @@ export function buildPanels(model: PaperModel, af: Airframe, paper: PaperConfig)
     if (tabs.some((t) => onTab(l.seg, t))) {
       slitLinks.add(l);
       hingeLinks.push(l);
-    } else if (sameControl && coplanar(fa, fb)) uf.union(l.a, l.b);
+    } else if (sameControl && (coplanar(fa, fb) || flatContinuation(fa, fb, l.seg))) uf.union(l.a, l.b);
     else hingeLinks.push(l);
   }
   // layers lying flat on each other move together (pressed stacks)
@@ -357,6 +357,21 @@ export function buildPanels(model: PaperModel, af: Airframe, paper: PaperConfig)
     }
   }
   return { panels, hinges, panelOf, root: rootPanel };
+}
+
+const FLAT_COS = Math.cos((3 * Math.PI) / 180);
+
+/**
+ * Paper that carries on almost flat across a link (within 3°, e.g. a gently twisted strip) is
+ * one panel; only real folds are hinges.
+ */
+function flatContinuation(fa: Facet, fb: Facet, seg: [Vec2, Vec2]): boolean {
+  if (Math.abs(V.dot(facetNormal(fa), facetNormal(fb))) < FLAT_COS) return false;
+  const A = toModel(fa, seg[0]);
+  const d = V.normalize(V.sub(toModel(fa, seg[1]), A));
+  const wa = V.rejectFrom(V.sub(facetCentroid(fa), A), d);
+  const wb = V.rejectFrom(V.sub(facetCentroid(fb), A), d);
+  return V.dot(wa, wb) < 0;
 }
 
 /** Panels whose facets are this close to parallel at a crease are a (slightly open) stack. */

@@ -5,6 +5,9 @@ import * as Q from '../../core/math/quat';
 import type { Vec3 } from '../../core/math/vec3';
 import type { DesignFile, Op } from '../../core/paper/ops';
 import { damageOnFolded, damageToOps } from '../../core/physics/damage';
+import { relaxCreases } from '../../core/paper/springback';
+import type { PaperModel } from '../../core/paper/model';
+import * as P from '../../core/math/polygon2d';
 import { DEFAULT_CONFIG } from '../../core/physics/config';
 import { DEFAULT_LAUNCH, launchState } from '../../core/physics/launch';
 import type { LaunchParams } from '../../core/physics/launch';
@@ -109,7 +112,8 @@ export class FlightMode {
     this.controls = new OrbitControls(this.camera, stage.canvas);
     this.controls.enableDamping = true;
     this.controls.dampingFactor = 0.1;
-    this.controls.minDistance = 0.3;
+    // close enough to inspect a crushed nose or a fold
+    this.controls.minDistance = 0.08;
     this.controls.maxDistance = 40;
     this.controls.maxPolarAngle = Math.PI * 0.49;
     this.controls.enabled = false;
@@ -227,6 +231,7 @@ export class FlightMode {
     this.plot.clear();
     this.nextSample = 0;
     this.shownImpact = false;
+    this.shownCrumples = 0;
     this.phase = 'flying';
     this.aimArrow.visible = false;
     $('aim-panel').classList.remove('visible');
@@ -299,6 +304,8 @@ export class FlightMode {
         try {
           this.pending = prepare(design, cfg);
           this.onDamage?.(r.ops);
+          // show all of the damage on the plane where it came to rest
+          this.showDamaged(this.pending.model);
         } catch {
           this.pending = null;
         }
@@ -333,6 +340,7 @@ export class FlightMode {
       });
       this.fv.setPanelPoses(poses);
       x = V.lerp(this.prevPos, this.sim.position(), a);
+      if (this.phase === 'flying') this.showCrumples();
       this.consumeSamples();
       if (this.debug) this.fv.updateDebug(x, this.sim.worldVelocity(), this.sim.debugForces());
     } else {
@@ -342,6 +350,41 @@ export class FlightMode {
     this.updateCamera(x);
     this.updateStats();
     if (this.debug) this.plot.draw();
+  }
+
+  private shownCrumples = 0;
+
+  /** A crushed edge shows the moment it happens (the flight itself goes on as simulated). */
+  private showCrumples() {
+    const sim = this.sim;
+    const p = this.current;
+    if (!sim || !p || this.replaying) return;
+    const events = sim.damage().filter((e) => e.kind === 'crumple');
+    if (events.length <= this.shownCrumples) return;
+    this.shownCrumples = events.length;
+    const r = damageToOps(p.folded, damageOnFolded(p.model, p.folded, events), p.design.orientation.up, cfg.paper);
+    if (!r.ops.length) return;
+    this.showDamaged(relaxCreases(r.model, [...p.design.ops, ...r.ops], cfg.paper.creaseSpringback));
+  }
+
+  /**
+   * Draw a damaged version of the flying plane: its paper is matched to the simulated panels
+   * through sheet coordinates, so it keeps moving with them.
+   */
+  private showDamaged(model: PaperModel) {
+    const sim = this.sim;
+    const p = this.current;
+    if (!sim || !p) return;
+    const owner = new Map<number, number>();
+    sim.panels.forEach((ids, i) => ids.forEach((id) => owner.set(id, i)));
+    const panels: number[][] = sim.panels.map(() => []);
+    for (const f of model.facets) {
+      const c = P.centroid(f.poly);
+      const src = p.model.facets.find((g) => P.pointInConvex(c, g.poly, -1e-9));
+      panels[(src && owner.get(src.id)) ?? 0].push(f.id);
+    }
+    this.fv.setModel(model, panels, p.af.mass, p.af.mesh.elements.length);
+    this.fv.setPanelPoses(this.curPoses);
   }
 
   private consumeSamples() {

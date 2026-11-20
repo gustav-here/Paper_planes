@@ -69,7 +69,7 @@ function crumpleOps(model: PaperModel, e: Extract<DamageEvent, { kind: 'crumple'
   if (V.length(inPlane) < 0.3) return null;
   const dImpact = V.normalize(inPlane);
   const excess = e.speed - cfg.crumpleSpeed;
-  const fullDepth = Math.min(cfg.crumpleMaxDepth, 0.004 + cfg.crumpleDepthPerMs * excess);
+  const fullDepth = Math.min(cfg.crumpleMaxDepth, cfg.crumpleMinDepth + cfg.crumpleDepthPerMs * excess);
   const k = Math.max(1, Math.round(cfg.crumpleFolds));
   // k folds: the first and last turn by α, the ones between by 2α, so the k − 1 pieces between
   // them zigzag at ±α and the tip continues straight on, (k − 1)/k·zone·(1 − cos α) = depth shorter

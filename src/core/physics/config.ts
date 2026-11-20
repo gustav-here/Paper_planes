@@ -74,7 +74,11 @@ export interface PaperConfig {
   servoStiffnessFactor: number;
   /** Normal impact speed of a point on the floor above which the paper there crumples (m/s). */
   crumpleSpeed: number;
-  /** Crumple depth (m) per m/s above the threshold, and its maximum. */
+  /**
+   * Crush depth: this much at the threshold, plus crumpleDepthPerMs per m/s above it, at most
+   * crumpleMaxDepth (m). A nose-first crash folds up only the very tip of the paper.
+   */
+  crumpleMinDepth: number;
   crumpleDepthPerMs: number;
   crumpleMaxDepth: number;
   /**
@@ -163,10 +167,11 @@ export const DEFAULT_CONFIG: PhysicsConfig = {
     creaseYieldDeg: 15,
     servoStiffnessFactor: 20,
     crumpleSpeed: 4.5,
-    crumpleDepthPerMs: 0.003,
-    crumpleMaxDepth: 0.02,
-    crumpleZoneFactor: 2.5,
-    crumpleFolds: 5,
+    crumpleMinDepth: 0.002,
+    crumpleDepthPerMs: 0.0012,
+    crumpleMaxDepth: 0.008,
+    crumpleZoneFactor: 1.6,
+    crumpleFolds: 3,
     tearImpactRadius: 0.015,
     tearMomentPerM: 0.02,
     tearLengthGain: 0.01,

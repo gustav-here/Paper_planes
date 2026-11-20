@@ -192,10 +192,14 @@ describe('crushed edges', () => {
       while (!sim.done) sim.step();
       const r = damageToOps(p.folded, damageOnFolded(p.model, p.folded, sim.damage()), d.orientation.up, DEFAULT_CONFIG.paper);
       const crumple = r.ops.filter((o) => o.id.startsWith('dmg-crumple'));
-      expect(crumple.length).toBe(DEFAULT_CONFIG.paper.crumpleFolds);
+      // one accordion per crushed edge
+      expect(crumple.length).toBeGreaterThanOrEqual(DEFAULT_CONFIG.paper.crumpleFolds);
+      expect(crumple.length % DEFAULT_CONFIG.paper.crumpleFolds).toBe(0);
       // alternating folds, and the nose ends up shorter but still pointing forward
       expect(new Set(crumple.map((o) => (o.type === 'fold' ? o.kind : '')))).toEqual(new Set(['valley', 'mountain']));
-      expect(noseLength(r.model)).toBeLessThan(noseLength(p.folded) - 0.002);
+      expect(noseLength(r.model)).toBeLessThan(noseLength(p.folded) - 0.0015);
+      // only the very tip folds up
+      expect(noseLength(r.model)).toBeGreaterThan(noseLength(p.folded) - DEFAULT_CONFIG.paper.crumpleMaxDepth - 0.001);
       expect(totalArea(r.model)).toBeCloseTo(totalArea(p.folded), 10);
     });
   }

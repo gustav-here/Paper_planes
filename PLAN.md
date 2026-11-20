@@ -790,3 +790,25 @@ Resultat med standardkonfigurationen (släpp från 10 m, olika kastfarter):
     *frame* (vikt → visad) för den papperbit man arbetar på.
   - Linjer, markeringar, spöken och skärmpositioner ritas i den framen, och strålar räknas tillbaka.
     Vik-linjen hamnar därför på det papper som syns.
+
+## 23. Kortare intryckning, skada direkt i flykten, gem som håller lokalt
+- **Bara spetsen viks ihop.** Intryckningsdjupet är 2 mm vid 4,5 m/s plus 1,2 mm per m/s över det,
+  högst 8 mm. Dragspelet har tre veck över 1,6 gånger djupet (α ≈ 86°), så den yttersta biten
+  viks tätt ihop.
+- **Skadan syns direkt.** I kastläget ritas en skrynkling om i samma ögonblick som den uppstår.
+  Den skadade modellens papper matchas mot de simulerade panelerna via arkkoordinater, så den rör
+  sig med planet. Flygningen fortsätter med samma fysik. När planet ligger still visas hela
+  skadan, även böjar och revor. Kameran kan zooma in till 8 cm.
+- **Gem och tejp håller där de sitter, och glipan växer som ett smalt V.** Vid hållaren är vecket
+  stängt. Glipan växer sedan linjärt med avståndet och når full återfjädring först vid papperets
+  ände: θ(s) = θ · avstånd / (avstånd från hållaren till änden). Sidorna löper som raka linjer
+  från gemet, så det ser ut som ett smalt V ovanifrån.
+  - Fasetter längs vägen delas i remsor och trianglar. Remsbredden väljs så att vridhastighet ×
+    remsbredd × avstånd från vecket ≈ 0,2 mm, och varje bit placeras stelt på den vridna ytan.
+  - Vecklinjer ritas inte där papperet bara vrids lite (under 2°).
+- **Båda sidorna öppnar sig.** Ett veck öppnar sig genom att båda sidorna vrids från varandra.
+  Den lättare sidan vrids mer, i proportion till den andra sidans pappersyta. Ett mittveck öppnar
+  sig därför symmetriskt kring mitten.
+- I den flexibla modellen räknas papper som fortsätter nästan plant (under 3°) som samma panel.
+    Med gem blir kölen därför en panel med vriden viloform. Den kan inte vridas isär ytterligare
+    under flygningen; det skulle kräva vridleder.

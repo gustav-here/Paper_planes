@@ -60,7 +60,8 @@ Webbläsarspel: vik ett pappersflygplan av ett A4 och kasta det. Flygbeteendet s
 - Snittflikar (`physics/slits.ts`): plant papper mellan två snittändar blir ett gångjärn med plan
   pappersböjstyvhet i flexibelt papper (fasetterna delas i `prepare`).
 - Återfjädring (`paper/springback.ts`): ett släppt veck öppnar sig med 5 % av vikvinkeln. Gem och
-  tejp håller ihop lager. Det gäller alla kast via `prepare` (`Prepared.model` är relaxerad,
+  tejp håller vecket stängt där de sitter, och glipan växer linjärt till papperets ände (ett
+  smalt V). Båda sidorna av ett veck öppnar sig från varandra. Det gäller alla kast via `prepare` (`Prepared.model` är relaxerad,
   `Prepared.folded` är exakt vikt). Validering och editor använder den vikta geometrin.
 - Flexibelt papper är standard i spelet. Gångjärnen har plan pappersböjning i serie med vecket och
   ett kontaktstopp vid 180°.

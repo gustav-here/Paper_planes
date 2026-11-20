@@ -17,6 +17,11 @@ const FRONT = new THREE.Color('#fbf9f3');
 const BACK = new THREE.Color('#e9e2d0');
 /** Crushed paper (impact damage): duller, greyer, with a mottled look per crumpled facet. */
 const CRUMPLED = [new THREE.Color('#ddd3bd'), new THREE.Color('#cbbfa4')];
+/**
+ * Facets meeting at less than this angle are drawn without a crease line (≈ 2°): paper that only
+ * twists a little across the link. Folds are at least 5°; a 180° fold has opposite normals.
+ */
+const FLAT_COS = Math.cos((2 * Math.PI) / 180);
 const isCrumpled = (f: Facet) => f.foldPath.some((id) => id.startsWith('dmg-crumple'));
 /** Tints: control flaps (orange) and hover highlight (blue). */
 export type FacetTint = 'control' | 'hover' | 'controlHover';
@@ -124,6 +129,10 @@ export class PaperView {
     for (const b of graph.borders) pushSeg(border, this.facets.get(b.facet)!, b.seg[0], b.seg[1]);
     for (const l of graph.links) {
       if (l.kind !== 'crease') continue;
+      // paper that only twists a little across the link (springback held by a clip) has no crease
+      const fa = this.facets.get(l.a)!;
+      const fb = this.facets.get(l.b)!;
+      if (V.dot(facetNormal(fa), facetNormal(fb)) > FLAT_COS) continue;
       pushSeg(crease, this.facets.get(l.a)!, l.seg[0], l.seg[1]);
       pushSeg(crease, this.facets.get(l.b)!, l.seg[0], l.seg[1]);
     }
