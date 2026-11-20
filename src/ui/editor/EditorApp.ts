@@ -26,6 +26,10 @@ import { CutTool } from './CutTool';
 import { ClipTool } from './ClipTool';
 import type { SnapKind } from './Snapping';
 import { ViewBall } from './ViewBall';
+import { snapToRightAngles } from './rotationSnap';
+
+/** The 360 ball snaps to straight/flat 90° orientations within this angle. */
+const BALL_SNAP_DEG = 3;
 import { detectOrientation } from '../../core/paper/orientation';
 import { cutIsSelfMirror, foldIsSelfMirror, mirrorCut, mirrorFold } from '../../core/paper/symmetry';
 import { symmetryOf } from '../../render/modelCache';
@@ -53,6 +57,8 @@ export class EditorApp implements ToolContext {
   private readonly physicsOverlay = new PhysicsOverlay();
   private readonly physics: PhysicsPanel;
   private readonly viewBall: ViewBall;
+  /** Unsnapped orientation accumulated while dragging the ball (the shown one may be snapped). */
+  private ballRaw: THREE.Quaternion | null = null;
   private ghost: THREE.Object3D | null = null;
   private preview: PaperModel | null = null;
   private shownModel: PaperModel | null = null;
@@ -91,12 +97,20 @@ export class EditorApp implements ToolContext {
       $('view-ball'),
       stage.camera,
       (q) => {
-        // follow the ball directly (no easing while dragging)
-        this.viewTarget.premultiply(q).normalize();
-        this.viewQ.premultiply(q).normalize();
+        // follow the ball directly (no easing while dragging); snap to straight/flat near 90° steps
+        if (!this.ballRaw) this.ballRaw = this.viewTarget.clone();
+        this.ballRaw.premultiply(q).normalize();
+        const s = snapToRightAngles(this.ballRaw, this.uprightQuat(), BALL_SNAP_DEG);
+        this.viewTarget.copy(s.q);
+        this.viewQ.copy(s.q);
+        this.viewBall.setSnapped(s.snapped);
       },
       // upright: nose away from the player, centre fold down (a flat sheet simply lies flat)
       () => this.showUpright(),
+      () => {
+        this.ballRaw = null;
+        this.viewBall.setSnapped(false);
+      },
     );
     this.noseArrow = new THREE.ArrowHelper(new THREE.Vector3(1, 0, 0), new THREE.Vector3(), 0.04, 0xffd34d, 0.012, 0.008);
     this.root.add(this.noseArrow);
@@ -423,12 +437,17 @@ export class EditorApp implements ToolContext {
 
   /** Rotate the view so the design's nose points away from the player and its "up" is up. */
   private showUpright() {
+    this.viewTarget.copy(this.uprightQuat());
+  }
+
+  /** View rotation that shows the design upright (nose along +X away from the player, up = up). */
+  private uprightQuat(): THREE.Quaternion {
     const { nose, up } = this.history.meta.orientation;
     const x = new THREE.Vector3(...nose).normalize();
     const y = new THREE.Vector3(...up).projectOnPlane(x).normalize();
     const z = new THREE.Vector3().crossVectors(x, y);
     const toModel = new THREE.Matrix4().makeBasis(x, y, z); // world axes → model axes
-    this.viewTarget.setFromRotationMatrix(toModel.transpose());
+    return new THREE.Quaternion().setFromRotationMatrix(toModel.transpose());
   }
 
   /** Hand the committed model over to the throw mode. */

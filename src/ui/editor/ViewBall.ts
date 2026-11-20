@@ -20,6 +20,7 @@ export class ViewBall {
   private miniHolder = new THREE.Group();
   private model: PaperModel | null = null;
   private noseMarker: THREE.Mesh;
+  private ringMat = new THREE.LineBasicMaterial({ color: '#c9d6ea', transparent: true, opacity: 0.35 });
   private dragging = false;
   private last = new THREE.Vector3();
 
@@ -31,6 +32,8 @@ export class ViewBall {
     private rotate: (q: THREE.Quaternion) => void,
     /** Reset to the upright view. */
     private reset: () => void,
+    /** The drag ended. */
+    private onEnd: () => void = () => {},
   ) {
     this.renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
@@ -67,9 +70,7 @@ export class ViewBall {
     ring('z', 0);
     const geo = new THREE.BufferGeometry();
     geo.setAttribute('position', new THREE.Float32BufferAttribute(rings, 3));
-    this.spin.add(
-      new THREE.LineSegments(geo, new THREE.LineBasicMaterial({ color: '#c9d6ea', transparent: true, opacity: 0.35 })),
-    );
+    this.spin.add(new THREE.LineSegments(geo, this.ringMat));
     // nose marker (+X) on the ball
     this.noseMarker = new THREE.Mesh(new THREE.SphereGeometry(0.07, 16, 12), new THREE.MeshBasicMaterial({ color: '#ffb020' }));
     this.spin.add(this.noseMarker);
@@ -111,8 +112,12 @@ export class ViewBall {
       if (e.button !== 0) return;
       e.preventDefault();
       e.stopPropagation();
-      el.setPointerCapture(e.pointerId);
       this.dragging = true;
+      try {
+        el.setPointerCapture(e.pointerId);
+      } catch {
+        /* capture is a convenience (keeps the drag when leaving the ball) */
+      }
       this.last = this.ballPoint(e);
       el.classList.add('grabbing');
     });
@@ -129,8 +134,9 @@ export class ViewBall {
     const end = (e: PointerEvent) => {
       if (!this.dragging) return;
       this.dragging = false;
-      el.releasePointerCapture(e.pointerId);
+      if (el.hasPointerCapture(e.pointerId)) el.releasePointerCapture(e.pointerId);
       el.classList.remove('grabbing');
+      this.onEnd();
     };
     el.addEventListener('pointerup', end);
     el.addEventListener('pointercancel', end);
@@ -139,6 +145,12 @@ export class ViewBall {
       this.reset();
     });
     el.addEventListener('contextmenu', (e) => e.preventDefault());
+  }
+
+  /** Highlight the rings while the model is snapped to a 90° orientation. */
+  setSnapped(on: boolean) {
+    this.ringMat.color.set(on ? '#5fe08a' : '#c9d6ea');
+    this.ringMat.opacity = on ? 0.85 : 0.35;
   }
 
   /** Draw the ball for the current view rotation and model. */

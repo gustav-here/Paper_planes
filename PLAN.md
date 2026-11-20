@@ -648,3 +648,5 @@ Resultat med standardkonfigurationen (släpp från 10 m, olika kastfarter):
   - **360-boll** (`ui/editor/ViewBall.ts`) nere till vänster i vikläget. Dra i den så snurrar
     modellen fritt (arcball i skärmrymd) och följer musen. Bollen visar en miniatyr av modellen och
     nosen (orange prick). Dubbelklick ställer planet rättvänt igen.
+    Bollen rastar in i 90°-lägen inom 3° (24 lägen relativt planets rättvända läge, så att
+    pappret ligger exakt platt eller rakt). Ringarna lyser grönt när modellen är inrastad.
