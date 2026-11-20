@@ -615,3 +615,61 @@ kbd {
   color: var(--muted);
   pointer-events: none;
 }
+
+.aim-panel .mode-info,
+.result-card .mode-info {
+  padding: 6px 8px;
+  border-radius: 6px;
+  background: rgba(91, 156, 255, 0.14);
+  font-size: 12.5px;
+  line-height: 1.45;
+}
+
+.aim-panel .mode-info:empty,
+#aim-controls:empty {
+  display: none;
+}
+
+.result-card .board {
+  margin: 0;
+  padding-left: 18px;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.result-card .board li {
+  margin: 2px 0;
+}
+
+.result-card .board li.me {
+  color: var(--ok);
+}
+
+.result-card .board button {
+  padding: 1px 6px;
+  font-size: 11px;
+  margin-left: 6px;
+}
+
+.result-card .verify {
+  margin: 0;
+  font-weight: 600;
+}
+
+.result-card .verify.ok {
+  color: var(--ok);
+}
+
+.result-card .verify.bad {
+  color: var(--err);
+}
+
+button.warn-chip {
+  background: rgba(232, 176, 74, 0.18);
+  border-color: var(--warn);
+  color: #ffd58a;
+}
+
+button.warn-chip[hidden] {
+  display: none;
+}

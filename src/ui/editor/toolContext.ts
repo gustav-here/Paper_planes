@@ -52,6 +52,10 @@ export interface ToolContext {
   /** Automatic see-through paper (e.g. when a mirrored fold is hidden behind the paper). */
   setAutoXRay(on: boolean): void;
   setGhost(obj: import('three').Object3D | null): void;
+  /** Highlight facets under the cursor (null = none). */
+  setHoverFacets(ids: number[] | null): void;
+  /** Mark/unmark a fold op as a control flap. */
+  toggleControl(opId: string): void;
   highlightClip(id: string | null): void;
 }
 

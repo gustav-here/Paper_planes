@@ -29,6 +29,8 @@ export interface FoldOp {
   pick?: Vec3;
   /** Also apply the mirror-image fold (sheet symmetry). */
   mirror?: boolean;
+  /** The paper moved by this fold is a movable control flap in flight (stage 5). */
+  control?: boolean;
 }
 
 export interface CutOp {
@@ -69,6 +71,8 @@ export interface DesignFile {
   paper: PaperSpec;
   /** Body axes in model space (used from stage 2/3 on). */
   orientation: { nose: Vec3; up: Vec3 };
+  /** Simulate the paper as flexible (hinged panels) instead of one rigid body (stage 6). */
+  flexible?: boolean;
   ops: Op[];
 }
 
@@ -98,6 +102,7 @@ function checkOp(o: unknown, i: number): Op {
       if (!isNum(op.angleDeg) || op.angleDeg <= 0 || op.angleDeg > 180) fail(`ops[${i}].angleDeg out of range`);
       if (!['all', 'top', 'bottom', 'flap'].includes(op.scope as string)) fail(`ops[${i}].scope invalid`);
       if (op.scope === 'flap' && !isVec(op.pick, 3)) fail(`ops[${i}].pick required for scope flap`);
+      if (op.control !== undefined && typeof op.control !== 'boolean') fail(`ops[${i}].control must be boolean`);
       return op as unknown as FoldOp;
     }
     case 'cut': {
@@ -148,6 +153,7 @@ export function validateDesign(obj: unknown): DesignFile {
     name: typeof d.name === 'string' ? d.name : 'Namnlös',
     paper: { widthM: paper.widthM as number, heightM: paper.heightM as number, gsm: paper.gsm as number },
     orientation: { nose: orient.nose as Vec3, up: orient.up as Vec3 },
+    flexible: d.flexible === true,
     ops,
   };
 }

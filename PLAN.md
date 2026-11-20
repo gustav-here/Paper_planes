@@ -1,6 +1,6 @@
 # Pappersflygplan – plan
 
-Status: **godkänd. Etapp 1–3 klara** (se §14–16 för avvikelser mot planen). Nästa: senare etapper (§11).
+Status: **Etapp 1–6 klara** (se §14–19). Planens senare etapper (§11) är byggda.
 
 ## 0. Grundprincip
 
@@ -650,3 +650,58 @@ Resultat med standardkonfigurationen (släpp från 10 m, olika kastfarter):
     nosen (orange prick). Dubbelklick ställer planet rättvänt igen.
     Bollen rastar in i 90°-lägen inom 3° (24 lägen relativt planets rättvända läge, så att
     pappret ligger exakt platt eller rakt). Ringarna lyser grönt när modellen är inrastad.
+  - **Rutat papper** (kryssruta längst ned i Vik-rutan): rutor på bredd/10, alltså 21 mm på A4,
+    linjerade efter mittlinjen och överkanten. Heldragna 1 px-linjer, och varje ruta är delad i fyra
+    med streckade linjer. Rutnätet ritas i arkrum genom varje facett och följer därför alla veck och
+    lager, även i kastläget. Valet sparas per webbläsare.
+
+## 17. Etapp 4: tävlingslägen
+
+- Lägen (`core/game/competition.ts`, ren och deterministisk): **Fritt kast**, **Längst flygtid**,
+  **Längst distans** och **Precision**. Precision har ett mål 3–10 m bort, inom ±15° från rakt fram,
+  och mäter avståndet från första nedslaget till målet i cm. Varje runda har tre kast och det bästa
+  räknas.
+- Topplista per läge, topp 10 i localStorage. Varje post sparar allt som behövs för att spela upp
+  kastet exakt: designen inklusive skador, kastparametrar, styrinput per fysiksteg och målet.
+  **▶ Spela upp** kör kastet igen och visar "✓ Verifierat" när resultatet blir bitidentiskt.
+- Gränssnitt: lägesväljare i kastläget, mål på golvet, rundinformation i siktpanelen samt
+  resultat och topplista i resultatkortet.
+
+## 18. Etapp 5: klaffar
+
+- Verktyget **Klaff** (K) i vikläget: klicka på en vikt flik så blir vecket som vek den en
+  klaff (`FoldOp.control`). Speglade veck ger ett par. Klaffar visas orange.
+- Fysiken lägger varken till krafter eller specialregler. Klaffytan vrids runt sitt eget veck,
+  och samma aeromodell (`SurfacePose`) ger effekten. Gångjärnet räknas ut ur geometrin, och var
+  klaffen sitter avgör vad den gör: bakom tyngdpunkten blir den höjdroder, framför blir den canard
+  och vid sidan skevroder. Ett speglat par blir alltså elevoner.
+- Styrning med ↑↓ (höjd) och ←→ (skevning), ±25° med fullt utslag på 0,2 s (spelarens val).
+  Styrinputen registreras per fysiksteg (`ControlTrack`), så kast med styrning kan spelas upp exakt.
+- Kastläget ritar planet som paneler som rör sig var för sig (`Simulator.panelPoses`).
+
+## 19. Etapp 6: flexibla veck och hållfasthet
+
+- Valet **Flexibelt papper** finns i vikläget och sparas i designen (`DesignFile.flexible`).
+  Stelt är standard, och valideringstesterna körs med stel modell.
+- **Paneler** (`physics/panels.ts`): papper som inte kan böjas i modellen, det vill säga facetter
+  förenade av platta sömmar eller 180°-veck, lager som ligger på varandra och lager som ett gem
+  klämmer. Övriga veck blir **gångjärn** med pappersveckets styvhet, 0,08 N·m/rad per meter veck
+  och lager, ungefär motsvarande D ≈ Et³/12 för 80 g/m². Om gångjärnen bildar en loop slås
+  panelerna ihop.
+- **Flerkroppsmodell** (`physics/multibody.ts`) i reducerade koordinater: grundkroppen plus en
+  vinkel per gångjärn. Massmatrisen är Σ Jᵀ M J, med pappersmassa och tilläggsmassa per panel,
+  och den innehåller bias- och gyrotermer. Luftkrafterna kommer från samma elementmodell, med varje
+  panels ytor positionerade. Papperet är så lätt att luftdämpningen (2–3 ms) är snabbare än
+  tidssteget. Därför används **linjärt implicit Euler**: luftkraftens jakobian mot gångjärnens
+  vinkelhastigheter (finita differenser) och veckens fjädrar och dämpning behandlas implicit. Med
+  mycket styva veck blir resultatet detsamma som för den stela modellen (test).
+- Klaffar i den flexibla modellen är gångjärn som drivs av en servofjäder mot kommandot.
+- **Skador** (spelarens val: realistiskt, och de ligger kvar tills planet viks om):
+  - Skrynkling: ett nedslag över 4,5 m/s, mätt som normalfarten i kontaktpunkten, viker papperet
+    vid kontaktpunkten. Det gäller även stelt papper.
+  - Plastisk böjning: ett veck som böjs mer än 15° från vilovinkeln får en bestående vinkeländring.
+  - Rivning: ett snitts ände på ett hårt belastat veck, eller nära ett hårt nedslag, rivs vidare.
+  - Skadorna blir vanliga operationer (`physics/damage.ts`), alltså veck och snitt efter
+    spelarens egna. Ett skadat plan är fortfarande bara papper, och samma fysik flyger det.
+  - Kastläget flyger det skadade planet från nästa kast. Vikläget visar "⚠ Skadat (n) · Reparera",
+    och skadorna försvinner vid nästa vikning, ångra eller laddning.

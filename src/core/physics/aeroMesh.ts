@@ -29,6 +29,8 @@ export interface AeroSurface {
   elementCount: number;
   /** Surfaces (including this one) whose planes are close enough to form one lifting system. */
   partners: number[];
+  /** Grouping tag of its facets (control flap / panel index), −1 if untagged. */
+  tag: number;
 }
 
 export interface AeroElement {
@@ -100,26 +102,34 @@ function robust<T, R>(op: (g: T[]) => R, geoms: T[]): R {
   throw last;
 }
 
-function groupByPlane(facets: Facet[]): Facet[][] {
-  const groups: { n: Vec3; d: number; fs: Facet[] }[] = [];
+function groupByPlane(facets: Facet[], tagOf: (f: Facet) => number): { fs: Facet[]; tag: number }[] {
+  const groups: { n: Vec3; d: number; tag: number; fs: Facet[] }[] = [];
   for (const f of facets) {
     const n = canonicalNormal(facetNormal(f));
     const d = V.dot(n, facetVertices(f)[0]);
-    const g = groups.find((x) => parallelNormals(x.n, n) && Math.abs(x.d - d) < 1e-7);
+    const tag = tagOf(f);
+    const g = groups.find((x) => x.tag === tag && parallelNormals(x.n, n) && Math.abs(x.d - d) < 1e-7);
     if (g) g.fs.push(f);
-    else groups.push({ n, d, fs: [f] });
+    else groups.push({ n, d, tag, fs: [f] });
   }
-  return groups.map((g) => g.fs);
+  return groups.map((g) => ({ fs: g.fs, tag: g.tag }));
 }
 
 /**
  * Build aero surfaces and square-grid elements from the folded model.
  * @param com centre of mass (model space); output is relative to it.
  */
-export function buildAeroMesh(model: PaperModel, com: Vec3, elementSize: number, liftingSystemAngleDeg: number): AeroMesh {
+export function buildAeroMesh(
+  model: PaperModel,
+  com: Vec3,
+  elementSize: number,
+  liftingSystemAngleDeg: number,
+  /** Facets with different tags never merge into one surface (they can move independently). */
+  tags?: Map<number, number>,
+): AeroMesh {
   const surfaces: AeroSurface[] = [];
   const elements: AeroElement[] = [];
-  for (const group of groupByPlane(model.facets)) {
+  for (const { fs: group, tag } of groupByPlane(model.facets, (f) => tags?.get(f.id) ?? -1)) {
     const n = canonicalNormal(facetNormal(group[0]));
     let e1 = V.rejectFrom([1, 0, 0], n);
     if (V.length(e1) < 0.3) e1 = V.rejectFrom([0, 0, 1], n);
@@ -196,6 +206,7 @@ export function buildAeroMesh(model: PaperModel, com: Vec3, elementSize: number,
       firstElement,
       elementCount: elements.length - firstElement,
       partners: [],
+      tag,
     });
   }
   const cosLim = Math.cos((liftingSystemAngleDeg * Math.PI) / 180);

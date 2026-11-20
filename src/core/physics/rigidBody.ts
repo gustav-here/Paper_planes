@@ -6,7 +6,7 @@ import type { Vec3 } from '../math/vec3';
 import type { Quat } from '../math/quat';
 import type { Airframe } from './airframe';
 import { evaluateAero } from './aeroModel';
-import type { AeroCache, AeroDebug } from './aeroModel';
+import type { AeroCache, AeroDebug, SurfacePose } from './aeroModel';
 import type { PhysicsConfig } from './config';
 
 /** 6-DOF state. Position/orientation in the world, velocities in the body frame. */
@@ -43,10 +43,11 @@ export function derivative(
   cfg: PhysicsConfig,
   cache: AeroCache,
   debug?: AeroDebug,
+  poses?: (SurfacePose | null)[],
 ): Derivative {
   const q = Q.normalize(s.q);
   const R = Q.toMat3(q);
-  const aero = evaluateAero(af, s.v, s.w, cfg.aero, cfg.rho, cache, debug);
+  const aero = evaluateAero(af, s.v, s.w, cfg.aero, cfg.rho, cache, { debug, poses });
   const gWorld: Vec3 = [0, -af.mass * cfg.g, 0];
   const gBody = M3.mulVec(M3.transpose(R), gWorld);
 

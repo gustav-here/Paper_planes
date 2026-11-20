@@ -21,10 +21,23 @@ export interface AddedMassInfo {
  * with the low-aspect-ratio correction κ(AR) = AR/√(1+AR²).
  * Only the normal direction gets added mass (a thin plate slides edgewise freely).
  */
-export function computeAddedMass(mesh: AeroMesh, rho: number, scale: number, stripWidth: number): AddedMassInfo {
+export function computeAddedMass(
+  mesh: AeroMesh,
+  rho: number,
+  scale: number,
+  stripWidth: number,
+  /** Only these surfaces (default: all). */
+  only?: Set<number>,
+  /** Reference point for the rotational coupling (default: the body origin). */
+  origin: Vec3 = [0, 0, 0],
+): AddedMassInfo {
   const MA = zeros(6);
   const perSurface: number[] = [];
   for (const s of mesh.surfaces) {
+    if (only && !only.has(s.id)) {
+      perSurface.push(0);
+      continue;
+    }
     const els = mesh.elements.slice(s.firstElement, s.firstElement + s.elementCount);
     // principal axes of the planform (area second moments in plane coordinates)
     let A = 0;
@@ -71,7 +84,7 @@ export function computeAddedMass(mesh: AeroMesh, rho: number, scale: number, str
     let total = 0;
     for (const st of strips.values()) {
       const chord = st.area / stripWidth;
-      const r = V.scale(st.c, 1 / st.area);
+      const r = V.sub(V.scale(st.c, 1 / st.area), origin);
       const m = (kappa * rho * Math.PI * chord * chord * stripWidth) / 4;
       const J = (kappa * rho * Math.PI * chord ** 4 * stripWidth) / 128;
       total += m;

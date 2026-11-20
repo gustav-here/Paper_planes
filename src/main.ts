@@ -27,11 +27,13 @@ const flight: FlightMode = new FlightMode(stage, loop.stepper, () => {
   editor.active = true;
 });
 
-editor.onFly = (model, design) => {
+flight.onDamage = (ops) => editor.addDamage(ops);
+
+editor.onFly = (design, gridPaper) => {
   editor.active = false;
   document.body.classList.add('mode-flight');
   stage.setView(flight.view);
-  flight.enter(model, design);
+  flight.enter(design, gridPaper);
 };
 
 loop.start();

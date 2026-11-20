@@ -1,13 +1,11 @@
 import * as THREE from 'three';
 import * as V from '../core/math/vec3';
-import * as Q from '../core/math/quat';
 import type { Vec3 } from '../core/math/vec3';
-import type { Quat } from '../core/math/quat';
 import type { PaperModel } from '../core/paper/model';
 import { resolveClip } from '../core/paper/clips';
-import type { Airframe } from '../core/physics/airframe';
-import type { AeroDebug } from '../core/physics/aeroModel';
 import type { FlightEvent } from '../core/physics/simulation';
+import type { PanelPose } from '../core/physics/simulator';
+import type { Target } from '../core/game/competition';
 import { PaperView } from './PaperMesh';
 import { createClipObject } from './ClipMesh';
 import { createTextSprite, disposeSprite } from './TextSprite';
@@ -73,11 +71,12 @@ class SegmentSet {
  * ground trails, impact/rest markers and the debug overlay (CoM, velocity, per-element forces).
  */
 export class FlightView {
-  /** World pose of the body frame (origin = CoM). */
+  /** One group per render panel, placed model → world by the simulation. */
   readonly plane = new THREE.Group();
-  private modelGroup = new THREE.Group();
-  private paper = new PaperView();
-  private clips = new THREE.Group();
+  private panelGroups: THREE.Group[] = [];
+  private papers: PaperView[] = [];
+  private gridOn = false;
+  private targetGroup = new THREE.Group();
   private debug = new THREE.Group();
   private lift = new SegmentSet('#3ddc84', 4000);
   private drag = new SegmentSet('#ff5a5f', 4000);
@@ -87,12 +86,10 @@ export class FlightView {
   private ground = new Trail('#f08c2e');
   private markers = new THREE.Group();
   private sprites: THREE.Sprite[] = [];
-  private af: Airframe | null = null;
+  private forceScale = 1;
 
   constructor(readonly scene: THREE.Scene) {
-    this.plane.add(this.modelGroup);
-    this.modelGroup.add(this.paper.group, this.clips);
-    scene.add(this.plane, this.air.line, this.ground.line, this.markers, this.debug);
+    scene.add(this.plane, this.air.line, this.ground.line, this.markers, this.debug, this.targetGroup);
     this.vel = new THREE.ArrowHelper(new THREE.Vector3(1, 0, 0), new THREE.Vector3(), 0.5, 0xffd34d, 0.06, 0.035);
     this.vel.traverse((o) => {
       const m = o as THREE.Mesh;
@@ -105,30 +102,90 @@ export class FlightView {
     this.debug.visible = false;
   }
 
-  setAirframe(model: PaperModel, af: Airframe) {
-    this.af = af;
-    this.paper.update(model);
-    this.modelGroup.position.set(-af.com[0], -af.com[1], -af.com[2]);
-    for (const c of [...this.clips.children]) this.clips.remove(c);
+  /**
+   * Build the plane from render panels (facet id lists): each panel is drawn as its own
+   * sub-model so flaps and flexing wings can move independently.
+   */
+  setModel(model: PaperModel, panels: number[][], mass: number, elementCount: number) {
+    for (const g of this.panelGroups) this.plane.remove(g);
+    for (const p of this.papers) p.dispose();
+    this.panelGroups = [];
+    this.papers = [];
+    const owner = new Map<number, number>();
+    panels.forEach((ids, i) => ids.forEach((id) => owner.set(id, i)));
+    panels.forEach((ids) => {
+      const g = new THREE.Group();
+      const pv = new PaperView();
+      const set = new Set(ids);
+      pv.update({ ...model, facets: model.facets.filter((f) => set.has(f.id)), clips: [] });
+      pv.setGrid(this.gridOn);
+      g.add(pv.group);
+      this.plane.add(g);
+      this.panelGroups.push(g);
+      this.papers.push(pv);
+    });
     for (const clip of model.clips) {
       const rc = resolveClip(model, clip);
-      if (rc) this.clips.add(createClipObject(model, rc));
+      if (!rc) continue;
+      const panel = rc.clamped.map((id) => owner.get(id)).find((x) => x !== undefined) ?? 0;
+      this.panelGroups[panel]?.add(createClipObject(model, rc));
     }
+    // an element carrying its share of the weight gets a 3 cm arrow
+    this.forceScale = (0.03 * Math.max(elementCount, 1)) / (mass * 9.81);
   }
 
-  setPose(x: Vec3, q: Quat) {
-    this.plane.position.set(x[0], x[1], x[2]);
-    this.plane.quaternion.set(q[0], q[1], q[2], q[3]);
+  setGrid(on: boolean) {
+    this.gridOn = on;
+    for (const p of this.papers) p.setGrid(on);
+  }
+
+  setPanelPoses(poses: PanelPose[]) {
+    poses.forEach((p, i) => {
+      const g = this.panelGroups[i];
+      if (!g) return;
+      g.position.set(p.t[0], p.t[1], p.t[2]);
+      g.quaternion.set(p.q[0], p.q[1], p.q[2], p.q[3]);
+    });
+  }
+
+  /** Precision target: rings on the floor and a flag. */
+  setTarget(t: Target | null) {
+    for (const c of [...this.targetGroup.children]) {
+      this.targetGroup.remove(c);
+      c.traverse((o) => (o as THREE.Mesh).geometry?.dispose());
+    }
+    if (!t) return;
+    const colors = ['#e0645a', '#ffffff', '#e0645a'];
+    t.rings.forEach((r, i) => {
+      const inner = i === 0 ? 0 : t.rings[i - 1];
+      const m = new THREE.Mesh(
+        new THREE.RingGeometry(inner, r, 64),
+        new THREE.MeshBasicMaterial({ color: colors[i % colors.length], transparent: true, opacity: 0.85, side: THREE.DoubleSide }),
+      );
+      m.rotation.x = -Math.PI / 2;
+      m.position.set(t.x, 0.004 + i * 0.0005, t.z);
+      this.targetGroup.add(m);
+    });
+    const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.01, 0.01, 1.2, 8), new THREE.MeshBasicMaterial({ color: '#ffffff' }));
+    pole.position.set(t.x, 0.6, t.z);
+    const label = createTextSprite(`Mål ${Math.hypot(t.x, t.z).toFixed(1).replace('.', ',')} m`, {
+      height: 0.05,
+      color: '#ffffff',
+      background: 'rgba(224,100,90,0.9)',
+      screenSpace: true,
+    });
+    label.center.set(0.5, 0);
+    label.position.set(t.x, 1.25, t.z);
+    this.targetGroup.add(pole, label);
   }
 
   setDebugVisible(on: boolean) {
     this.debug.visible = on;
   }
 
-  /** Update debug arrows for the given pose, world velocity and per-element forces (body frame). */
-  updateDebug(x: Vec3, q: Quat, velWorld: Vec3, forces: AeroDebug | null) {
-    if (!this.debug.visible || !this.af) return;
-    const af = this.af;
+  /** Update debug arrows: reference point, world velocity and per-element forces (world frame). */
+  updateDebug(x: Vec3, velWorld: Vec3, forces: { pos: Vec3[]; lift: Vec3[]; drag: Vec3[] } | null) {
+    if (!this.debug.visible) return;
     this.com.position.set(...x);
     const speed = V.length(velWorld);
     if (speed > 1e-3) {
@@ -138,17 +195,13 @@ export class FlightView {
       this.vel.setLength(Math.max(0.1 * speed, 0.08), 0.06, 0.035);
     } else this.vel.visible = false;
     if (!forces) return;
-    // an element carrying its share of the weight gets a 3 cm arrow
-    const k = (0.03 * af.mesh.elements.length) / (af.mass * 9.81);
-    const qn = Q.normalize(q);
+    const k = this.forceScale;
     const L: [Vec3, Vec3][] = [];
     const D: [Vec3, Vec3][] = [];
-    af.mesh.elements.forEach((e, i) => {
-      const p = V.add(x, Q.rotate(qn, e.center));
-      const l = forces.lift[i];
-      const d = forces.drag[i];
-      if (l) L.push([p, V.add(p, V.scale(Q.rotate(qn, l), k))]);
-      if (d) D.push([p, V.add(p, V.scale(Q.rotate(qn, d), k))]);
+    forces.pos.forEach((p, i) => {
+      if (!p) return;
+      L.push([p, V.addScaled(p, forces.lift[i], k)]);
+      D.push([p, V.addScaled(p, forces.drag[i], k)]);
     });
     this.lift.set(L);
     this.drag.set(D);

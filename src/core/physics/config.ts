@@ -46,6 +46,38 @@ export interface GroundConfig {
   iterations: number;
 }
 
+/**
+ * Paper strength and stiffness ("realistic" setting chosen by the player). Damage is permanent
+ * until the plane is refolded.
+ */
+export interface PaperConfig {
+  /** Rotational stiffness of a single-layer crease per metre of crease (N·m/rad per m).
+   *  80 g/m² paper: bending stiffness D ≈ E t³/12 ≈ 2.5·10⁻⁴ N·m over a few-mm crease zone. */
+  creaseStiffnessPerM: number;
+  /** Structural damping of creases as a time constant (s): c = k·τ. */
+  creaseDampingS: number;
+  /** A crease bent further than this from its rest angle yields permanently (deg). */
+  creaseYieldDeg: number;
+  /** Control flaps are driven like a stiff servo spring: this many times the crease stiffness. */
+  servoStiffnessFactor: number;
+  /** Normal impact speed of a point on the floor above which the paper there crumples (m/s). */
+  crumpleSpeed: number;
+  /** Crumple depth (m) per m/s above the threshold, and its maximum. */
+  crumpleDepthPerMs: number;
+  crumpleMaxDepth: number;
+  /** Crumple bend (deg) per m/s above the threshold (max 90°). */
+  crumpleDegPerMs: number;
+  /** A cut end within this distance of a crumpling impact tears further (m). */
+  tearImpactRadius: number;
+  /** Crease moment per metre of crease above which a cut end on it tears (N·m/m). */
+  tearMomentPerM: number;
+  /** Tear length per unit excess (m per relative excess), and its maximum (m). */
+  tearLengthGain: number;
+  tearMaxLength: number;
+  /** Record damage at all (off = purely cosmetic is not offered; this switches it off entirely). */
+  damage: boolean;
+}
+
 export interface PhysicsConfig {
   /** Air density, ISA sea level (kg/m³). */
   rho: number;
@@ -68,6 +100,7 @@ export interface PhysicsConfig {
   addedMassScale: number;
   aero: AeroConfig;
   ground: GroundConfig;
+  paper: PaperConfig;
   /** Flight log sampling interval (s). */
   logInterval: number;
   /** Give up after this simulated time (s). */
@@ -103,19 +136,36 @@ export const DEFAULT_CONFIG: PhysicsConfig = {
     restTime: 0.5,
     iterations: 10,
   },
+  paper: {
+    creaseStiffnessPerM: 0.08,
+    creaseDampingS: 0.01,
+    creaseYieldDeg: 15,
+    servoStiffnessFactor: 20,
+    crumpleSpeed: 4.5,
+    crumpleDepthPerMs: 0.003,
+    crumpleMaxDepth: 0.02,
+    crumpleDegPerMs: 25,
+    tearImpactRadius: 0.015,
+    tearMomentPerM: 0.02,
+    tearLengthGain: 0.01,
+    tearMaxLength: 0.015,
+    damage: true,
+  },
   logInterval: 1 / 60,
   maxTime: 30,
 };
 
 /** Deep-merge partial overrides (for tests and the debug panel). */
-export function makeConfig(over: Partial<Omit<PhysicsConfig, 'aero' | 'ground'>> & {
+export function makeConfig(over: Partial<Omit<PhysicsConfig, 'aero' | 'ground' | 'paper'>> & {
   aero?: Partial<AeroConfig>;
   ground?: Partial<GroundConfig>;
+  paper?: Partial<PaperConfig>;
 } = {}): PhysicsConfig {
   return {
     ...DEFAULT_CONFIG,
     ...over,
     aero: { ...DEFAULT_CONFIG.aero, ...over.aero },
     ground: { ...DEFAULT_CONFIG.ground, ...over.ground },
+    paper: { ...DEFAULT_CONFIG.paper, ...over.paper },
   };
 }

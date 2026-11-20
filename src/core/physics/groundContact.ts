@@ -11,6 +11,8 @@ export interface ContactResult {
   touching: boolean;
   /** Largest approach speed resolved this step (m/s), for impact reporting. */
   impactSpeed: number;
+  /** The contact with that approach speed: body-frame point index and its world velocity. */
+  hardest: { index: number; velWorld: Vec3 } | null;
 }
 
 /** Penetration allowed without correction (m) and fraction corrected per step (Baumgarte). */
@@ -28,15 +30,15 @@ export function resolveGround(s: BodyState, af: Airframe, cfg: GroundConfig, dt:
   const q = Q.normalize(s.q);
   const qi = Q.conjugate(q);
   const nWorld: Vec3 = [0, 1, 0];
-  const active: { r: Vec3; depth: number; target: number; jn: number; jt: Vec3 }[] = [];
+  const active: { r: Vec3; index: number; depth: number; target: number; jn: number; jt: Vec3 }[] = [];
   let minY = Infinity;
-  for (const r of af.contacts) {
+  af.contacts.forEach((r, index) => {
     const y = s.x[1] + Q.rotate(q, r)[1];
     minY = Math.min(minY, y);
-    if (y > 1e-5) continue;
-    active.push({ r, depth: -y, target: 0, jn: 0, jt: [0, 0, 0] });
-  }
-  if (active.length === 0) return { touching: false, impactSpeed: 0 };
+    if (y > 1e-5) return;
+    active.push({ r, index, depth: -y, target: 0, jn: 0, jt: [0, 0, 0] });
+  });
+  if (active.length === 0) return { touching: false, impactSpeed: 0, hardest: null };
 
   const velAt = (r: Vec3) => Q.rotate(q, V.add(s.v, V.cross(s.w, r)));
   const applyImpulse = (r: Vec3, jWorld: Vec3) => {
@@ -54,12 +56,17 @@ export function resolveGround(s: BodyState, af: Airframe, cfg: GroundConfig, dt:
   };
 
   let impactSpeed = 0;
+  let hardest: ContactResult['hardest'] = null;
   for (const c of active) {
-    const vn = V.dot(velAt(c.r), nWorld);
+    const vel = velAt(c.r);
+    const vn = V.dot(vel, nWorld);
     const bounce = vn < 0 && -vn > cfg.restitutionThreshold ? -cfg.restitution * vn : 0;
     const push = (BAUMGARTE * Math.max(0, c.depth - SLOP)) / dt;
     c.target = Math.max(bounce, push);
-    if (vn < 0) impactSpeed = Math.max(impactSpeed, -vn);
+    if (vn < 0 && -vn > impactSpeed) {
+      impactSpeed = -vn;
+      hardest = { index: c.index, velWorld: vel };
+    }
   }
   for (let it = 0; it < cfg.iterations; it++) {
     for (const c of active) {
@@ -89,5 +96,5 @@ export function resolveGround(s: BodyState, af: Airframe, cfg: GroundConfig, dt:
   }
   // safety net for deep penetration only (hard impacts): never more than 1 mm into the floor
   if (minY < -0.001) s.x = [s.x[0], s.x[1] - minY - 0.001, s.x[2]];
-  return { touching: true, impactSpeed };
+  return { touching: true, impactSpeed, hardest };
 }

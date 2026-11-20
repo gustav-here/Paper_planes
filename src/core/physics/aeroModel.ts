@@ -1,4 +1,6 @@
 import * as V from '../math/vec3';
+import * as M3 from '../math/mat3';
+import type { Mat3 } from '../math/mat3';
 import type { Vec2 } from '../math/vec2';
 import type { Vec3 } from '../math/vec3';
 import type { Airframe } from './airframe';
@@ -77,9 +79,30 @@ export interface AeroResult {
 
 /** Optional per-element output for the debug overlay (body frame). */
 export interface AeroDebug {
+  /** Element centres (current position). */
+  pos?: Vec3[];
   lift: Vec3[];
   drag: Vec3[];
   alpha: number[];
+}
+
+/**
+ * Current placement of a surface relative to its rest geometry (body frame): a rigid motion
+ * p ↦ R·p + t, moving with extra velocity w × p + v0 relative to the body. Used for control
+ * flaps and for flexing panels; null/undefined = at rest.
+ */
+export interface SurfacePose {
+  R: Mat3;
+  t: Vec3;
+  w: Vec3;
+  v0: Vec3;
+}
+
+export interface AeroOptions {
+  debug?: AeroDebug;
+  poses?: (SurfacePose | null)[];
+  /** Filled with force and moment about the body origin per surface (body frame). */
+  perSurface?: { F: Vec3; T: Vec3 }[];
 }
 
 /** Recompute chord coordinates and aspect ratio of one surface for in-plane flow direction w2. */
@@ -162,14 +185,16 @@ export function evaluateAero(
   cfg: AeroConfig,
   rho: number,
   cache: AeroCache,
-  debug?: AeroDebug,
+  opts: AeroOptions = {},
 ): AeroResult {
+  const { debug, poses, perSurface } = opts;
   const force: Vec3 = [0, 0, 0];
   const torque: Vec3 = [0, 0, 0];
   const els = af.mesh.elements;
   const alphaS = cfg.alphaStallDeg * DEG;
   const cosCache = Math.cos(cfg.chordCacheDeg * DEG);
   if (debug) {
+    if (debug.pos) debug.pos.length = els.length;
     debug.lift.length = els.length;
     debug.drag.length = els.length;
     debug.alpha.length = els.length;
@@ -177,16 +202,25 @@ export function evaluateAero(
 
   for (const s of af.mesh.surfaces) {
     const c = cache.surfaces[s.id];
-    const n = s.normal;
+    const P = poses?.[s.id] ?? null;
+    const place = (p: Vec3): Vec3 => (P ? V.add(M3.mulVec(P.R, p), P.t) : p);
+    const velAt = (p: Vec3): Vec3 => {
+      const base = V.add(v, V.cross(w, p));
+      return P ? V.add(base, V.add(V.cross(P.w, p), P.v0)) : base;
+    };
+    const n = P ? M3.mulVec(P.R, s.normal) : s.normal;
+    let sF: Vec3 = [0, 0, 0];
+    let sT: Vec3 = [0, 0, 0];
     // in-plane direction of the air relative to the surface (air moves opposite to the plate)
-    const uc = V.add(v, V.cross(w, s.centroid));
+    const uc = velAt(place(s.centroid));
     const inPlane = V.negate(V.rejectFrom(uc, n));
     const ipl = V.length(inPlane);
     let uniform = false;
     if (ipl < 1e-6 * Math.max(V.length(uc), 1e-9) || ipl < 1e-9) {
       uniform = true;
     } else {
-      const w3 = V.scale(inPlane, 1 / ipl);
+      // chord geometry is evaluated in the surface's rest frame
+      const w3 = P ? M3.mulVec(M3.transpose(P.R), V.scale(inPlane, 1 / ipl)) : V.scale(inPlane, 1 / ipl);
       const w2: Vec2 = [V.dot(w3, s.e1), V.dot(w3, s.e2)];
       if (!c.dir || c.dir[0] * w2[0] + c.dir[1] * w2[1] < cosCache) updateSurfaceCache(af, s.id, w2, w3, c);
     }
@@ -197,7 +231,9 @@ export function evaluateAero(
     for (let i = 0; i < s.elementCount; i++) {
       const idx = s.firstElement + i;
       const e = els[idx];
-      const u = V.add(v, V.cross(w, e.center));
+      const center = place(e.center);
+      if (debug?.pos) debug.pos[idx] = center;
+      const u = velAt(center);
       const speed = V.length(u);
       if (speed < 1e-6) {
         if (debug) {
@@ -238,16 +274,21 @@ export function evaluateAero(
       force[0] += F[0];
       force[1] += F[1];
       force[2] += F[2];
-      const t = V.cross(e.center, F);
+      const t = V.cross(center, F);
       torque[0] += t[0];
       torque[1] += t[1];
       torque[2] += t[2];
+      if (perSurface) {
+        sF = V.add(sF, F);
+        sT = V.add(sT, t);
+      }
       if (debug) {
         debug.lift[idx] = L;
         debug.drag[idx] = D;
         debug.alpha[idx] = alpha;
       }
     }
+    if (perSurface) perSurface[s.id] = { F: sF, T: sT };
   }
   return { force, torque };
 }

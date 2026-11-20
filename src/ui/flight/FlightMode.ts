@@ -3,15 +3,24 @@ import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import * as V from '../../core/math/vec3';
 import * as Q from '../../core/math/quat';
 import type { Vec3 } from '../../core/math/vec3';
-import type { PaperModel } from '../../core/paper/model';
-import { buildAirframe } from '../../core/physics/airframe';
-import type { Airframe } from '../../core/physics/airframe';
+import type { DesignFile, Op } from '../../core/paper/ops';
+import { damageToOps } from '../../core/physics/damage';
 import { DEFAULT_CONFIG } from '../../core/physics/config';
 import { DEFAULT_LAUNCH, launchState } from '../../core/physics/launch';
 import type { LaunchParams } from '../../core/physics/launch';
-import { FlightSim } from '../../core/physics/simulation';
-import { cloneState } from '../../core/physics/rigidBody';
-import type { BodyState } from '../../core/physics/rigidBody';
+import { createSimulator, prepare } from '../../core/physics/factory';
+import type { Prepared } from '../../core/physics/factory';
+import type { PanelPose, Simulator } from '../../core/physics/simulator';
+import {
+  MODES,
+  bestScore,
+  formatScore,
+  isRoundOver,
+  newRound,
+  recordScore,
+  scoreFlight,
+} from '../../core/game/competition';
+import type { GameMode, LeaderEntry, Round } from '../../core/game/competition';
 import type { Stage, View } from '../../render/SceneSetup';
 import { createWorld } from '../../render/World';
 import type { World } from '../../render/World';
@@ -20,6 +29,7 @@ import type { FixedStepper } from '../../app/GameLoop';
 import { TimeSeriesPlot } from '../hud/TimeSeriesPlot';
 import { loadFlights, saveFlight } from '../hud/flightLogStore';
 import type { StoredFlight } from '../hud/flightLogStore';
+import { leaderboard, submit } from '../hud/leaderboardStore';
 
 type Phase = 'aim' | 'flying' | 'done';
 type CamMode = 'follow' | 'side' | 'free';
@@ -31,6 +41,7 @@ const fmt = (x: number, d = 2) => {
   return (Number(s) === 0 ? (0).toFixed(d) : s).replace('.', ',');
 };
 const AIM_KEY = 'paperplanes.aim.v1';
+const cfg = DEFAULT_CONFIG;
 
 interface Slider {
   key: keyof LaunchParams;
@@ -48,19 +59,26 @@ const SLIDERS: Slider[] = [
 ];
 
 /**
- * Throw mode: aim (speed, climb angle, heading, nose angle, release height), then free flight
- * stepped at the fixed physics rate, a following camera, debug overlays, graphs and results.
+ * Throw mode: aim, free flight at the fixed physics rate (rigid or flexible paper), control
+ * flaps on the arrow keys, competition rounds with a leaderboard, replays, debug overlays.
  */
 export class FlightMode {
   readonly camera = new THREE.PerspectiveCamera(50, 1, 0.01, 300);
   readonly view: View;
+  /** Called after a live flight with the damage it caused, as design ops (stage 6). */
+  onDamage: ((ops: Op[]) => void) | null = null;
+  /** The damaged plane, used from the next throw on. */
+  private pending: Prepared | null = null;
   private world: World;
   private controls: OrbitControls;
   private fv: FlightView;
-  private af: Airframe | null = null;
-  private designName = '';
-  private sim: FlightSim | null = null;
-  private prev: BodyState | null = null;
+  /** The player's plane (incl. damage), and what is currently flying (may be a replay). */
+  private mine: Prepared | null = null;
+  private current: Prepared | null = null;
+  private sim: Simulator | null = null;
+  private prevPoses: PanelPose[] = [];
+  private curPoses: PanelPose[] = [];
+  private prevPos: Vec3 = [0, 0, 0];
   private launch: LaunchParams = { ...DEFAULT_LAUNCH };
   private phase: Phase = 'aim';
   private cam: CamMode = 'follow';
@@ -72,6 +90,10 @@ export class FlightMode {
   private aimArrow: THREE.ArrowHelper;
   private lastTarget = new THREE.Vector3();
   private shownImpact = false;
+  private mode: GameMode = 'free';
+  private round: Round | null = null;
+  private replaying: LeaderEntry | null = null;
+  private keys = { up: false, down: false, left: false, right: false };
   active = false;
 
   constructor(
@@ -102,19 +124,21 @@ export class FlightMode {
 
   // ---------------------------------------------------------------- lifecycle
 
-  enter(model: PaperModel, design: { name: string; orientation: { nose: Vec3; up: Vec3 } }) {
+  /** Enter throw mode with a design (its ops already include any damage). */
+  enter(design: DesignFile, gridPaper = false) {
     this.active = true;
     this.controls.enabled = true;
-    this.designName = design.name;
-    $('fl-title').textContent = design.name;
+    this.fv.setGrid(gridPaper);
+    this.replaying = null;
     try {
-      this.af = buildAirframe(model, design.orientation, DEFAULT_CONFIG);
+      this.mine = prepare(design, cfg);
     } catch (e) {
-      this.af = null;
+      this.mine = null;
       $('aim-info').textContent = `Kunde inte bygga flygplanet: ${String(e)}`;
       return;
     }
-    this.fv.setAirframe(model, this.af);
+    this.use(this.mine);
+    this.startRound();
     this.toAim(true);
   }
 
@@ -125,10 +149,41 @@ export class FlightMode {
     this.setPaused(false);
   }
 
+  /** Show a prepared plane (the player's own or a replayed one). */
+  private use(p: Prepared) {
+    this.current = p;
+    const damaged = p.design.ops.filter((o) => o.id.startsWith('dmg-')).length;
+    $('fl-title').textContent = p.design.name + (p.design.flexible ? ' · flexibelt' : ' · stelt') + (damaged ? ` · skadat (${damaged})` : '');
+    const probe = createSimulator(p, cfg, this.launch);
+    this.fv.setModel(p.model, probe.panels, p.af.mass, p.af.mesh.elements.length);
+    $('aim-controls').innerHTML = p.af.controls.length
+      ? `Styr klaffarna med <kbd>↑</kbd><kbd>↓</kbd> (höjd) och <kbd>←</kbd><kbd>→</kbd> (skevning).`
+      : '';
+  }
+
+  private startRound() {
+    this.round = this.mode === 'free' ? null : newRound(this.mode, (Date.now() ^ (Math.random() * 1e9)) >>> 0);
+    this.fv.setTarget(this.round?.target ?? null);
+    this.updateModeInfo();
+  }
+
+  /** Switch to the damaged plane once the flight that damaged it is over. */
+  private applyPending() {
+    if (!this.pending) return;
+    this.mine = this.pending;
+    this.pending = null;
+    this.use(this.mine);
+  }
+
   private toAim(resetCamera: boolean) {
+    this.applyPending();
+    if (this.replaying && this.mine) {
+      this.replaying = null;
+      this.use(this.mine);
+      this.fv.setTarget(this.round?.target ?? null);
+    }
     this.phase = 'aim';
     this.sim = null;
-    this.prev = null;
     this.fv.clear();
     this.plot.clear();
     this.shownImpact = false;
@@ -136,14 +191,27 @@ export class FlightMode {
     $('aim-panel').classList.add('visible');
     this.aimArrow.visible = true;
     this.updateAimPose();
+    this.updateModeInfo();
     if (resetCamera) this.aimCamera();
     this.updateStats();
   }
 
-  private throwNow() {
-    if (!this.af) return;
-    this.sim = new FlightSim(this.af, DEFAULT_CONFIG, { ...this.launch });
-    this.prev = cloneState(this.sim.state);
+  private throwNow(replay: LeaderEntry | null = null) {
+    if (!replay) {
+      if (this.replaying && this.mine) {
+        this.replaying = null;
+        this.use(this.mine);
+        this.fv.setTarget(this.round?.target ?? null);
+      }
+      this.applyPending();
+    }
+    if (!this.current) return;
+    if (!replay && this.round && isRoundOver(this.round)) this.startRound();
+    const launch = replay ? replay.launch : { ...this.launch };
+    this.sim = createSimulator(this.current, cfg, launch, replay ? replay.inputs : undefined);
+    this.curPoses = this.sim.panelPoses();
+    this.prevPoses = this.curPoses;
+    this.prevPos = this.sim.position();
     this.fv.clear();
     this.plot.clear();
     this.nextSample = 0;
@@ -154,7 +222,20 @@ export class FlightMode {
     $('result-card').classList.remove('visible');
     this.stepper.reset();
     this.setPaused(false);
-    this.lastTarget.set(...this.sim.state.x);
+    this.lastTarget.set(...this.sim.position());
+  }
+
+  /** Replay a stored throw exactly (verifies its score). */
+  private replay(entry: LeaderEntry) {
+    try {
+      const p = prepare(entry.design, cfg);
+      this.replaying = entry;
+      this.use(p);
+      this.fv.setTarget(entry.target);
+      this.throwNow(entry);
+    } catch (e) {
+      alert(`Kunde inte spela upp kastet: ${String(e)}`);
+    }
   }
 
   // ---------------------------------------------------------------- simulation
@@ -162,14 +243,21 @@ export class FlightMode {
   /** One fixed physics step (called by the game loop at 240 Hz simulated time). */
   step() {
     if (!this.active || this.phase !== 'flying' || !this.sim) return;
-    this.prev = cloneState(this.sim.state);
-    this.sim.step();
-    const log = this.sim.log;
+    const sim = this.sim;
+    if (!this.replaying) {
+      const k = this.keys;
+      sim.controls.set(sim.stepIndex, (k.up ? 1 : 0) - (k.down ? 1 : 0), (k.right ? 1 : 0) - (k.left ? 1 : 0));
+    }
+    this.prevPoses = this.curPoses;
+    this.prevPos = sim.position();
+    sim.step();
+    this.curPoses = sim.panelPoses();
+    const log = sim.log;
     if (log.firstImpact && !this.shownImpact) {
       this.shownImpact = true;
       this.fv.markImpact(log.firstImpact);
     }
-    if (this.sim.done) this.finish();
+    if (sim.done) this.finish();
   }
 
   private finish() {
@@ -177,11 +265,29 @@ export class FlightMode {
     const log = sim.log;
     this.phase = 'done';
     if (log.rest) this.fv.markRest(log.rest, log.firstImpact);
+    if (this.replaying) {
+      this.showReplayResult(this.replaying);
+      return;
+    }
+    const events = sim.damage();
+    if (events.length && this.mine && this.current === this.mine) {
+      // damage stays with the plane (until it is refolded): fly the damaged plane from now on
+      const r = damageToOps(this.mine.model, events, this.mine.design.orientation.up, cfg.paper);
+      if (r.ops.length) {
+        const design: DesignFile = { ...this.mine.design, ops: [...this.mine.design.ops, ...r.ops] };
+        try {
+          this.pending = prepare(design, cfg);
+          this.onDamage?.(r.ops);
+        } catch {
+          this.pending = null;
+        }
+      }
+    }
     const flights = log.firstImpact
       ? saveFlight({
           date: new Date().toISOString(),
-          design: this.designName,
-          launch: { ...this.launch },
+          design: this.current?.design.name ?? '',
+          launch: { ...log.launch },
           distance: log.firstImpact.distance,
           time: log.firstImpact.t,
           impactSpeed: log.firstImpact.speed,
@@ -197,17 +303,18 @@ export class FlightMode {
   frame(_frameDt: number, alpha: number) {
     if (!this.active) return;
     let x: Vec3;
-    let q: Q.Quat;
-    if (this.sim && this.prev) {
+    if (this.sim) {
       const a = this.phase === 'flying' ? alpha : 1;
-      x = V.lerp(this.prev.x, this.sim.state.x, a);
-      q = Q.slerp(Q.normalize(this.prev.q), Q.normalize(this.sim.state.q), a);
-      this.fv.setPose(x, q);
+      const poses = this.curPoses.map((c, i) => {
+        const p = this.prevPoses[i] ?? c;
+        return { q: Q.slerp(Q.normalize(p.q), Q.normalize(c.q), a), t: V.lerp(p.t, c.t, a) };
+      });
+      this.fv.setPanelPoses(poses);
+      x = V.lerp(this.prevPos, this.sim.position(), a);
       this.consumeSamples();
-      if (this.debug) this.fv.updateDebug(x, q, this.sim.worldVelocity(), this.sim.debugForces());
+      if (this.debug) this.fv.updateDebug(x, this.sim.worldVelocity(), this.sim.debugForces());
     } else {
-      const p = this.fv.plane.position;
-      x = [p.x, p.y, p.z];
+      x = [0, this.launch.heightM, 0];
     }
     this.world.followLight(new THREE.Vector3(...x));
     this.updateCamera(x);
@@ -257,15 +364,29 @@ export class FlightMode {
   }
 
   private updateAimPose() {
-    if (!this.af) return;
-    const s = launchState(this.af, this.launch);
-    this.fv.setPose(s.x, s.q);
+    if (!this.current) return;
+    const s = launchState(this.current.af, this.launch);
+    const probe = createSimulator(this.current, cfg, this.launch);
+    this.fv.setPanelPoses(probe.panelPoses());
     const el = this.launch.elevationDeg * DEG;
     const f = this.headingDir();
     const dir = f.clone().multiplyScalar(Math.cos(el)).add(new THREE.Vector3(0, Math.sin(el), 0)).normalize();
     this.aimArrow.position.set(...s.x);
     this.aimArrow.setDirection(dir);
     this.aimArrow.setLength(0.25 + 0.12 * this.launch.speed, 0.12, 0.07);
+  }
+
+  private updateModeInfo() {
+    const el = $('aim-mode-info');
+    if (!this.round) {
+      el.innerHTML = '';
+      return;
+    }
+    const m = MODES[this.round.mode];
+    const n = this.round.scores.length;
+    const best = bestScore(this.round);
+    const target = this.round.target ? ` · mål ${fmt(Math.hypot(this.round.target.x, this.round.target.z), 1)} m bort` : '';
+    el.innerHTML = `<b>${m.name}</b>${target}<br>Kast ${Math.min(n + 1, m.attempts)} av ${m.attempts}${best !== null ? ` · bästa ${formatScore(this.round.mode, best)}` : ''}<br><span class="muted">${m.description}</span>`;
   }
 
   private updateStats() {
@@ -277,26 +398,27 @@ export class FlightMode {
     const s = this.sim.log.samples.at(-1)!;
     const dist = Math.hypot(s.pos[0], s.pos[2]);
     const phase = { flight: 'I luften', ground: 'På golvet', rest: 'Stilla', timeout: 'Tidsgräns' }[s.phase];
+    const defl = this.sim.deflectionsDeg();
     el.innerHTML = [
-      `<b>${phase}</b>${this.paused ? ' · pausad' : ''}${this.scale !== 1 ? ` · ${String(this.scale).replace('.', ',')}×` : ''}`,
+      `<b>${this.replaying ? 'Uppspelning · ' : ''}${phase}</b>${this.paused ? ' · pausad' : ''}${this.scale !== 1 ? ` · ${String(this.scale).replace('.', ',')}×` : ''}`,
       `Tid ${fmt(s.t)} s`,
       `Höjd ${fmt(Math.max(0, s.pos[1]))} m`,
       `Fart ${fmt(V.length(s.vel), 1)} m/s`,
       `Anfallsvinkel ${V.length(s.vel) > 0.3 ? `${fmt(s.alphaDeg, 0)}°` : '–'}`,
       `Stigning ${fmt(s.pitchDeg, 0)}°`,
       `Avstånd ${fmt(dist)} m`,
+      ...(defl.length ? [`Klaffar ${defl.map((d) => `${fmt(d, 0)}°`).join(' / ')}`] : []),
     ].join('<br>');
   }
 
+  // ---------------------------------------------------------------- results
+
   private showResult(flights: StoredFlight[]) {
-    const log = this.sim!.log;
-    const card = $('result-card');
+    const sim = this.sim!;
+    const log = sim.log;
     const imp = log.firstImpact;
     const rest = log.rest;
-    const best = flights.filter((f) => f.design === this.designName).reduce<StoredFlight | null>(
-      (b, f) => (!b || f.distance > b.distance ? f : b),
-      null,
-    );
+    const name = this.current?.design.name ?? '';
     const rows: string[] = imp
       ? [
           `<tr><th>Distans (nedslag)</th><td><b>${fmt(imp.distance)} m</b></td></tr>`,
@@ -308,27 +430,122 @@ export class FlightMode {
             : `<tr><th>Vilopunkt</th><td>– (tidsgräns)</td></tr>`,
         ]
       : [`<tr><td colspan="2">Planet landade aldrig inom tidsgränsen.</td></tr>`];
-    const recent = flights
-      .slice(0, 6)
-      .map(
-        (f) =>
-          `<li><span>${escapeHtml(f.design)}</span><span>${fmt(f.distance)} m · ${fmt(f.time)} s · ${fmt(f.launch.speed, 1)} m/s</span></li>`,
-      )
-      .join('');
-    card.innerHTML = `
+    const dmg = sim.damage();
+    const damageNote = dmg.length
+      ? `<p class="verify bad">Planet skadades: ${dmg.map((d) => ({ crumple: 'skrynklat', bend: 'böjt veck', tear: 'rivet' })[d.kind]).join(', ')}. Skadan finns kvar tills du viker om.</p>`
+      : '';
+
+    let modeHtml = '';
+    let again = 'Kasta igen (R)';
+    if (this.round) {
+      const score = scoreFlight(this.round.mode, log, this.round.target);
+      this.round = recordScore(this.round, score);
+      const m = MODES[this.round.mode];
+      const best = bestScore(this.round);
+      let rankHtml = '';
+      if (isRoundOver(this.round)) {
+        again = 'Ny runda (R)';
+        if (best !== null && this.mine) {
+          const bestIdx = this.round.scores.indexOf(best);
+          const entry: LeaderEntry = {
+            mode: this.round.mode,
+            score: best,
+            designName: name,
+            date: new Date().toISOString(),
+            design: this.mine.design,
+            // only the best throw of the round is stored for replay
+            launch: bestIdx === this.round.scores.length - 1 ? { ...log.launch } : this.bestLaunch ?? { ...log.launch },
+            inputs: bestIdx === this.round.scores.length - 1 ? [...sim.controls.inputs] : this.bestInputs ?? [],
+            target: this.round.target,
+          };
+          const rank = submit(entry);
+          rankHtml = rank >= 0 ? `<br><b>Plats ${rank + 1} på topplistan!</b>` : '';
+        }
+      } else {
+        again = 'Nästa kast (R)';
+      }
+      // remember the best throw so far in the round (for the leaderboard replay)
+      if (score !== null && score === best) {
+        this.bestLaunch = { ...log.launch };
+        this.bestInputs = [...sim.controls.inputs];
+      }
+      modeHtml = `<div class="mode-info"><b>${m.name}</b> · kast ${this.round.scores.length} av ${m.attempts}<br>Detta kast: <b>${formatScore(this.round.mode, score)}</b> · bästa: <b>${formatScore(this.round.mode, best)}</b>${isRoundOver(this.round) ? `<br>Rundan klar!${rankHtml}` : ''}</div>`;
+      if (isRoundOver(this.round)) {
+        this.bestLaunch = null;
+        this.bestInputs = null;
+      }
+    }
+    const boardMode: GameMode | null = this.round?.mode ?? null;
+    const board = boardMode ? this.boardHtml(boardMode) : this.recentHtml(flights);
+    this.renderCard(`
       <h3>Resultat</h3>
+      ${modeHtml}
       <table>${rows.join('')}</table>
-      ${best ? `<p class="best">Bästa för ”${escapeHtml(this.designName)}”: ${fmt(best.distance)} m</p>` : ''}
+      ${damageNote}
       <div class="actions">
-        <button id="res-again" class="primary">Kasta igen (R)</button>
+        <button id="res-again" class="primary">${again}</button>
         <button id="res-aim">Ändra kast</button>
         <button id="res-back">Tillbaka till vikning</button>
       </div>
-      <h4>Senaste kast</h4><ol class="recent">${recent}</ol>`;
+      ${board}`);
+  }
+
+  private bestLaunch: LaunchParams | null = null;
+  private bestInputs: LeaderEntry['inputs'] | null = null;
+
+  private recentHtml(flights: StoredFlight[]): string {
+    const recent = flights
+      .slice(0, 6)
+      .map((f) => `<li><span>${escapeHtml(f.design)}</span> ${fmt(f.distance)} m · ${fmt(f.time)} s · ${fmt(f.launch.speed, 1)} m/s</li>`)
+      .join('');
+    return `<h4>Senaste kast</h4><ol class="board">${recent}</ol>`;
+  }
+
+  private boardHtml(mode: GameMode): string {
+    const list = leaderboard(mode).slice(0, 5);
+    if (!list.length) return `<h4>Topplista · ${MODES[mode].name}</h4><p class="note">Inga resultat än. Gör klart en runda!</p>`;
+    const items = list
+      .map(
+        (e, i) =>
+          `<li>${escapeHtml(e.designName)} · <b>${formatScore(mode, e.score)}</b><button data-replay="${i}" title="Spela upp och verifiera">▶</button></li>`,
+      )
+      .join('');
+    return `<h4>Topplista · ${MODES[mode].name}</h4><ol class="board">${items}</ol>`;
+  }
+
+  private renderCard(html: string) {
+    const card = $('result-card');
+    card.innerHTML = html;
     card.classList.add('visible');
-    $('res-again').onclick = () => this.throwNow();
-    $('res-aim').onclick = () => this.toAim(true);
-    $('res-back').onclick = () => this.onExit();
+    const again = card.querySelector('#res-again') as HTMLButtonElement | null;
+    if (again) again.onclick = () => this.throwNow();
+    const aim = card.querySelector('#res-aim') as HTMLButtonElement | null;
+    if (aim) aim.onclick = () => this.toAim(true);
+    const back = card.querySelector('#res-back') as HTMLButtonElement | null;
+    if (back) back.onclick = () => this.onExit();
+    const mode = this.round?.mode ?? this.replaying?.mode ?? null;
+    card.querySelectorAll<HTMLButtonElement>('[data-replay]').forEach((b) => {
+      b.onclick = () => {
+        if (!mode) return;
+        const e = leaderboard(mode)[Number(b.dataset.replay)];
+        if (e) this.replay(e);
+      };
+    });
+  }
+
+  private showReplayResult(entry: LeaderEntry) {
+    const log = this.sim!.log;
+    const score = scoreFlight(entry.mode, log, entry.target);
+    const ok = score !== null && Math.abs(score - entry.score) < 1e-9 * Math.max(1, Math.abs(entry.score));
+    this.renderCard(`
+      <h3>Uppspelning</h3>
+      <div class="mode-info"><b>${escapeHtml(entry.designName)}</b> · ${MODES[entry.mode].name}<br>Sparat: <b>${formatScore(entry.mode, entry.score)}</b> · uppspelat: <b>${formatScore(entry.mode, score)}</b></div>
+      <p class="verify ${ok ? 'ok' : 'bad'}">${ok ? '✓ Verifierat – exakt samma flygning' : '✗ Avviker från det sparade resultatet'}</p>
+      <div class="actions">
+        <button id="res-aim" class="primary">Tillbaka till mitt plan</button>
+        <button id="res-back">Tillbaka till vikning</button>
+      </div>
+      ${this.boardHtml(entry.mode)}`);
   }
 
   // ---------------------------------------------------------------- controls
@@ -356,6 +573,13 @@ export class FlightMode {
   private setCam(c: CamMode) {
     this.cam = c;
     ($('fl-cam') as HTMLSelectElement).value = c;
+  }
+
+  private setMode(m: GameMode) {
+    this.mode = m;
+    ($('fl-mode') as HTMLSelectElement).value = m;
+    this.startRound();
+    if (this.phase !== 'flying') this.toAim(false);
   }
 
   private restoreAim() {
@@ -406,21 +630,42 @@ export class FlightMode {
       this.setCam(cam.value as CamMode);
       cam.blur();
     };
+    const mode = $<HTMLSelectElement>('fl-mode');
+    mode.onchange = () => {
+      this.setMode(mode.value as GameMode);
+      mode.blur();
+    };
     $('fl-debug').onclick = () => this.setDebug(!this.debug);
 
+    const arrow = (e: KeyboardEvent, down: boolean) => {
+      const map: Record<string, keyof FlightMode['keys']> = { ArrowUp: 'up', ArrowDown: 'down', ArrowLeft: 'left', ArrowRight: 'right' };
+      const k = map[e.key];
+      if (!k) return false;
+      this.keys[k] = down;
+      e.preventDefault();
+      return true;
+    };
+    window.addEventListener('keyup', (e) => {
+      if (this.active) arrow(e, false);
+    });
+    window.addEventListener('blur', () => (this.keys = { up: false, down: false, left: false, right: false }));
     window.addEventListener('keydown', (e) => {
       if (!this.active) return;
       const tag = (e.target as HTMLElement).tagName;
       if (tag === 'INPUT' && (e.target as HTMLInputElement).type !== 'range') return;
+      if (tag === 'SELECT') return;
+      if (this.phase === 'flying' && arrow(e, true)) return;
       switch (e.key) {
         case ' ':
         case 'Enter':
           e.preventDefault();
           if (this.phase === 'flying') this.setPaused(!this.paused);
+          else if (this.phase === 'done' && this.replaying) this.toAim(true);
           else this.throwNow();
           break;
         case 'r':
         case 'R':
+          if (this.replaying) this.toAim(true);
           this.throwNow();
           break;
         case 'p':

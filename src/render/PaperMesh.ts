@@ -1,6 +1,8 @@
 import * as THREE from 'three';
 import * as V from '../core/math/vec3';
 import type { Vec3 } from '../core/math/vec3';
+import * as P from '../core/math/polygon2d';
+import type { Vec2 } from '../core/math/vec2';
 import { canonicalNormal, facetNormal, facetVertices, toModel } from '../core/paper/model';
 import type { Facet, PaperModel } from '../core/paper/model';
 import { edgesOf, levelsOf } from './modelCache';
@@ -8,8 +10,18 @@ import { edgesOf, levelsOf } from './modelCache';
 /** Visual distance between stacked layers (real paper is 0.1 mm; slightly exaggerated). */
 export const VIS_LAYER = 0.00025;
 const LINE_LIFT = 0.00005;
+const GRID_LIFT = 0.00004;
+/** Grid paper: this many squares across the sheet's width; each square is split in four. */
+const GRID_SQUARES_ACROSS = 10;
 const FRONT = new THREE.Color('#fbf9f3');
 const BACK = new THREE.Color('#e9e2d0');
+/** Tints: control flaps (orange) and hover highlight (blue). */
+export type FacetTint = 'control' | 'hover' | 'controlHover';
+const TINTS: Record<FacetTint, [THREE.Color, THREE.Color]> = {
+  control: [new THREE.Color('#ffd7a3'), new THREE.Color('#efc086')],
+  hover: [new THREE.Color('#d3e5ff'), new THREE.Color('#bcd3f2')],
+  controlHover: [new THREE.Color('#ffc07a'), new THREE.Color('#e9a75e')],
+};
 
 export interface PaperHit {
   facetId: number;
@@ -33,7 +45,18 @@ export class PaperView {
   private mesh: THREE.Mesh | null = null;
   private lines: THREE.LineSegments | null = null;
   private creases: THREE.LineSegments | null = null;
+  private readonly gridMat = new THREE.LineBasicMaterial({ color: '#7fa6cf', transparent: true, opacity: 0.85 });
+  private readonly gridDashMat = new THREE.LineDashedMaterial({
+    color: '#86abd4',
+    dashSize: 0.0015,
+    gapSize: 0.0011,
+    transparent: true,
+    opacity: 0.9,
+  });
+  private gridOn = false;
+  private grid: THREE.LineSegments[] = [];
   private triFacet: number[] = [];
+  private tints = new Map<number, FacetTint>();
   private facets = new Map<number, Facet>();
   model: PaperModel | null = null;
 
@@ -78,6 +101,7 @@ export class PaperView {
     geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
     geo.setAttribute('normal', new THREE.Float32BufferAttribute(nor, 3));
     geo.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
+    this.applyTints(geo);
     geo.computeBoundingSphere();
     this.mesh = new THREE.Mesh(geo, this.material);
     this.mesh.castShadow = true;
@@ -102,6 +126,7 @@ export class PaperView {
     }
     this.lines = this.makeLines(border, this.lineMat);
     this.creases = this.makeLines(crease, this.creaseMat);
+    this.rebuildGrid();
   }
 
   private makeLines(arr: number[], mat: THREE.LineBasicMaterial) {
@@ -153,6 +178,88 @@ export class PaperView {
     return { facetId, point, normal: n };
   }
 
+  /** Tint facets (control flaps, hover). Pass an empty map to clear. */
+  setTints(tints: Map<number, FacetTint>) {
+    const same = tints.size === this.tints.size && [...tints].every(([k, v]) => this.tints.get(k) === v);
+    if (same) return;
+    this.tints = new Map(tints);
+    if (this.mesh) this.applyTints(this.mesh.geometry);
+  }
+
+  private applyTints(geo: THREE.BufferGeometry) {
+    const attr = geo.getAttribute('color') as THREE.BufferAttribute;
+    // triangles alternate front/back per facet fan (see update)
+    for (let t = 0; t < this.triFacet.length; t++) {
+      const tint = this.tints.get(this.triFacet[t]);
+      const back = t % 2 === 1;
+      const c = tint ? TINTS[tint][back ? 1 : 0] : back ? BACK : FRONT;
+      for (let k = 0; k < 3; k++) attr.setXYZ(t * 3 + k, c.r, c.g, c.b);
+    }
+    attr.needsUpdate = true;
+  }
+
+  /** Show or hide the grid-paper print. */
+  setGrid(on: boolean) {
+    if (on === this.gridOn) return;
+    this.gridOn = on;
+    this.rebuildGrid();
+  }
+
+  /**
+   * Grid paper: squares of width/10 (21 mm on A4), aligned with the long centre line and the top
+   * edge, solid 1 px lines; each square split in four by dashed lines. The grid is printed in
+   * sheet coordinates and mapped through every facet, so it follows all folds and layers.
+   */
+  private rebuildGrid() {
+    for (const g of this.grid) {
+      this.group.remove(g);
+      g.geometry.dispose();
+    }
+    this.grid = [];
+    const m = this.model;
+    if (!m || !this.gridOn) return;
+    const levels = levelsOf(m);
+    const a = m.spec.heightM / 2;
+    const b = m.spec.widthM / 2;
+    const half = m.spec.widthM / GRID_SQUARES_ACROSS / 2;
+    const lines: { p: Vec2; q: Vec2; dashed: boolean }[] = [];
+    for (let k = 0; -b + k * half <= b + 1e-9; k++) {
+      const v = -b + k * half;
+      lines.push({ p: [-a - 0.01, v], q: [a + 0.01, v], dashed: k % 2 === 1 });
+    }
+    for (let k = 0; a - k * half >= -a - 1e-9; k++) {
+      const u = a - k * half;
+      lines.push({ p: [u, -b - 0.01], q: [u, b + 0.01], dashed: k % 2 === 1 });
+    }
+    const solid: number[] = [];
+    const dashed: number[] = [];
+    for (const f of m.facets) {
+      const off = this.offsetVec(f, levels.get(f.id) ?? 0);
+      const n = facetNormal(f);
+      for (const l of lines) {
+        const r = P.clipSegmentConvex(l.p, l.q, f.poly);
+        if (!r || r[1] - r[0] < 1e-9) continue;
+        const A: Vec2 = [l.p[0] + (l.q[0] - l.p[0]) * r[0], l.p[1] + (l.q[1] - l.p[1]) * r[0]];
+        const B: Vec2 = [l.p[0] + (l.q[0] - l.p[0]) * r[1], l.p[1] + (l.q[1] - l.p[1]) * r[1]];
+        const arr = l.dashed ? dashed : solid;
+        for (const sgn of [1, -1]) {
+          const o = V.addScaled(off, n, sgn * GRID_LIFT);
+          arr.push(...V.add(toModel(f, A), o), ...V.add(toModel(f, B), o));
+        }
+      }
+    }
+    const make = (arr: number[], mat: THREE.LineBasicMaterial | THREE.LineDashedMaterial) => {
+      const g = new THREE.BufferGeometry();
+      g.setAttribute('position', new THREE.Float32BufferAttribute(arr, 3));
+      const ls = new THREE.LineSegments(g, mat);
+      if (mat instanceof THREE.LineDashedMaterial) ls.computeLineDistances();
+      this.group.add(ls);
+      this.grid.push(ls);
+    };
+    make(solid, this.gridMat);
+    make(dashed, this.gridDashMat);
+  }
+
   dispose() {
     for (const o of [this.mesh, this.lines, this.creases]) {
       if (!o) continue;
@@ -160,5 +267,10 @@ export class PaperView {
       o.geometry.dispose();
     }
     this.mesh = this.lines = this.creases = null;
+    for (const g of this.grid) {
+      this.group.remove(g);
+      g.geometry.dispose();
+    }
+    this.grid = [];
   }
 }

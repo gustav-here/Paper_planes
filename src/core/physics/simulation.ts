@@ -1,16 +1,20 @@
 import * as V from '../math/vec3';
 import * as Q from '../math/quat';
+import * as M3 from '../math/mat3';
 import type { Vec3 } from '../math/vec3';
 import type { Quat } from '../math/quat';
 import type { Airframe } from './airframe';
 import { createAeroCache } from './aeroModel';
-import type { AeroCache, AeroDebug } from './aeroModel';
+import type { AeroCache, AeroDebug, SurfacePose } from './aeroModel';
 import type { PhysicsConfig } from './config';
 import { cloneState, derivative, pointWorld, rk4Step } from './rigidBody';
 import type { BodyState } from './rigidBody';
 import { resolveGround } from './groundContact';
 import { launchState } from './launch';
 import type { LaunchParams } from './launch';
+import { ControlTrack, DEFAULT_CONTROLS } from './controls';
+import type { ControlConfig, ControlInput } from './controls';
+import type { DamageEvent, PanelPose, Simulator } from './simulator';
 
 export type FlightPhase = 'flight' | 'ground' | 'rest' | 'timeout';
 
@@ -49,13 +53,33 @@ export interface FlightLog {
 
 const RAD = 180 / Math.PI;
 
-/** Fixed-step, deterministic flight of one airframe from a launch. */
-export class FlightSim {
+/** Rotation of a flap about its hinge by `deg`, as a body-frame rigid motion. */
+export function flapMotion(p: Vec3, a: Vec3, deg: number, rateDeg: number): SurfacePose {
+  const ang = (deg * Math.PI) / 180;
+  const q = Q.fromAxisAngle(a, ang);
+  const R = Q.toMat3(q);
+  const t = V.sub(p, M3.mulVec(R, p));
+  const w = V.scale(a, (rateDeg * Math.PI) / 180);
+  return { R, t, w, v0: V.negate(V.cross(w, p)) };
+}
+
+/**
+ * Fixed-step, deterministic flight of one rigid airframe from a launch, with optional control
+ * flaps driven by a recorded/live control track.
+ */
+export class FlightSim implements Simulator {
   state: BodyState;
   t = 0;
+  stepIndex = 0;
   phase: FlightPhase = 'flight';
   readonly log: FlightLog;
+  readonly controls: ControlTrack;
+  readonly panels: number[][];
   private cache: AeroCache;
+  private deflection: number[];
+  private deflRate: number[];
+  private poses: (SurfacePose | null)[];
+  private events: DamageEvent[] = [];
   private restTimer = 0;
   /** Smoothed |v| and |ω| on the ground (contact jitter must not keep the plane "moving"). */
   private emaV = 1;
@@ -67,9 +91,19 @@ export class FlightSim {
     readonly af: Airframe,
     readonly cfg: PhysicsConfig,
     launch: LaunchParams,
+    inputs?: ControlInput[],
+    readonly controlCfg: ControlConfig = DEFAULT_CONTROLS,
+    /** All facet ids of the model (for render panels). */
+    facetIds: number[] = [],
   ) {
     this.state = launchState(af, launch);
     this.cache = createAeroCache(af);
+    this.controls = new ControlTrack(inputs);
+    this.deflection = af.controls.map(() => 0);
+    this.deflRate = af.controls.map(() => 0);
+    this.poses = af.mesh.surfaces.map(() => null);
+    const inFlaps = new Set(af.controls.flatMap((g) => g.facets));
+    this.panels = [facetIds.filter((f) => !inFlaps.has(f)), ...af.controls.map((g) => g.facets)];
     this.start = [...this.state.x];
     this.log = { launch, samples: [], firstImpact: null, rest: null, maxHeight: this.state.x[1], phase: 'flight' };
     this.record();
@@ -79,18 +113,37 @@ export class FlightSim {
     return this.phase === 'rest' || this.phase === 'timeout';
   }
 
+  /** Move the flaps towards the commanded deflection (rate-limited) and update their poses. */
+  private updateFlaps() {
+    const cmd = this.controls.at(this.stepIndex);
+    const max = this.controlCfg.maxDeflectionDeg;
+    const dmax = this.controlCfg.rateDegPerS * this.cfg.dt;
+    this.af.controls.forEach((g, i) => {
+      const target = max * Math.max(-1, Math.min(1, cmd.pitch * g.pitchSign + cmd.roll * g.rollSign));
+      const d = Math.max(-dmax, Math.min(dmax, target - this.deflection[i]));
+      this.deflection[i] += d;
+      this.deflRate[i] = d / this.cfg.dt;
+      const pose = this.deflection[i] === 0 && d === 0 ? null : flapMotion(g.hingeP, g.hingeA, this.deflection[i], this.deflRate[i]);
+      for (const sid of g.surfaces) this.poses[sid] = pose;
+    });
+  }
+
   /** Advance one fixed time step (cfg.dt) with cfg.substeps RK4 sub-steps and ground contact. */
   step() {
     if (this.done) return;
+    if (this.af.controls.length) this.updateFlaps();
     const h = this.cfg.dt / this.cfg.substeps;
+    const poses = this.af.controls.length ? this.poses : undefined;
     for (let k = 0; k < this.cfg.substeps; k++) {
-      this.state = rk4Step(this.state, h, (s) => derivative(s, this.af, this.cfg, this.cache));
+      this.state = rk4Step(this.state, h, (s) => derivative(s, this.af, this.cfg, this.cache, undefined, poses));
       const c = resolveGround(this.state, this.af, this.cfg.ground, h);
       if (c.touching && !this.log.firstImpact) {
         this.log.firstImpact = this.event(c.impactSpeed || this.speed());
         this.phase = 'ground';
       }
+      if (c.hardest && c.impactSpeed >= this.cfg.paper.crumpleSpeed) this.recordCrumple(c.hardest.index, c.hardest.velWorld, c.impactSpeed);
     }
+    this.stepIndex++;
     this.t += this.cfg.dt;
     this.log.maxHeight = Math.max(this.log.maxHeight, this.state.x[1]);
 
@@ -115,11 +168,58 @@ export class FlightSim {
     return this.log;
   }
 
-  /** Per-element forces of the current state, for the debug overlay. */
-  debugForces(): AeroDebug {
-    const d: AeroDebug = { lift: [], drag: [], alpha: [] };
-    derivative(cloneState(this.state), this.af, this.cfg, this.cache, d);
-    return d;
+  /** A hard impact crumples the paper where it hit (at most two places per flight). */
+  private recordCrumple(index: number, velWorld: Vec3, speed: number) {
+    if (!this.cfg.paper.damage) return;
+    const point = V.add(this.af.contacts[index], this.af.com);
+    const dir = V.normalize(Q.rotate(Q.conjugate(Q.normalize(this.state.q)), velWorld));
+    const near = this.events.find((e) => e.kind === 'crumple' && V.dist(e.point, point) < 0.03);
+    if (near && near.kind === 'crumple') {
+      if (speed > near.speed) Object.assign(near, { point, dir, speed });
+      return;
+    }
+    if (this.events.filter((e) => e.kind === 'crumple').length >= 2) return;
+    this.events.push({ kind: 'crumple', facet: this.af.contactFacets[index], point, dir, speed });
+  }
+
+  damage(): DamageEvent[] {
+    return this.events;
+  }
+
+  deflectionsDeg(): number[] {
+    return [...this.deflection];
+  }
+
+  position(): Vec3 {
+    return [...this.state.x];
+  }
+
+  /** Model→world placement of each render panel (body, then one per control flap). */
+  panelPoses(): PanelPose[] {
+    const q = Q.normalize(this.state.q);
+    const com = this.af.com;
+    const base: PanelPose = { q, t: V.sub(this.state.x, Q.rotate(q, com)) };
+    return [
+      base,
+      ...this.af.controls.map((g, i) => {
+        const qf = Q.fromAxisAngle(g.hingeA, (this.deflection[i] * Math.PI) / 180);
+        const tf = V.sub(g.hingeP, Q.rotate(qf, g.hingeP));
+        return { q: Q.normalize(Q.mul(q, qf)), t: V.add(this.state.x, Q.rotate(q, V.sub(tf, Q.rotate(qf, com)))) };
+      }),
+    ];
+  }
+
+  /** Per-element forces of the current state (world frame), for the debug overlay. */
+  debugForces(): { pos: Vec3[]; lift: Vec3[]; drag: Vec3[] } {
+    const d: AeroDebug = { pos: [], lift: [], drag: [], alpha: [] };
+    derivative(cloneState(this.state), this.af, this.cfg, this.cache, d, this.af.controls.length ? this.poses : undefined);
+    const q = Q.normalize(this.state.q);
+    const toW = (v: Vec3 | undefined): Vec3 => (v ? Q.rotate(q, v) : [0, 0, 0]);
+    return {
+      pos: (d.pos ?? []).map((p) => V.add(this.state.x, Q.rotate(q, p))),
+      lift: d.lift.map(toW),
+      drag: d.drag.map(toW),
+    };
   }
 
   worldVelocity(): Vec3 {

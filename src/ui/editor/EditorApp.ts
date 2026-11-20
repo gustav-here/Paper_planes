@@ -8,7 +8,7 @@ import { applyOp } from '../../core/paper/replay';
 import type { OpResult } from '../../core/paper/replay';
 import { PaperError } from '../../core/paper/errors';
 import { validateDesign } from '../../core/paper/ops';
-import type { Op } from '../../core/paper/ops';
+import type { DesignFile, Op } from '../../core/paper/ops';
 import { PRESETS } from '../../core/presets';
 import { maxLayers } from '../../core/paper/stack';
 import type { Stage } from '../../render/SceneSetup';
@@ -24,6 +24,9 @@ import { History } from './History';
 import { FoldTool } from './FoldTool';
 import { CutTool } from './CutTool';
 import { ClipTool } from './ClipTool';
+import { ControlTool } from './ControlTool';
+import { controlFacetTags } from '../../core/physics/controlGroups';
+import type { FacetTint } from '../../render/PaperMesh';
 import type { SnapKind } from './Snapping';
 import { ViewBall } from './ViewBall';
 import { snapToRightAngles } from './rotationSnap';
@@ -35,7 +38,7 @@ import { cutIsSelfMirror, foldIsSelfMirror, mirrorCut, mirrorFold } from '../../
 import { symmetryOf } from '../../render/modelCache';
 import type { EditorOptions, Ray, Tool, ToolContext, ToastAction, ToastKind } from './toolContext';
 
-type ToolName = 'fold' | 'cut' | 'clip' | 'view';
+type ToolName = 'fold' | 'cut' | 'clip' | 'control' | 'view';
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
 
@@ -78,7 +81,9 @@ export class EditorApp implements ToolContext {
   /** False while the throw/flight mode is shown: the editor ignores input. */
   active = true;
   /** Called when the player wants to throw the current model. */
-  onFly: ((model: PaperModel, design: { name: string; orientation: { nose: Vec3; up: Vec3 } }) => void) | null = null;
+  onFly: ((design: DesignFile, gridPaper: boolean) => void) | null = null;
+  /** Grid-paper print (per-viewer preference). */
+  gridPaper = false;
 
   constructor(private stage: Stage) {
     stage.scene.add(createTable());
@@ -114,7 +119,7 @@ export class EditorApp implements ToolContext {
     );
     this.noseArrow = new THREE.ArrowHelper(new THREE.Vector3(1, 0, 0), new THREE.Vector3(), 0.04, 0xffd34d, 0.012, 0.008);
     this.root.add(this.noseArrow);
-    this.tools = { fold: new FoldTool(this), cut: new CutTool(this), clip: new ClipTool(this) };
+    this.tools = { fold: new FoldTool(this), cut: new CutTool(this), clip: new ClipTool(this), control: new ControlTool(this) };
     this.bindDom();
     this.bindPointer();
     // keep side panels below the (possibly wrapping) top bar
@@ -274,6 +279,32 @@ export class EditorApp implements ToolContext {
     if (obj) this.root.add(obj);
   }
 
+  private hoverFacets: number[] | null = null;
+
+  setHoverFacets(ids: number[] | null) {
+    this.hoverFacets = ids;
+    this.applyTints();
+  }
+
+  toggleControl(opId: string) {
+    const op = this.history.appliedOps.find((o) => o.id === opId);
+    if (!op || op.type !== 'fold') return;
+    const on = !op.control;
+    this.history.setControl(opId, on);
+    this.toast(on ? 'Fliken är nu en klaff. Styr med piltangenterna när du kastar.' : 'Fliken är inte längre en klaff.', 'ok');
+    this.syncView();
+  }
+
+  /** Orange = control flap, blue = hover (in the control tool). */
+  private applyTints() {
+    const m = this.shown();
+    const tints = new Map<number, FacetTint>();
+    const { tags } = controlFacetTags(m, this.history.appliedOps);
+    for (const id of tags.keys()) tints.set(id, 'control');
+    for (const id of this.hoverFacets ?? []) tints.set(id, tints.has(id) ? 'controlHover' : 'hover');
+    this.paper.setTints(tints);
+  }
+
   highlightClip(id: string | null) {
     for (const c of this.clipGroup.children) {
       c.traverse((o) => {
@@ -376,6 +407,7 @@ export class EditorApp implements ToolContext {
   private syncView() {
     this.autoOrient();
     this.syncPaper();
+    this.applyTints();
     this.placeNoseArrow(this.shown());
     const ml = this.mirrorLastOp();
     for (const id of ['btn-mirror-last', 'btn-mirror-last-cut']) {
@@ -395,12 +427,18 @@ export class EditorApp implements ToolContext {
       `Veck: ${folds}`,
       `Snitt: ${cuts}`,
       `Gem: ${m.clips.length}`,
+      `Klaffar: ${ops.filter((o) => o.type === 'fold' && o.control).length}`,
       `Facetter: ${m.facets.length}`,
       `Max lager: ${maxLayers(m)}`,
     ]
       .map((s) => `<span>${s}</span>`)
       .join('');
     ($('design-name') as HTMLInputElement).value = this.history.meta.name;
+    $<HTMLInputElement>('flexible-paper').checked = this.history.meta.flexible === true;
+    const repair = $<HTMLButtonElement>('btn-repair');
+    const dmg = this.history.damage.length;
+    repair.hidden = dmg === 0;
+    repair.textContent = `⚠ Skadat (${dmg}) · Reparera`;
   }
 
   private applyXRay() {
@@ -450,13 +488,19 @@ export class EditorApp implements ToolContext {
     return new THREE.Quaternion().setFromRotationMatrix(toModel.transpose());
   }
 
+  /** Damage from a flight (already turned into ops by the throw mode). */
+  addDamage(ops: Op[]) {
+    this.history.damage.push(...ops);
+    this.syncView();
+  }
+
   /** Hand the committed model over to the throw mode. */
   private fly() {
     this.cancelTool();
     // the plane is thrown with its centre fold down (unless the player set nose/up by hand)
     this.autoOrient(true);
     this.syncView();
-    this.onFly?.(this.history.current, { name: this.history.meta.name, orientation: this.history.meta.orientation });
+    this.onFly?.(this.history.toFlightDesign(), this.gridPaper);
   }
 
   private rotateView(axis: THREE.Vector3, angle: number) {
@@ -473,6 +517,7 @@ export class EditorApp implements ToolContext {
     this.stage.setLeftButtonOrbits(name === 'view');
     document.querySelectorAll<HTMLButtonElement>('.tools button').forEach((b) => b.classList.toggle('active', b.dataset.tool === name));
     for (const t of ['fold', 'cut', 'clip']) $(`opts-${t}`).classList.toggle('visible', t === name);
+    if (name !== 'control') this.setHoverFacets(null);
     this.snapDot(null);
     if (name === 'view') {
       this.overlay.clear();
@@ -565,6 +610,24 @@ export class EditorApp implements ToolContext {
       this.options.pointToPoint = p2p.checked;
       this.tools.fold.activate();
     };
+    const grid = $<HTMLInputElement>('grid-paper');
+    try {
+      this.gridPaper = localStorage.getItem('paperplanes.grid.v1') === '1';
+    } catch {
+      /* storage unavailable */
+    }
+    grid.checked = this.gridPaper;
+    this.paper.setGrid(this.gridPaper);
+    grid.onchange = () => {
+      this.gridPaper = grid.checked;
+      this.paper.setGrid(this.gridPaper);
+      grid.blur();
+      try {
+        localStorage.setItem('paperplanes.grid.v1', this.gridPaper ? '1' : '0');
+      } catch {
+        /* storage unavailable */
+      }
+    };
     const depth = $<HTMLSelectElement>('cut-depth');
     depth.onchange = () => (this.options.cutDepth = depth.value as EditorOptions['cutDepth']);
     const cm = $<HTMLInputElement>('cut-mirror');
@@ -578,6 +641,17 @@ export class EditorApp implements ToolContext {
     $('btn-reset-view').onclick = () => this.stage.resetCamera();
     $('btn-fly').onclick = () => this.fly();
     $('btn-mirror-last').onclick = () => this.mirrorLast();
+    $('btn-repair').onclick = () => {
+      this.history.damage = [];
+      this.toast('Planet är reparerat.', 'ok');
+      this.syncView();
+    };
+    const flex = $<HTMLInputElement>('flexible-paper');
+    flex.onchange = () => {
+      this.history.meta = { ...this.history.meta, flexible: flex.checked };
+      flex.blur();
+      this.toast(flex.checked ? 'Flexibelt papper: vingar och veck ger efter och kan skadas.' : 'Stelt papper.', 'info');
+    };
     $('btn-mirror-last-cut').onclick = () => this.mirrorLast();
     $('btn-physics').onclick = () => {
       this.physics.setVisible(!this.physics.visible);
@@ -656,6 +730,7 @@ export class EditorApp implements ToolContext {
         case 'v': this.setTool('fold'); break;
         case 's': this.setTool('cut'); break;
         case 'g': this.setTool('clip'); break;
+        case 'k': this.setTool('control'); break;
         case 'o': this.setTool('view'); break;
         case 'm':
           if (this.toolName === 'cut') cm.click();

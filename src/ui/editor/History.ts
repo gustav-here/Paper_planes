@@ -9,6 +9,8 @@ export class History {
   private ops: Op[] = [];
   private models: PaperModel[] = [createSheet(A4_80GSM)];
   private cursor = 0;
+  /** Damage from flights, applied after the design's ops; cleared as soon as the plane is refolded. */
+  damage: Op[] = [];
   meta: Omit<DesignFile, 'ops'> = {
     format: 'paperplane-design',
     version: 1,
@@ -34,6 +36,7 @@ export class History {
   }
 
   push(op: Op, model: PaperModel) {
+    this.damage = [];
     this.ops = this.ops.slice(0, this.cursor);
     this.models = this.models.slice(0, this.cursor + 1);
     this.ops.push(op);
@@ -44,10 +47,21 @@ export class History {
   /** Replace the most recent operation (e.g. choosing which cut piece to keep). */
   replaceLast(op: Op, model: PaperModel) {
     if (this.cursor === 0) return;
+    this.damage = [];
     this.ops[this.cursor - 1] = op;
     this.models[this.cursor] = model;
     this.ops = this.ops.slice(0, this.cursor);
     this.models = this.models.slice(0, this.cursor + 1);
+  }
+
+  /** Mark a fold as a control flap (metadata only: the geometry and cached models are unchanged). */
+  setControl(opId: string, on: boolean): boolean {
+    const i = this.ops.findIndex((o) => o.id === opId && o.type === 'fold');
+    if (i < 0) return false;
+    const op = this.ops[i];
+    if (op.type !== 'fold') return false;
+    this.ops[i] = { ...op, control: on };
+    return true;
   }
 
   get previous(): PaperModel {
@@ -55,11 +69,17 @@ export class History {
   }
 
   undo() {
-    if (this.canUndo) this.cursor--;
+    if (this.canUndo) {
+      this.cursor--;
+      this.damage = [];
+    }
   }
 
   redo() {
-    if (this.canRedo) this.cursor++;
+    if (this.canRedo) {
+      this.cursor++;
+      this.damage = [];
+    }
   }
 
   /** Load a design; throws PaperError if it cannot be replayed. */
@@ -70,17 +90,25 @@ export class History {
     this.ops = [...ops];
     this.models = models;
     this.cursor = ops.length;
+    this.damage = [];
   }
 
   reset() {
+    this.damage = [];
     this.ops = [];
     this.models = [createSheet(this.meta.paper)];
     this.cursor = 0;
     this.meta = { ...this.meta, orientation: { nose: [1, 0, 0], up: [0, 1, 0] } };
   }
 
+  /** The design as the player folded it (what is saved). */
   toDesign(): DesignFile {
     return { ...this.meta, ops: this.appliedOps };
+  }
+
+  /** The plane as it flies: the design plus any damage it has taken. */
+  toFlightDesign(): DesignFile {
+    return { ...this.meta, ops: [...this.appliedOps, ...this.damage] };
   }
 
   nextId(prefix: string): string {

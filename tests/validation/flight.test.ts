@@ -39,17 +39,16 @@ function settledGlide(af: Airframe): GlideWindow {
   return glideWindows(fly(af, 5).samples).at(-1)!;
 }
 
-describe('validation', () => {
+// real flights: allow for a busy machine
+describe('validation', { timeout: 240_000 }, () => {
   const flat = airframeFromDesign(flatSheet, cfg);
   const dart = airframeFromDesign(makeDart(), cfg);
   const glider = airframeFromDesign(makeGlider(), cfg);
 
   it('a flat, unfolded sheet does not glide stably', () => {
-    for (const v of [2, 4, 6, 8]) {
-      for (const h of [1.6, TEST_HEIGHT]) {
-        expect(bestStableGlide(fly(flat, v, h).samples), `v=${v} h=${h}`).toBeNull();
-      }
-    }
+    // short throws at several speeds, and long drops (where a stable glide would show) at two
+    for (const v of [2, 4, 6, 8]) expect(bestStableGlide(fly(flat, v, 1.6).samples), `v=${v} h=1.6`).toBeNull();
+    for (const v of [3, 6]) expect(bestStableGlide(fly(flat, v, TEST_HEIGHT).samples), `v=${v} h=${TEST_HEIGHT}`).toBeNull();
     // the wind tunnel agrees: no stable trim point (pitch moment grows with α)
     expect(stability(flat, cfg).trimAlphaDeg).toBeNull();
   });

@@ -51,6 +51,14 @@ Webbläsarspel: vik ett pappersflygplan av ett A4 och kasta det. Flygbeteendet s
   Snitt och snittändar sparas för framtida hållbarhets-/styvhetsmodell.
 - Omöjliga veck (papper genom papper): varning i etapp 1, blockeras från etapp 2.
 - Kaststyrka 1–15 m/s utan förstärkning.
+- Klaffar (`FoldOp.control`) vrider sina ytor runt sitt veck. Effekten uppstår ur aeromodellen,
+  och läget i förhållande till tyngdpunkten avgör om klaffen fungerar som höjd-, skev- eller
+  canardroder. ±25° med 125°/s.
+- Flexibelt papper (`DesignFile.flexible`): gångjärnsförsedda stela paneler i reducerade
+  koordinater med linjärt implicit Euler. Stelt papper är standard och används av valideringen.
+- Skador blir vanliga operationer (`dmg-…`) efter spelarens egna och gäller tills planet viks om.
+- Simulatorer implementerar `Simulator` (`physics/simulator.ts`). Använd `prepare`/`createSimulator`
+  (`physics/factory.ts`) i stället för att skapa dem direkt.
 
 ## Kod
 - TypeScript `strict`. Identifierare och kodkommentarer på engelska; UI-text och
@@ -71,7 +79,8 @@ Webbläsarspel: vik ett pappersflygplan av ett A4 och kasta det. Flygbeteendet s
 - `npm run dev` – Vite-server
 - `npm test` – Vitest (en gång), `npm run test:watch`
 - `npm run lint`, `npm run typecheck`
-- Valideringstesterna (`tests/validation`) kör riktiga flygningar och tar ~10 s.
+- Valideringstesterna (`tests/validation`) och de flexibla testerna kör riktiga flygningar.
+  Hela sviten tar ungefär en minut, och testtimeout är 60 s.
 
 ## Arbetssätt
 - Bygg en etapp i taget. Varje etapp avslutas med fungerande `npm run dev`, gröna tester och
