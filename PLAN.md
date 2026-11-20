@@ -645,3 +645,6 @@ Resultat med standardkonfigurationen (släpp från 10 m, olika kastfarter):
     arkets överkant projicerad in i planet och upp väljs så att mittvecket (arkets mittlinje) hamnar
     nedåt. Riktningen räknas om när modellen ändras och vid kast, utom när spelaren har valt
     riktning för hand i fysikpanelen.
+  - **360-boll** (`ui/editor/ViewBall.ts`) nere till vänster i vikläget. Dra i den så snurrar
+    modellen fritt (arcball i skärmrymd) och följer musen. Bollen visar en miniatyr av modellen och
+    nosen (orange prick). Dubbelklick ställer planet rättvänt igen.

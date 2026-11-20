@@ -25,6 +25,7 @@ import { FoldTool } from './FoldTool';
 import { CutTool } from './CutTool';
 import { ClipTool } from './ClipTool';
 import type { SnapKind } from './Snapping';
+import { ViewBall } from './ViewBall';
 import { detectOrientation } from '../../core/paper/orientation';
 import { cutIsSelfMirror, foldIsSelfMirror, mirrorCut, mirrorFold } from '../../core/paper/symmetry';
 import { symmetryOf } from '../../render/modelCache';
@@ -51,6 +52,7 @@ export class EditorApp implements ToolContext {
   private readonly noseArrow: THREE.ArrowHelper;
   private readonly physicsOverlay = new PhysicsOverlay();
   private readonly physics: PhysicsPanel;
+  private readonly viewBall: ViewBall;
   private ghost: THREE.Object3D | null = null;
   private preview: PaperModel | null = null;
   private shownModel: PaperModel | null = null;
@@ -84,6 +86,17 @@ export class EditorApp implements ToolContext {
         this.placeNoseArrow(this.shown());
         this.refreshPhysics();
       },
+    );
+    this.viewBall = new ViewBall(
+      $('view-ball'),
+      stage.camera,
+      (q) => {
+        // follow the ball directly (no easing while dragging)
+        this.viewTarget.premultiply(q).normalize();
+        this.viewQ.premultiply(q).normalize();
+      },
+      // upright: nose away from the player, centre fold down (a flat sheet simply lies flat)
+      () => this.showUpright(),
     );
     this.noseArrow = new THREE.ArrowHelper(new THREE.Vector3(1, 0, 0), new THREE.Vector3(), 0.04, 0xffd34d, 0.012, 0.008);
     this.root.add(this.noseArrow);
@@ -402,6 +415,7 @@ export class EditorApp implements ToolContext {
     }
     this.root.position.copy(this.rootPos);
     this.root.updateMatrixWorld(true);
+    this.viewBall.render(this.viewQ, this.shown(), this.history.meta.orientation.nose);
     const c = this.stage.canvas;
     this.overlay.resolution.set(c.clientWidth, c.clientHeight);
     this.overlay.update(this.stage.camera, c.clientHeight);

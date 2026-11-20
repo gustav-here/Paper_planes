@@ -383,6 +383,7 @@ body.mode-flight .physics-panel,
 body.mode-flight .hint,
 body.mode-flight .status,
 body.mode-flight .snap-dot,
+body.mode-flight .view-ball,
 body.mode-flight .toasts,
 body.mode-flight .angle-label {
   display: none !important;
@@ -579,4 +580,38 @@ kbd {
 .options .mirror-last {
   align-self: flex-start;
   margin-top: -4px;
+}
+
+.view-ball {
+  position: absolute;
+  left: 14px;
+  bottom: 34px;
+  width: 124px;
+  height: 124px;
+  border-radius: 50%;
+  background: radial-gradient(circle at 35% 30%, rgba(255, 255, 255, 0.16), rgba(28, 30, 35, 0.78) 70%);
+  border: 1px solid var(--panel-border);
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.35);
+  cursor: grab;
+  touch-action: none;
+  user-select: none;
+}
+
+.view-ball.grabbing {
+  cursor: grabbing;
+}
+
+.view-ball canvas {
+  display: block;
+  border-radius: 50%;
+}
+
+.view-ball span {
+  position: absolute;
+  left: 50%;
+  top: -3px;
+  transform: translate(-50%, -100%);
+  font-size: 11px;
+  color: var(--muted);
+  pointer-events: none;
 }
