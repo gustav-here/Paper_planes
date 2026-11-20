@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { canvas, distanceOverlay, seeded, texture } from './common';
+import { FLOOR_DEPTH, canvas, distanceOverlay, seeded, texture } from './common';
 import type { VenueLook } from './common';
 
 /*
@@ -39,7 +39,7 @@ function regolith(): THREE.CanvasTexture {
 export function buildMoon(): VenueLook {
   const grp = new THREE.Group();
   const size = 1200;
-  const ground = new THREE.Mesh(new THREE.PlaneGeometry(size, size), new THREE.MeshStandardMaterial({ map: regolith(), roughness: 1, metalness: 0 }));
+  const ground = new THREE.Mesh(new THREE.PlaneGeometry(size, size), new THREE.MeshStandardMaterial({ map: regolith(), roughness: 1, metalness: 0, ...FLOOR_DEPTH }));
   ground.rotation.x = -Math.PI / 2;
   ground.receiveShadow = true;
   grp.add(ground);

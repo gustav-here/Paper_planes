@@ -24,6 +24,12 @@ export function texture(c: HTMLCanvasElement, repeat?: [number, number]): THREE.
   return t;
 }
 
+/**
+ * Depth offset for floors (material options): the floor is pushed slightly back in depth, so
+ * markings in its plane and paper lying on it are always drawn on top of it.
+ */
+export const FLOOR_DEPTH = { polygonOffset: true, polygonOffsetFactor: 1, polygonOffsetUnits: 4 } as const;
+
 export interface DistanceMarks {
   /** Last marked distance (m). */
   length: number;
@@ -99,11 +105,12 @@ export function distanceOverlay(o: DistanceMarks): THREE.Mesh {
   }
   const mesh = new THREE.Mesh(
     new THREE.PlaneGeometry(o.length + 2, 2 * o.halfWidth),
-    // pulled towards the camera in depth so it never sinks into a large ground plane
-    new THREE.MeshBasicMaterial({ map: texture(c), transparent: true, depthWrite: false, toneMapped: false, polygonOffset: true, polygonOffsetFactor: -4, polygonOffsetUnits: -4 }),
+    // in the floor's own plane: the floor is pushed back in depth (FLOOR_DEPTH), so the lines
+    // show on it, while paper lying on the floor still covers them
+    new THREE.MeshBasicMaterial({ map: texture(c), transparent: true, depthWrite: false, toneMapped: false }),
   );
   mesh.rotation.x = -Math.PI / 2;
-  mesh.position.set(o.length / 2, 0.004, 0);
+  mesh.position.set(o.length / 2, 0, 0);
   mesh.renderOrder = 1;
   return mesh;
 }

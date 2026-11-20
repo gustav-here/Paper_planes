@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { GYM } from '../../core/game/venues';
-import { canvas, distanceOverlay, seeded, texture } from './common';
+import { FLOOR_DEPTH, canvas, distanceOverlay, seeded, texture } from './common';
 import type { VenueLook } from './common';
 
 /*
@@ -257,7 +257,7 @@ function bench(length: number): THREE.Group {
 export function buildGym(): VenueLook {
   const grp = new THREE.Group();
 
-  const floor = new THREE.Mesh(new THREE.PlaneGeometry(L, W), new THREE.MeshStandardMaterial({ map: floorTexture(), roughness: 0.55 }));
+  const floor = new THREE.Mesh(new THREE.PlaneGeometry(L, W), new THREE.MeshStandardMaterial({ map: floorTexture(), roughness: 0.55, ...FLOOR_DEPTH }));
   floor.rotation.x = -Math.PI / 2;
   floor.position.set(CX, 0, 0);
   floor.receiveShadow = true;

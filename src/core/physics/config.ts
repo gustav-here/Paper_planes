@@ -45,6 +45,12 @@ export interface GroundConfig {
   restitutionThreshold: number;
   /** Coulomb friction, paper on wood/linoleum (≈0.3–0.5). */
   friction: number;
+  /**
+   * Loose ground (kg/m): each touching point of the paper digs in and pushes the loose material
+   * ahead of it, a resistance ρ·A·v_t² (density of the material times the cross-section the edge
+   * ploughs through). It does not depend on gravity. 0 for a hard floor.
+   */
+  ploughKgPerM: number;
   /** Rest detection: |v| below this (m/s) … */
   restSpeed: number;
   /** … and |ω| below this (rad/s) … */
@@ -173,6 +179,7 @@ export const DEFAULT_CONFIG: PhysicsConfig = {
     restitution: 0.15,
     restitutionThreshold: 0.3,
     friction: 0.4,
+    ploughKgPerM: 0,
     restSpeed: 0.02,
     restSpin: 0.1,
     restTime: 0.5,

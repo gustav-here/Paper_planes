@@ -5,6 +5,9 @@ import type { PhysicsConfig } from '../../../src/core/physics/config';
 import { createSimulator, prepare } from '../../../src/core/physics/factory';
 import { MultiBodySim } from '../../../src/core/physics/multibody';
 import { Poly, deflectionAt, limitStiffness } from '../../../src/core/physics/bendModes';
+import { facetVertices } from '../../../src/core/paper/model';
+import * as Q from '../../../src/core/math/quat';
+import * as V from '../../../src/core/math/vec3';
 
 const LAUNCH = { speed: 8, elevationDeg: 5, headingDeg: 0, heightM: 1.6 };
 
@@ -83,6 +86,26 @@ describe('bending shapes', () => {
     expect(bends.length).toBe(sim.panels.length);
     const modes = (sim as unknown as { fx: { modes: { panel: number }[] } }).fx.modes;
     for (const pm of modes) expect(bends[pm.panel]).not.toBeNull();
+  });
+
+  it('a bent sheet lying on the floor stays on top of it, all over', () => {
+    const p = prepare({ ...flatSheet, flexible: true }, DEFAULT_CONFIG);
+    const sim = createSimulator(p, DEFAULT_CONFIG, { speed: 6, elevationDeg: 0, headingDeg: 0, heightM: 1.6 }) as MultiBodySim;
+    while (!sim.done) sim.step();
+    expect(sim.phase).toBe('rest');
+    const pose = sim.panelPoses()[0];
+    const bend = sim.panelBending()[0]!;
+    const f = p.model.facets[0];
+    const vs = facetVertices(f);
+    let lowest = Infinity;
+    // a grid over the sheet, bent and placed in the world
+    for (let a = 0; a <= 10; a++)
+      for (let b = 0; b <= 10; b++) {
+        const pt = V.lerp(V.lerp(vs[0], vs[1], a / 10), V.lerp(vs[3], vs[2], a / 10), b / 10);
+        const w = V.add(Q.rotate(pose.q, V.addScaled(pt, bend.normal, bend.at(pt).w)), pose.t);
+        lowest = Math.min(lowest, w[1]);
+      }
+    expect(lowest).toBeGreaterThan(-0.001);
   });
 
   it('stiffens beyond the linear range', () => {

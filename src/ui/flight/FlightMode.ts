@@ -332,6 +332,8 @@ export class FlightMode {
     if (log.firstImpact && !this.shownImpact) {
       this.shownImpact = true;
       this.fv.markImpact(log.firstImpact);
+      // regolith puffs up where the paper lands
+      if (this.venue === 'moon') this.fv.kickDust(log.firstImpact.pos, V.sub(sim.position(), this.prevPos), log.firstImpact.speed, this.cfg.g);
     }
     const burnAt = VENUES[this.venue].burnAfterS;
     if (burnAt !== null && sim.t >= burnAt - 1e-9 && !this.replaying) {
@@ -359,7 +361,7 @@ export class FlightMode {
     if (this.round) this.round = recordScore(this.round, null);
     this.renderCard(`
       <h3>Flygplanet brann upp</h3>
-      <p class="note">Papper tål inte solens yta: det fattade eld efter ${String(VENUES.sun.burnAfterS).replace('.', ',')} s och blev aska.</p>
+      <p class="note">Papper tål inte solens yta: det fattade eld ${VENUES.sun.burnAfterS ? `efter ${String(VENUES.sun.burnAfterS).replace('.', ',')} s` : 'direkt'} och blev aska.</p>
       <div class="actions">
         <button id="res-repair-burn" class="primary">🔧 Reparera</button>
         <button id="res-back">Tillbaka till vikning</button>
@@ -414,6 +416,7 @@ export class FlightMode {
 
   frame(frameDt: number, alpha: number) {
     if (!this.active) return;
+    this.fv.updateDust(this.paused ? 0 : frameDt * this.scale);
     if (this.burnClock >= 0) {
       this.burnClock += frameDt;
       if (!this.fv.updateEffects(frameDt)) {

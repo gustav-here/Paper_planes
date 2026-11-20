@@ -74,7 +74,8 @@ Webbläsarspel: vik ett pappersflygplan av ett A4 och kasta det. Flygbeteendet s
   direkt i visningskoordinater.
 - Platser (`core/game/venues.ts`: gymnastiksal, Månen, Solen) sätter g, ρ och kontaktytor via
   `venueConfig`. Gymnastiksalen är standard. Inget i fysiken får bero på vilken plats det är,
-  utöver de parametrarna.
+  utöver de parametrarna. Det gäller också markens friktion, studs och plogning
+  (`ploughKgPerM`: lös regolit på Månen bromsar med ρ·A·v_t², oberoende av g).
 - Procedurtexturer i `render/venues` ritas på 2D-canvas utan `filter` (det kraschade
   grafikprocessen).
 - Skador blir vanliga operationer (`dmg-…`) efter spelarens egna och gäller tills planet viks om.

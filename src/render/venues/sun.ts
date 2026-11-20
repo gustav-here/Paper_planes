@@ -51,7 +51,7 @@ function surface(): THREE.CanvasTexture {
     g.fillStyle = grd;
     g.fillRect(x - r, y - r, 2 * r, 2 * r);
   }
-  return texture(c, [24, 24]);
+  return texture(c, [60, 60]);
 }
 
 /** The corona behind: haze, bright rays fanning upwards and a few looping filaments. */
@@ -105,8 +105,12 @@ function corona(): THREE.CanvasTexture {
   return texture(c);
 }
 
-/** Height of the glowing surface below the throw (m): there is nothing solid to land on. */
-export const SUN_SURFACE_Y = -40;
+/**
+ * Height of the glowing surface (m): at the feet of the thrower, as on the other venues. There is
+ * nothing solid to land on. With the eye a couple of metres above it, the far edge of the surface
+ * lies practically at eye level, so the horizon is a straight line.
+ */
+export const SUN_SURFACE_Y = 0;
 
 export function buildSun(): VenueLook {
   const grp = new THREE.Group();

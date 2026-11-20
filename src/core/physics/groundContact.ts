@@ -29,7 +29,7 @@ const BAUMGARTE = 0.2;
 export function resolveGround(s: BodyState, af: Airframe, cfg: GroundConfig, dt: number): ContactResult {
   const q = Q.normalize(s.q);
   const qi = Q.conjugate(q);
-  const active: { r: Vec3; index: number; depth: number; target: number; jn: number; jt: Vec3; n: Vec3 }[] = [];
+  const active: { r: Vec3; index: number; depth: number; target: number; jn: number; jt: Vec3; n: Vec3; plough: number }[] = [];
   // deepest penetration per surface (for the safety net)
   const minGap = cfg.planes.map(() => Infinity);
   af.contacts.forEach((r, index) => {
@@ -38,7 +38,7 @@ export function resolveGround(s: BodyState, af: Airframe, cfg: GroundConfig, dt:
       const gap = V.dot(pl.n, p) - pl.d;
       minGap[k] = Math.min(minGap[k], gap);
       if (gap > 1e-5) return;
-      active.push({ r, index, depth: -gap, target: 0, jn: 0, jt: [0, 0, 0], n: pl.n });
+      active.push({ r, index, depth: -gap, target: 0, jn: 0, jt: [0, 0, 0], n: pl.n, plough: 0 });
     });
   });
   if (active.length === 0) return { touching: false, impactSpeed: 0, hardest: null };
@@ -66,6 +66,8 @@ export function resolveGround(s: BodyState, af: Airframe, cfg: GroundConfig, dt:
     const bounce = vn < 0 && -vn > cfg.restitutionThreshold ? -cfg.restitution * vn : 0;
     const push = (BAUMGARTE * Math.max(0, c.depth - SLOP)) / dt;
     c.target = Math.max(bounce, push);
+    // loose ground ploughed ahead of the point during this step
+    c.plough = cfg.ploughKgPerM * V.lengthSq(V.rejectFrom(vel, c.n)) * dt;
     if (vn < 0 && -vn > impactSpeed) {
       impactSpeed = -vn;
       hardest = { index: c.index, velWorld: vel };
@@ -89,7 +91,7 @@ export function resolveGround(s: BodyState, af: Airframe, cfg: GroundConfig, dt:
       const t = V.scale(vt, 1 / vtl);
       const kt = invMass(c.r, t);
       const want = V.addScaled(c.jt, t, -vtl / kt);
-      const maxF = cfg.friction * c.jn;
+      const maxF = cfg.friction * c.jn + c.plough;
       const wl = V.length(want);
       const next = wl > maxF ? V.scale(want, maxF / wl) : want;
       const delta = V.sub(next, c.jt);

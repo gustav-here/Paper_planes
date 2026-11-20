@@ -19,7 +19,7 @@ import type { ControlConfig, ControlInput } from './controls';
 import { launchState } from './launch';
 import type { LaunchParams } from './launch';
 import { buildPanels, panelContacts } from './panels';
-import { buildPanelModes, deflectionAt, limitStiffness } from './bendModes';
+import { bendingContacts, buildPanelModes, deflectionAt, limitStiffness } from './bendModes';
 import type { PanelModes } from './bendModes';
 import type { PanelSet } from './panels';
 import type { DamageEvent, PanelBend, PanelPose, Simulator } from './simulator';
@@ -69,7 +69,9 @@ export function buildFlexAirframe(model: PaperModel, rigid: Airframe, cfg: Physi
   const modes = cfg.paper.bendingModes
     ? buildPanelModes(model, set, mesh, panelSurfaces, rigid.com, controlPanels, cfg.paper, cfg.addedMass ? cfg.rho : 0, cfg.addedMassScale, cfg.aero.elementSizeM)
     : [];
-  return { af, set, panelSurfaces, panelMA, contacts: panelContacts(model, set), model, modes };
+  // corners of every facet, and on bending panels points along the edges and over the inside
+  const contacts = [...panelContacts(model, set), ...bendingContacts(model, set, modes, BEND_CONTACT_SPACING)];
+  return { af, set, panelSurfaces, panelMA, contacts, model, modes };
 }
 
 function firstFacetOf(_m: PaperModel, set: PanelSet, panel: number): number {
@@ -79,6 +81,8 @@ function firstFacetOf(_m: PaperModel, set: PanelSet, panel: number): number {
 const RAD = 180 / Math.PI;
 /** Steps between refreshes of the aerodynamic damping matrix (1/80 s). */
 const D_REFRESH = 3;
+/** Spacing of the floor-contact points over a bending panel (m). */
+const BEND_CONTACT_SPACING = 0.04;
 const skew = (a: Vec3): Mat3 => [0, -a[2], a[1], a[2], 0, -a[0], -a[1], a[0], 0];
 
 /**
@@ -874,7 +878,7 @@ export class MultiBodySim implements Simulator {
     const { contacts, af } = this.fx;
     const gcfg = this.cfg.ground;
     const com = af.com;
-    type C = { i: number; p: Vec3; J: number[][]; depth: number; target: number; jn: number; jt: Vec3; facet: number; pm: Vec3; n: Vec3 };
+    type C = { i: number; p: Vec3; J: number[][]; depth: number; target: number; jn: number; jt: Vec3; facet: number; pm: Vec3; n: Vec3; plough: number };
     const active: C[] = [];
     const minGap = gcfg.planes.map(() => Infinity);
     for (const ct of contacts) {
@@ -886,7 +890,7 @@ export class MultiBodySim implements Simulator {
         const gap = V.dot(pl.n, p) - pl.d;
         minGap[k] = Math.min(minGap[k], gap);
         if (gap > 1e-5) return;
-        active.push({ i: ct.panel, p, J: this.pointJ(K, ct.panel, p, ct.p), depth: -gap, target: 0, jn: 0, jt: [0, 0, 0], facet: ct.facet, pm: ct.p, n: pl.n });
+        active.push({ i: ct.panel, p, J: this.pointJ(K, ct.panel, p, ct.p), depth: -gap, target: 0, jn: 0, jt: [0, 0, 0], facet: ct.facet, pm: ct.p, n: pl.n, plough: 0 });
       });
     }
     if (!active.length) return;
@@ -914,17 +918,24 @@ export class MultiBodySim implements Simulator {
       const vn = V.dot(v, c.n);
       const bounce = vn < 0 && -vn > gcfg.restitutionThreshold ? -gcfg.restitution * vn : 0;
       c.target = Math.max(bounce, (0.2 * Math.max(0, c.depth - 2e-4)) / dt);
+      // loose ground ploughed ahead of the point during this step
+      c.plough = gcfg.ploughKgPerM * V.lengthSq(V.rejectFrom(v, c.n)) * dt;
       if (vn < 0 && -vn > impact) {
         impact = -vn;
         hardest = c;
         hardestVel = v;
       }
     }
+    // the normal direction's impulse vector and effective inverse mass stay fixed
+    const normal = active.map((c) => {
+      const gn = gen(c, c.n);
+      return { gn, w: invMass(gn) };
+    });
     for (let it = 0; it < gcfg.iterations; it++) {
-      for (const c of active) {
-        const gn = gen(c, c.n);
+      for (const [ci, c] of active.entries()) {
+        const { gn, w: wn } = normal[ci];
         const vn = V.dot(vel(c), c.n);
-        let dj = (c.target - vn) / invMass(gn);
+        let dj = (c.target - vn) / wn;
         const old = c.jn;
         c.jn = Math.max(0, old + dj);
         dj = c.jn - old;
@@ -936,7 +947,7 @@ export class MultiBodySim implements Simulator {
         const t = V.scale(vt, 1 / vtl);
         const gt = gen(c, t);
         const want = V.addScaled(c.jt, t, -vtl / invMass(gt));
-        const maxF = gcfg.friction * c.jn;
+        const maxF = gcfg.friction * c.jn + c.plough;
         const wl = V.length(want);
         const next = wl > maxF ? V.scale(want, maxF / wl) : want;
         const delta = V.sub(next, c.jt);

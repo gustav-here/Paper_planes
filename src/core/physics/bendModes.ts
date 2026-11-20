@@ -373,6 +373,36 @@ export function buildPanelModes(
 }
 
 /**
+ * Extra floor-contact points on the bending panels: a bent panel no longer lies between its
+ * corners, so its edges and its inside must be able to touch the floor too. Points along every
+ * facet edge and spread over the inside, about `spacing` apart.
+ */
+export function bendingContacts(model: PaperModel, set: PanelSet, modes: PanelModes[], spacing: number): { panel: number; facet: number; p: Vec3 }[] {
+  const byId = new Map(model.facets.map((f) => [f.id, f]));
+  const out: { panel: number; facet: number; p: Vec3 }[] = [];
+  for (const pm of modes) {
+    const mine: Vec3[] = [];
+    const add = (facet: number, p: Vec3) => {
+      if (mine.some((q) => V.dist(q, p) < spacing / 4)) return;
+      mine.push(p);
+      out.push({ panel: pm.panel, facet, p });
+    };
+    for (const id of set.panels[pm.panel].facets) {
+      const f = byId.get(id);
+      if (!f) continue;
+      const vs = facetVertices(f);
+      vs.forEach((a, i) => {
+        const b = vs[(i + 1) % vs.length];
+        const k = Math.ceil(V.dist(a, b) / spacing);
+        for (let j = 1; j < k; j++) add(id, V.lerp(a, b, j / k));
+      });
+      for (const { p } of samples([f], spacing)) add(id, p);
+    }
+  }
+  return out;
+}
+
+/**
  * Extra stiffness of shape k at amplitude q beyond the linear range (see
  * PaperConfig.bendingLimitSlopeDeg): k·c·(q/q_lim)⁶. Used as a secant stiffness (force −k_extra·q).
  */

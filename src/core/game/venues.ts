@@ -1,4 +1,4 @@
-import type { ContactPlane, PhysicsConfig } from '../physics/config';
+import type { ContactPlane, GroundConfig, PhysicsConfig } from '../physics/config';
 
 /*
  * Places to throw. Each one is only the world around the plane: gravity, the air and the solid
@@ -16,6 +16,8 @@ export interface Venue {
   rho: number;
   /** Solid surfaces (free space where n·x ≥ d). */
   planes: ContactPlane[];
+  /** How the ground takes a landing paper, where it differs from the hall floor. */
+  ground?: Partial<Pick<GroundConfig, 'friction' | 'restitution' | 'ploughKgPerM'>>;
   /** Simulated time limit (s). */
   maxTime: number;
   /** The paper burns up this long after the throw (s), or never. */
@@ -57,6 +59,11 @@ export const VENUES: Record<VenueId, Venue> = {
     g: 1.62,
     rho: 0,
     planes: [{ n: [0, 1, 0], d: 0 }],
+    // loose, fluffy regolith (≈ 1500 kg/m³ at the top): an edge of the paper digs ≈ 3 mm into it
+    // over ≈ 1 cm, ploughing 1500 · 3·10⁻⁵ ≈ 0.05 kg/m ahead of it. That stops a landing paper
+    // within centimetres, where friction alone (μ·g in the weak gravity) would let it slide on
+    // for tens of metres. The sharp grains grip the fibres (μ ≈ 1) and the dust takes up the bounce.
+    ground: { friction: 1, restitution: 0, ploughKgPerM: 0.05 },
     // a hard throw stays up for over ten seconds
     maxTime: 90,
     burnAfterS: null,
@@ -69,7 +76,8 @@ export const VENUES: Record<VenueId, Venue> = {
     rho: 2e-4,
     planes: [],
     maxTime: 1,
-    burnAfterS: 0.2,
+    // at about 5800 K the paper is ash the moment it leaves the hand
+    burnAfterS: 0,
   },
 };
 
@@ -82,5 +90,5 @@ export function isVenueId(x: unknown): x is VenueId {
 /** The physics configuration for throwing at a venue (everything else stays as in `base`). */
 export function venueConfig(id: VenueId, base: PhysicsConfig): PhysicsConfig {
   const v = VENUES[id];
-  return { ...base, g: v.g, rho: v.rho, maxTime: v.maxTime, ground: { ...base.ground, planes: v.planes } };
+  return { ...base, g: v.g, rho: v.rho, maxTime: v.maxTime, ground: { ...base.ground, ...v.ground, planes: v.planes } };
 }

@@ -845,9 +845,21 @@ Resultat med standardkonfigurationen (släpp från 10 m, olika kastfarter):
   - **Månen:** g = 1,62 och ingen atmosfär (ρ = 0). Inget lyft, inget motstånd och ingen
     tillskottsmassa, så planet flyger en ren kastparabel. Testerna jämför med den analytiska
     parabeln.
+    - Planet glider inte efter landningen. I den svaga tyngdkraften skulle vanlig friktion
+      (μ·g) låta det glida tiotals meter. Lös regolit bromsar i stället genom plogning: varje
+      punkt som rör marken trycker damm framför sig, med motståndet ρ·A·v_t²
+      (`GroundConfig.ploughKgPerM` = 0,05 kg/m, ungefär 1500 kg/m³ × 3 mm × 1 cm). Det beror
+      inte på g. Friktionen är μ = 1 och studsen 0.
+    - Där planet landar kastas ett litet grått dammoln upp (`render/DustEffect.ts`). Kornen
+      flyger i rena kastparabler med månens g och ligger kvar där de landar.
+    - Hårda, branta kast kan fortfarande välta över nosen och slå kullerbyttor efter
+      landningen, eftersom det inte finns någon luft som bromsar. Användaren valde att behålla
+      det (realistiskt för en styv kropp utan luft) i stället för att dämpa det.
     - Det finns ett grått regolit med stenar, rundade kullar vid horisonten, svart himmel,
       hårt lågt solljus och distanslinjer varje 5 m.
-  - **Solen:** g = 274, ingen yta att landa på. Efter 0,2 s brinner papperet upp.
+  - **Solen:** g = 274, ingen yta att landa på. Papperet brinner upp direkt.
+    - Ytan ligger i golvhöjd, så betraktaren står nära den. Den bortre kanten ligger då
+      nästan i ögonhöjd, och horisonten blir ett rakt streck.
     - Planet blir svarta flagor i pixelstorlek som först faller isär och sedan stiger uppåt
       och försvinner inom 0,5 s. Därefter visas "Flygplanet brann upp".
     - I vikläget ligger en liten askhög på bordet tills man trycker på Reparera, som ger ett
@@ -891,6 +903,12 @@ Resultat med standardkonfigurationen (släpp från 10 m, olika kastfarter):
 - **Typiska värden:** ett kastat A4 böjer sig 25–35 mm. Glidplanets vingar böjer sig ungefär
   13 mm i glid och 40 mm direkt efter ett hårt kast. Simuleringen går 5–14 gånger snabbare än
   realtid i Node.
+- **Golvkontakt:** en böjd panel ligger inte längre mellan sina hörn. Böjliga paneler får därför
+  kontaktpunkter längs kanterna och över ytan med ungefär 4 cm mellanrum. Annars sjönk mitten av
+  ett ark upp till 65 mm genom golvet.
+- **Ritning vid golvet:** golven skjuts lite bakåt i djupled (`FLOOR_DEPTH`), och distanslinjerna
+  ligger i golvets plan. Papperet ritas 1 mm ovanför sitt simulerade läge, så det aldrig
+  försvinner in i golvet eller hamnar under linjerna.
 - **Visning:** i kastläget ritas papperet med trianglar på högst 12 mm (`PaperView` med `maxEdge`).
   Varje bildruta flyttas hörnen och kantlinjerna längs böjningen
   (`Simulator.panelBending` → `FlightView.setPanelBending`), och ljusnormalerna lutas med ∇w.

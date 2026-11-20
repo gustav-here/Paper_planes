@@ -54,8 +54,26 @@ describe('venues', () => {
     expect(maxZ).toBeLessThan(GYM.halfWidth);
   });
 
-  it('on the Sun there is nothing to land on', () => {
+  it('on the Sun there is nothing to land on, and the paper burns at once', () => {
     expect(VENUES.sun.planes).toHaveLength(0);
-    expect(VENUES.sun.burnAfterS).toBeCloseTo(0.2);
+    expect(VENUES.sun.burnAfterS).toBe(0);
+  });
+
+  it('on the Moon the paper stops where it lands: it ploughs into the loose dust', () => {
+    // a flat, fast landing: friction alone (μ·g in the weak gravity) would let it slide on
+    const launch: LaunchParams = { speed: 9, elevationDeg: 0, headingDeg: 0, heightM: 1.6 };
+    const slide = (plough: number | null, flexible: boolean) => {
+      const c0 = venueConfig('moon', DEFAULT_CONFIG);
+      const cfg = plough === null ? c0 : { ...c0, ground: { ...c0.ground, ploughKgPerM: plough } };
+      const s = createSimulator(prepare({ ...makeDart(), flexible }, cfg), cfg, launch);
+      while (!s.done) s.step();
+      const a = s.log.firstImpact!;
+      const r = s.log.rest!;
+      return Math.hypot(r.pos[0] - a.pos[0], r.pos[2] - a.pos[2]);
+    };
+    for (const flexible of [false, true]) {
+      expect(slide(null, flexible)).toBeLessThan(0.4);
+      expect(slide(0, flexible)).toBeGreaterThan(2);
+    }
   });
 });

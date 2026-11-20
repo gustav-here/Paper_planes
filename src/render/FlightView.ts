@@ -1,4 +1,5 @@
 import { AshEffect, samplePaper } from './AshEffect';
+import { DustEffect } from './DustEffect';
 import * as THREE from 'three';
 import * as V from '../core/math/vec3';
 import type { Vec3 } from '../core/math/vec3';
@@ -73,6 +74,8 @@ class SegmentSet {
  */
 /** Longest triangle edge of the paper in flight (m): fine enough to show smooth bending. */
 const BEND_EDGE = 0.012;
+/** Visual lift of the paper above its simulated position (m). */
+const PAPER_LIFT = 0.001;
 
 export class FlightView {
   /** One group per render panel, placed model → world by the simulation. */
@@ -92,8 +95,12 @@ export class FlightView {
   private sprites: THREE.Sprite[] = [];
   private forceScale = 1;
   private ash: AshEffect | null = null;
+  private dust: DustEffect | null = null;
 
   constructor(readonly scene: THREE.Scene) {
+    // the paper is drawn a hair above where the simulation has it (paper thickness and the
+    // contact's tolerance), so paper lying on the floor is never hidden in it
+    this.plane.position.y = PAPER_LIFT;
     scene.add(this.plane, this.air.line, this.ground.line, this.markers, this.debug, this.targetGroup);
     this.vel = new THREE.ArrowHelper(new THREE.Vector3(1, 0, 0), new THREE.Vector3(), 0.5, 0xffd34d, 0.06, 0.035);
     this.vel.traverse((o) => {
@@ -265,6 +272,26 @@ export class FlightView {
     return false;
   }
 
+  /** A puff of dust where the paper lands (the Moon). */
+  kickDust(at: Vec3, along: Vec3, speed: number, g: number) {
+    this.endDust();
+    const dir = new THREE.Vector3(along[0], 0, along[2]);
+    if (dir.lengthSq() < 1e-9) dir.set(1, 0, 0);
+    this.dust = new DustEffect(new THREE.Vector3(...at), dir.normalize(), speed, g);
+    this.scene.add(this.dust.points);
+  }
+
+  updateDust(dt: number) {
+    if (this.dust && !this.dust.update(dt)) this.endDust();
+  }
+
+  private endDust() {
+    if (!this.dust) return;
+    this.scene.remove(this.dust.points);
+    this.dust.dispose();
+    this.dust = null;
+  }
+
   private endAsh() {
     if (!this.ash) return;
     this.scene.remove(this.ash.points);
@@ -274,6 +301,7 @@ export class FlightView {
 
   clear() {
     this.endAsh();
+    this.endDust();
     this.plane.visible = true;
     this.air.clear();
     this.ground.clear();
