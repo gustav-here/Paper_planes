@@ -384,6 +384,7 @@ body.mode-flight .hint,
 body.mode-flight .status,
 body.mode-flight .snap-dot,
 body.mode-flight .view-ball,
+body.mode-flight .view-buttons,
 body.mode-flight .toasts,
 body.mode-flight .angle-label {
   display: none !important;
@@ -434,7 +435,9 @@ button.primary:hover {
 .result-card {
   position: absolute;
   left: 10px;
-  top: 74px;
+  top: var(--flight-top-h, 74px);
+  max-height: calc(100% - var(--flight-top-h, 74px) - 14px);
+  overflow-y: auto;
   width: 270px;
   display: none;
   flex-direction: column;
@@ -526,7 +529,7 @@ button.primary:hover {
 .fl-stats {
   position: absolute;
   right: 14px;
-  top: 74px;
+  top: var(--flight-top-h, 74px);
   padding: 10px 12px;
   min-width: 170px;
   background: var(--panel);
@@ -585,7 +588,7 @@ kbd {
 .view-ball {
   position: absolute;
   left: 14px;
-  bottom: 34px;
+  bottom: 72px;
   width: 124px;
   height: 124px;
   border-radius: 50%;
@@ -595,6 +598,28 @@ kbd {
   cursor: grab;
   touch-action: none;
   user-select: none;
+}
+
+.view-buttons {
+  position: absolute;
+  left: 14px;
+  bottom: 34px;
+  width: 126px;
+  display: flex;
+  gap: 4px;
+}
+
+.view-buttons button {
+  flex: 1;
+  padding: 5px 0;
+  font-size: 16px;
+  line-height: 1;
+  background: rgba(28, 30, 35, 0.82);
+  box-shadow: 0 3px 10px rgba(0, 0, 0, 0.3);
+}
+
+.view-buttons button:hover {
+  background: rgba(60, 64, 72, 0.9);
 }
 
 .view-ball.grabbing {

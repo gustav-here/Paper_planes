@@ -35,7 +35,7 @@ Webbläsarspel: vik ett pappersflygplan av ett A4 och kasta det. Flygbeteendet s
 - Papper: 80 g/m², A4 ⇒ 4,99 g. Gem 1 g (punktmassa). Lufttäthet 1,225 kg/m³, g = 9,81 m/s².
 - Papper har nolltjocklek i geometri och fysik; tjocklek (~0,1 mm) används bara för
   lagerordning och rendering.
-- Stelt papper i etapp 1–3: veck är låsta, ingen deformation.
+- Stelt papper (valbart): veck är låsta, ingen deformation. Valideringstesterna använder det.
 - Staplade koplanära lager är **en** aerodynamisk yta (union) men varje lager räknas i massan.
 - Kvasistationär tunnplattemodell per ytelement: lyft enligt Helmbold (finit AR beräknad ur
   geometri och flöde), stall via mjuk blandning mot separerad platta, kordvis lastfördelning
@@ -59,6 +59,14 @@ Webbläsarspel: vik ett pappersflygplan av ett A4 och kasta det. Flygbeteendet s
 - Fold-scope `all` = alla lager vid den *dragna* linjen och det som sitter fast i dem (snitt begränsar).
 - Snittflikar (`physics/slits.ts`): plant papper mellan två snittändar blir ett gångjärn med plan
   pappersböjstyvhet i flexibelt papper (fasetterna delas i `prepare`).
+- Återfjädring (`paper/springback.ts`): ett släppt veck öppnar sig med 5 % av vikvinkeln. Gem och
+  tejp håller ihop lager. Det gäller alla kast via `prepare` (`Prepared.model` är relaxerad,
+  `Prepared.folded` är exakt vikt). Validering och editor använder den vikta geometrin.
+- Flexibelt papper är standard i spelet. Gångjärnen har plan pappersböjning i serie med vecket och
+  ett kontaktstopp vid 180°.
+- Editorn visar modellen med återfjädring och skador. Verktygen arbetar i den vikta modellen
+  via `ToolContext.hitPaper` (som returnerar en frame) och `setFrame`. Rita aldrig verktygsgrafik
+  direkt i visningskoordinater.
 - Skador blir vanliga operationer (`dmg-…`) efter spelarens egna och gäller tills planet viks om.
 - Simulatorer implementerar `Simulator` (`physics/simulator.ts`). Använd `prepare`/`createSimulator`
   (`physics/factory.ts`) i stället för att skapa dem direkt.

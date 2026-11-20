@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import * as V from '../core/math/vec3';
-import { CLIP_SPEC } from '../core/paper/clips';
+import { CLIP_SPEC, TAPE_SPEC } from '../core/paper/clips';
 import type { ResolvedClip } from '../core/paper/clips';
 import type { PaperModel } from '../core/paper/model';
 import { levelsOf } from './modelCache';
@@ -37,6 +37,7 @@ function loop(x0: number, x1: number, w: number, y: number, segs = 10): THREE.Ve
  * The outer loop lies on top of the stack, the inner loop underneath, joined around the edge.
  */
 export function createClipObject(model: PaperModel, rc: ResolvedClip, isGhost = false): THREE.Group {
+  if (rc.clip.kind === 'tape') return createTapeObject(model, rc, isGhost);
   const levels = levelsOf(model);
   let lo = Infinity;
   let hi = -Infinity;
@@ -77,6 +78,71 @@ export function createClipObject(model: PaperModel, rc: ResolvedClip, isGhost = 
   g.quaternion.setFromRotationMatrix(basis);
   const p = V.clone(rc.position);
   g.position.set(p[0], p[1], p[2]);
+  g.userData.clipId = rc.clip.id;
+  if (isGhost) g.renderOrder = 10;
+  return g;
+}
+
+const tapeMat = new THREE.MeshStandardMaterial({
+  color: '#9fd0ff',
+  roughness: 0.2,
+  metalness: 0,
+  transparent: true,
+  opacity: 0.55,
+  side: THREE.DoubleSide,
+  depthWrite: false,
+});
+
+const tapeEdge = new THREE.LineBasicMaterial({ color: '#5aa8e8', transparent: true, opacity: 0.9 });
+
+/**
+ * Clear tape folded over the stack edge. Local frame as for the clip: X = inward from the edge,
+ * Y = stack normal, Z = along the edge; one strip on top, one underneath, a short wrap at the edge.
+ */
+function createTapeObject(model: PaperModel, rc: ResolvedClip, isGhost: boolean): THREE.Group {
+  const levels = levelsOf(model);
+  let lo = Infinity;
+  let hi = -Infinity;
+  for (const id of rc.clamped) {
+    const lv = levels.get(id) ?? 0;
+    lo = Math.min(lo, lv);
+    hi = Math.max(hi, lv);
+  }
+  if (!Number.isFinite(lo)) lo = hi = 0;
+  const gap = 0.00015;
+  const yTop = (hi + 0.5) * VIS_LAYER + gap;
+  const yBot = (lo - 0.5) * VIS_LAYER - gap;
+  const L = TAPE_SPEC.lengthM;
+  const W = TAPE_SPEC.widthM;
+  const mat = isGhost ? ghost : tapeMat;
+  const g = new THREE.Group();
+  const strip = (y: number) => {
+    const geo = new THREE.PlaneGeometry(L, W);
+    const m = new THREE.Mesh(geo, mat);
+    m.rotation.x = -Math.PI / 2;
+    m.position.set(L / 2, y, 0);
+    // the cut ends of the tape catch the light: draw its outline
+    m.add(new THREE.LineSegments(new THREE.EdgesGeometry(geo), tapeEdge));
+    return m;
+  };
+  g.add(strip(yTop), strip(yBot));
+  const wrap = new THREE.Mesh(new THREE.PlaneGeometry(yTop - yBot, W), mat);
+  wrap.rotation.set(-Math.PI / 2, -Math.PI / 2, 0);
+  wrap.position.set(0, (yTop + yBot) / 2, 0);
+  g.add(wrap);
+  if (!isGhost) {
+    const pick = new THREE.Mesh(
+      new THREE.BoxGeometry(L + 0.004, yTop - yBot + 0.004, W + 0.002),
+      new THREE.MeshBasicMaterial({ colorWrite: false, depthWrite: false }),
+    );
+    pick.position.set(L / 2, (yTop + yBot) / 2, 0);
+    g.add(pick);
+  }
+  const x = new THREE.Vector3(...rc.inward);
+  const y = new THREE.Vector3(...rc.normal);
+  const z = new THREE.Vector3().crossVectors(x, y).normalize();
+  g.quaternion.setFromRotationMatrix(new THREE.Matrix4().makeBasis(x, y, z));
+  g.position.set(...V.clone(rc.position));
   g.userData.clipId = rc.clip.id;
   if (isGhost) g.renderOrder = 10;
   return g;

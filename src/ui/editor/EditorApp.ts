@@ -2,7 +2,12 @@ import * as THREE from 'three';
 import * as V from '../../core/math/vec3';
 import type { Vec3 } from '../../core/math/vec3';
 import type { PaperModel } from '../../core/paper/model';
-import { facetVertices } from '../../core/paper/model';
+import { facetNormal, facetVertices, toModel, toSheet } from '../../core/paper/model';
+import * as P from '../../core/math/polygon2d';
+import { applyRigid, applyRigidLinear, composeRigid, invertRigid, rigidIdentity } from '../../core/math/transform';
+import type { RigidTransform } from '../../core/math/transform';
+import { relaxCreases } from '../../core/paper/springback';
+import { DEFAULT_CONFIG } from '../../core/physics/config';
 import { resolveClip } from '../../core/paper/clips';
 import { applyOp } from '../../core/paper/replay';
 import type { OpResult } from '../../core/paper/replay';
@@ -38,7 +43,7 @@ import { cutIsSelfMirror, foldIsSelfMirror, mirrorCut, mirrorFold } from '../../
 import { symmetryOf } from '../../render/modelCache';
 import type { EditorOptions, Ray, Tool, ToolContext, ToastAction, ToastKind } from './toolContext';
 
-type ToolName = 'fold' | 'cut' | 'clip' | 'control' | 'view';
+type ToolName = 'fold' | 'cut' | 'clip' | 'tape' | 'control' | 'view';
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
 
@@ -88,13 +93,13 @@ export class EditorApp implements ToolContext {
   constructor(private stage: Stage) {
     stage.scene.add(createTable());
     stage.scene.add(this.root);
-    this.root.add(this.paper.group, this.clipGroup, this.overlay.group, this.physicsOverlay.group);
+    this.root.add(this.paper.group, this.clipGroup, this.overlay.group, this.physicsOverlay.group, this.ghostHolder);
     this.physics = new PhysicsPanel(
       () => this.history.meta.orientation,
       (o) => {
         this.history.meta.orientation = o;
         this.manualOrientation = true;
-        this.placeNoseArrow(this.shown());
+        this.placeNoseArrow(this.display());
         this.refreshPhysics();
       },
     );
@@ -119,7 +124,7 @@ export class EditorApp implements ToolContext {
     );
     this.noseArrow = new THREE.ArrowHelper(new THREE.Vector3(1, 0, 0), new THREE.Vector3(), 0.04, 0xffd34d, 0.012, 0.008);
     this.root.add(this.noseArrow);
-    this.tools = { fold: new FoldTool(this), cut: new CutTool(this), clip: new ClipTool(this), control: new ControlTool(this) };
+    this.tools = { fold: new FoldTool(this), cut: new CutTool(this), clip: new ClipTool(this), tape: new ClipTool(this, 'tape'), control: new ControlTool(this) };
     this.bindDom();
     this.bindPointer();
     // keep side panels below the (possibly wrapping) top bar
@@ -211,13 +216,41 @@ export class EditorApp implements ToolContext {
     this.root.updateMatrixWorld();
     const o = this.root.worldToLocal(this.raycaster.ray.origin.clone());
     const d = this.raycaster.ray.direction.clone().applyQuaternion(this.root.quaternion.clone().invert());
-    return { origin: [o.x, o.y, o.z], dir: [d.x, d.y, d.z] };
+    const r: Ray = { origin: [o.x, o.y, o.z], dir: [d.x, d.y, d.z] };
+    if (!this.workFrame) return r;
+    // into the folded coordinates of the paper being worked on
+    const inv = invertRigid(this.workFrame);
+    return { origin: applyRigid(inv, r.origin), dir: applyRigidLinear(inv, r.dir) };
   }
 
-  hitPaper(e: PointerEvent): PaperHit | null {
+  hitPaper(e: PointerEvent): (PaperHit & { frame: RigidTransform }) | null {
     this.setRay(e);
     this.root.updateMatrixWorld();
-    return this.paper.hit(this.raycaster);
+    const h = this.paper.hit(this.raycaster);
+    if (!h) return null;
+    // the paper is shown as it rests; find the same paper in the folded model (sheet coordinates)
+    const shown = this.paper.model!;
+    const ideal = this.history.current;
+    const f = shown.facets.find((x) => x.id === h.facetId);
+    if (!f || shown === ideal) return { ...h, frame: rigidIdentity() };
+    const s = toSheet(f, h.point);
+    const same = ideal.facets.find((x) => x.id === f.id);
+    const g =
+      same && P.insideDistance(s, same.poly) > -1e-7
+        ? same
+        : ideal.facets.reduce((best, x) => (P.insideDistance(s, x.poly) > P.insideDistance(s, best.poly) ? x : best));
+    return { facetId: g.id, point: toModel(g, s), normal: facetNormal(g), frame: composeRigid(f.T, invertRigid(g.T)) };
+  }
+
+  private workFrame: RigidTransform | null = null;
+
+  setFrame(frame: RigidTransform | null) {
+    this.workFrame = frame;
+    const f = frame ?? rigidIdentity();
+    for (const g of [this.overlay.group, this.ghostHolder]) {
+      g.quaternion.set(...f.q);
+      g.position.set(...f.t);
+    }
   }
 
   hitClip(e: PointerEvent): string | null {
@@ -232,7 +265,8 @@ export class EditorApp implements ToolContext {
   }
 
   toScreen(p: Vec3): [number, number] | null {
-    const v = this.root.localToWorld(new THREE.Vector3(...p)).project(this.stage.camera);
+    const q = this.workFrame ? applyRigid(this.workFrame, p) : p;
+    const v = this.root.localToWorld(new THREE.Vector3(...q)).project(this.stage.camera);
     if (v.z > 1) return null;
     const r = this.stage.canvas.getBoundingClientRect();
     return [((v.x + 1) / 2) * r.width, ((1 - v.y) / 2) * r.height];
@@ -274,10 +308,13 @@ export class EditorApp implements ToolContext {
   }
 
   setGhost(obj: THREE.Object3D | null) {
-    if (this.ghost) this.root.remove(this.ghost);
+    if (this.ghost) this.ghostHolder.remove(this.ghost);
     this.ghost = obj;
-    if (obj) this.root.add(obj);
+    if (obj) this.ghostHolder.add(obj);
   }
+
+  /** Ghost objects are built in folded coordinates; this group puts them where the paper is shown. */
+  private readonly ghostHolder = new THREE.Group();
 
   private hoverFacets: number[] | null = null;
 
@@ -306,7 +343,7 @@ export class EditorApp implements ToolContext {
 
   /** Orange = control flap, blue = hover (in the control tool). */
   private applyTints() {
-    const m = this.shown();
+    const m = this.display();
     const tints = new Map<number, FacetTint>();
     const { tags } = controlFacetTags(m, this.history.appliedOps);
     for (const id of tags.keys()) tints.set(id, 'control');
@@ -326,12 +363,47 @@ export class EditorApp implements ToolContext {
 
   // ---------------------------------------------------------------- view sync
 
+  /** The folded model (or a tool's preview of it) with the plane's damage. */
   private shown(): PaperModel {
-    return this.preview ?? this.history.current;
+    return this.preview ?? this.damaged();
+  }
+
+  private damagedCache: { base: PaperModel; n: number; model: PaperModel } | null = null;
+
+  /** The committed model with the damage from flights applied (it stays until refolded). */
+  private damaged(): PaperModel {
+    const base = this.history.current;
+    const dmg = this.history.damage;
+    if (!dmg.length) return base;
+    const c = this.damagedCache;
+    if (c && c.base === base && c.n === dmg.length) return c.model;
+    let m = base;
+    for (const op of dmg) {
+      try {
+        m = applyOp(m, op).model;
+      } catch {
+        /* damage that no longer applies is skipped */
+      }
+    }
+    this.damagedCache = { base, n: dmg.length, model: m };
+    return m;
+  }
+
+  private relaxedCache = new WeakMap<PaperModel, PaperModel>();
+
+  /** What is shown: the model as the paper rests after folding (crease springback). */
+  private display(): PaperModel {
+    const m = this.shown();
+    let r = this.relaxedCache.get(m);
+    if (!r) {
+      r = relaxCreases(m, [...this.history.appliedOps, ...this.history.damage], DEFAULT_CONFIG.paper.creaseSpringback);
+      this.relaxedCache.set(m, r);
+    }
+    return r;
   }
 
   private syncPaper() {
-    const m = this.shown();
+    const m = this.display();
     if (m === this.shownModel) return;
     this.shownModel = m;
     this.paper.update(m);
@@ -417,7 +489,7 @@ export class EditorApp implements ToolContext {
     this.autoOrient();
     this.syncPaper();
     this.applyTints();
-    this.placeNoseArrow(this.shown());
+    this.placeNoseArrow(this.display());
     const ml = this.mirrorLastOp();
     for (const id of ['btn-mirror-last', 'btn-mirror-last-cut']) {
       const b = $<HTMLButtonElement>(id);
@@ -435,7 +507,8 @@ export class EditorApp implements ToolContext {
     $('status').innerHTML = [
       `Veck: ${folds}`,
       `Snitt: ${cuts}`,
-      `Gem: ${m.clips.length}`,
+      `Gem: ${m.clips.filter((c) => c.kind !== 'tape').length}`,
+      `Tejp: ${m.clips.filter((c) => c.kind === 'tape').length}`,
       `Klaffar: ${ops.filter((o) => o.type === 'fold' && o.control).length}`,
       `Facetter: ${m.facets.length}`,
       `Max lager: ${maxLayers(m)}`,
@@ -476,7 +549,7 @@ export class EditorApp implements ToolContext {
     }
     this.root.position.copy(this.rootPos);
     this.root.updateMatrixWorld(true);
-    this.viewBall.render(this.viewQ, this.shown(), this.history.meta.orientation.nose);
+    this.viewBall.render(this.viewQ, this.display(), this.history.meta.orientation.nose);
     const c = this.stage.canvas;
     this.overlay.resolution.set(c.clientWidth, c.clientHeight);
     this.overlay.update(this.stage.camera, c.clientHeight);
@@ -528,6 +601,8 @@ export class EditorApp implements ToolContext {
   private setTool(name: ToolName) {
     const prev = this.toolName;
     if (prev !== 'view') this.tools[prev].deactivate();
+    // leaving the view tool puts the camera back to the standard top-down view
+    if (prev === 'view' && name !== 'view') this.stage.resetCamera();
     this.toolName = name;
     this.stage.setLeftButtonOrbits(name === 'view');
     document.querySelectorAll<HTMLButtonElement>('.tools button').forEach((b) => b.classList.toggle('active', b.dataset.tool === name));
@@ -554,7 +629,8 @@ export class EditorApp implements ToolContext {
         e.stopPropagation();
         e.preventDefault();
         this.highlightClip(null);
-        if (this.commit({ type: 'unclip', id: this.nextId('u'), target: id })) this.toast('Gemet togs bort.', 'ok');
+        const tape = this.history.current.clips.find((c) => c.id === id)?.kind === 'tape';
+        if (this.commit({ type: 'unclip', id: this.nextId('u'), target: id })) this.toast(tape ? 'Tejpen togs bort.' : 'Gemet togs bort.', 'ok');
       },
       { capture: true },
     );
@@ -749,6 +825,7 @@ export class EditorApp implements ToolContext {
         case 'v': this.setTool('fold'); break;
         case 's': this.setTool('cut'); break;
         case 'g': this.setTool('clip'); break;
+        case 'j': this.setTool('tape'); break;
         case 'k': this.setTool('control'); break;
         case 'o': this.setTool('view'); break;
         case 'm':

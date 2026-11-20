@@ -3,8 +3,8 @@ import * as P from '../math/polygon2d';
 import type { Vec2 } from '../math/vec2';
 import type { Vec3 } from '../math/vec3';
 import type { Mat3 } from '../math/mat3';
-import { coplanar, facetVertices, facetsOverlap, toModel } from '../paper/model';
-import type { PaperModel } from '../paper/model';
+import { coplanar, facetCentroid, facetNormal, facetVertices, facetsOverlap, toModel } from '../paper/model';
+import type { Facet, PaperModel } from '../paper/model';
 import { computeEdges, isConnected } from '../paper/edges';
 import { resolveClip } from '../paper/clips';
 import { computeMassProperties } from './massProperties';
@@ -43,8 +43,19 @@ export interface Hinge {
   length: number;
   /** A fold crease, or flat paper bending between two cut ends (no plastic yield there). */
   kind: 'crease' | 'slit';
-  /** Rotational stiffness (N·m/rad) and damping (N·m·s/rad). */
+  /**
+   * Rotational stiffness (N·m/rad) and damping (N·m·s/rad). For a crease this is the crease in
+   * series with the bending of the flat paper beyond it (see plateStiffness).
+   */
   stiffness: number;
+  /** The crease alone (plastic yield happens in the crease, not in the elastic paper). */
+  creaseStiffness: number;
+  /**
+   * Hinge angle (rad, relative to the start pose) at which the two sides lie flat on each other,
+   * and the direction (±1) of closing. Folding further would push paper through paper.
+   */
+  closeAt: number;
+  closeDir: number;
   damping: number;
   /** Index into Airframe.controls if this hinge is a control flap, else −1. */
   control: number;
@@ -60,7 +71,7 @@ export interface PanelSet {
   hinges: Hinge[];
   /** Facet id → panel index. */
   panelOf: Map<number, number>;
-  /** The root panel (heaviest). */
+  /** The root panel (the body: the middle of the panel graph). */
   root: number;
 }
 
@@ -85,7 +96,12 @@ class UnionFind {
   }
 }
 
-const LINE_TOL = 5e-4;
+/**
+ * Hinge links this close to one straight line rotate together (m). Layers of a stack that
+ * springback left a few degrees open meet their hinge a millimetre or two apart; they still bend
+ * as one hinge (about the crease zone width).
+ */
+const LINE_TOL = 3e-3;
 
 /** Interior cut ends: cut endpoints that are not on the paper's outline. */
 export function interiorCutEnds(model: PaperModel): { facet: number; at: Vec2; dir: Vec2; model: Vec3 }[] {
@@ -156,6 +172,7 @@ export function buildPanels(model: PaperModel, af: Airframe, paper: PaperConfig)
   // hinges must be straight lines between two panels, and the panel graph must be a tree
   for (let iter = 0; iter < 50; iter++) {
     const pairs = new Map<string, Vec3[]>();
+    const stackPair = new Map<string, boolean>();
     for (const l of hingeLinks) {
       const ra = uf.find(l.a);
       const rb = uf.find(l.b);
@@ -163,6 +180,8 @@ export function buildPanels(model: PaperModel, af: Airframe, paper: PaperConfig)
       const key = ra < rb ? `${ra}:${rb}` : `${rb}:${ra}`;
       const f = byId.get(l.a)!;
       (pairs.get(key) ?? pairs.set(key, []).get(key)!).push(toModel(f, l.seg[0]), toModel(f, l.seg[1]));
+      // a stack: two sides of a fold lying almost on each other (not flat paper, e.g. a slit tab)
+      if (l.kind === 'crease') stackPair.set(key, stackPair.get(key) || Math.abs(V.dot(facetNormal(f), facetNormal(byId.get(l.b)!))) > STACK_COS);
     }
     let changed = false;
     // not a straight line → it cannot rotate: same panel
@@ -198,7 +217,13 @@ export function buildPanels(model: PaperModel, af: Airframe, paper: PaperConfig)
             const pathU = ancestry(u, parent);
             const pathW = ancestry(w, parent);
             const common = pathU.find((x) => pathW.includes(x))!;
-            for (const x of [...pathU.slice(0, pathU.indexOf(common) + 1), ...pathW.slice(0, pathW.indexOf(common) + 1)]) uf.union(x, u);
+            const loop = [...pathU.slice(0, pathU.indexOf(common) + 1), ...pathW.slice(0, pathW.indexOf(common)).reverse()];
+            // a loop through layers that springback left slightly open: press those layers
+            // together first (they are held by the loop anyway); otherwise the loop is rigid
+            const edges = loop.map((x, i) => [x, loop[(i + 1) % loop.length]] as const);
+            const stack = edges.find(([x, y]) => stackPair.get(x < y ? `${x}:${y}` : `${y}:${x}`));
+            if (stack) uf.union(stack[0], stack[1]);
+            else for (const x of loop) uf.union(x, u);
             changed = true;
             break;
           }
@@ -223,7 +248,6 @@ export function buildPanels(model: PaperModel, af: Airframe, paper: PaperConfig)
     });
     return computeMassProperties({ ...model, facets: fs, clips });
   });
-  const rootPanel = props.reduce((best, p, i) => (p.mass > props[best].mass ? i : best), 0);
 
   // hinges (pairs of panels), then orient the tree away from the root
   const pairPts = new Map<string, { pts: Vec3[]; length: number; slit: boolean; control: number; facets: Map<number, number> }>();
@@ -250,6 +274,22 @@ export function buildPanels(model: PaperModel, af: Airframe, paper: PaperConfig)
     (adj.get(a) ?? adj.set(a, []).get(a)!).push({ other: b, key });
     (adj.get(b) ?? adj.set(b, []).get(b)!).push({ other: a, key });
   }
+  // The root is the body: the panel in the middle of the panel graph (smallest number of hinges
+  // to the farthest panel; ties: the heavier), so loads run from wings and flaps inwards.
+  const ecc = props.map((_, start) => {
+    const dist = new Map([[start, 0]]);
+    const q = [start];
+    while (q.length) {
+      const x = q.shift()!;
+      for (const { other } of adj.get(x) ?? []) {
+        if (dist.has(other)) continue;
+        dist.set(other, dist.get(x)! + 1);
+        q.push(other);
+      }
+    }
+    return Math.max(...dist.values());
+  });
+  const rootPanel = props.reduce((best, p, i) => (ecc[i] < ecc[best] || (ecc[i] === ecc[best] && p.mass > props[best].mass) ? i : best), 0);
   const panels: Panel[] = props.map((p, i) => ({
     facets: panelFacets[i].map((f) => f.id),
     mass: p.mass,
@@ -277,7 +317,13 @@ export function buildPanels(model: PaperModel, af: Airframe, paper: PaperConfig)
       }
       const isControl = e.control >= 0 && af.controls[e.control].facets.includes(panels[other].facets[0]);
       const slit = e.slit && !isControl;
-      let k = paper.creaseStiffnessPerM * e.length * (isControl ? paper.servoStiffnessFactor : 1);
+      const kCrease = paper.creaseStiffnessPerM * e.length * (isControl ? paper.servoStiffnessFactor : 1);
+      let k = kCrease;
+      if (!slit && !isControl) {
+        // the flat paper beyond the crease (away from the body) bends too, in series with it
+        const kp = plateStiffness(panelFacets[other], a, axis, paper.bendingStiffness);
+        k = 1 / (1 / kCrease + 1 / kp);
+      }
       if (slit) {
         // cantilever plate: root rotation under a tip load ⇒ k = 3·D·w/ℓ, with ℓ the tab length
         // (bending spreads over the tab), but not longer than the strip is wide (a big piece on a
@@ -296,6 +342,8 @@ export function buildPanels(model: PaperModel, af: Airframe, paper: PaperConfig)
         length: e.length,
         kind: slit ? 'slit' : 'crease',
         stiffness: k,
+        creaseStiffness: slit ? k : kCrease,
+        ...closing(byId.get(e.facets.get(u)!)!, byId.get(e.facets.get(other)!)!, a, axis),
         damping: k * paper.creaseDampingS,
         control: isControl ? e.control : -1,
         cutEnds: ends.map(({ facet, at, dir }) => ({ facet, at, dir })),
@@ -309,6 +357,74 @@ export function buildPanels(model: PaperModel, af: Airframe, paper: PaperConfig)
     }
   }
   return { panels, hinges, panelOf, root: rootPanel };
+}
+
+/** Panels whose facets are this close to parallel at a crease are a (slightly open) stack. */
+const STACK_COS = Math.cos((25 * Math.PI) / 180);
+
+/** Unit vector from the line (p, d) towards the facet centroid, perpendicular to the line. */
+function armOf(f: Facet, p: Vec3, d: Vec3): Vec3 {
+  return V.normalize(V.rejectFrom(V.sub(facetCentroid(f), p), d));
+}
+
+/** Where the child would lie flat on the parent (fold angle 180°), as a hinge angle. */
+function closing(parent: Facet, child: Facet, p: Vec3, d: Vec3): { closeAt: number; closeDir: number } {
+  const v = armOf(parent, p, d);
+  const w = armOf(child, p, d);
+  const psi = Math.atan2(V.dot(d, V.cross(v, w)), V.dot(v, w));
+  // rotating the child by +θ about d turns ψ by +θ; it closes when ψ reaches 0
+  const closeAt = -psi;
+  return { closeAt, closeDir: Math.sign(closeAt) || 1 };
+}
+
+/**
+ * Equivalent hinge stiffness of the flat paper of a panel bending as a cantilever from the
+ * hinge line: a load at the panel's load centre r_c deflects it by
+ *   δ = P ∫₀^{r_c} (r_c − r)² / (D·w(r)) dr,
+ * where w(r) is the paper width (all layers) at distance r from the hinge, so the hinge that
+ * gives the same work has k = r_c² / ∫₀^{r_c} (r_c − r)² / (D·w(r)) dr.
+ */
+export function plateStiffness(facets: Facet[], p: Vec3, d: Vec3, D: number): number {
+  const BIN = 0.002;
+  const hist: number[] = [];
+  let total = 0;
+  let moment = 0;
+  for (const f of facets) {
+    const vs = facetVertices(f);
+    for (let i = 1; i + 1 < vs.length; i++) {
+      const [A, B, C] = [vs[0], vs[i], vs[i + 1]];
+      const area = V.length(V.cross(V.sub(B, A), V.sub(C, A))) / 2;
+      if (area < 1e-12) continue;
+      const edge = Math.max(V.dist(A, B), V.dist(B, C), V.dist(C, A));
+      const k = Math.min(60, Math.max(2, Math.ceil(edge / BIN)));
+      const pts: Vec3[] = [];
+      for (let a = 0; a < k; a++)
+        for (let b = 0; a + b < k; b++) {
+          const u = (a + 1 / 3) / k;
+          const v = (b + 1 / 3) / k;
+          pts.push(V.add(A, V.add(V.scale(V.sub(B, A), u), V.scale(V.sub(C, A), v))));
+        }
+      const wgt = area / pts.length;
+      for (const q of pts) {
+        const r = V.distToLine(q, p, d);
+        const bin = Math.floor(r / BIN);
+        hist[bin] = (hist[bin] ?? 0) + wgt;
+        total += wgt;
+        moment += wgt * r;
+      }
+    }
+  }
+  if (total <= 0) return Infinity;
+  const rc = moment / total;
+  let integral = 0;
+  const wMin = 0.005;
+  for (let bin = 0; bin * BIN < rc; bin++) {
+    const r = (bin + 0.5) * BIN;
+    const width = Math.max(wMin, (hist[bin] ?? 0) / BIN);
+    const dr = Math.min(BIN, rc - bin * BIN);
+    integral += ((rc - r) ** 2 / (D * width)) * dr;
+  }
+  return integral > 0 ? (rc * rc) / integral : Infinity;
 }
 
 function segParam(p: Vec3, a: Vec3, b: Vec3): number {

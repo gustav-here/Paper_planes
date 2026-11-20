@@ -17,6 +17,8 @@ export class History {
     name: 'Min modell',
     paper: A4_80GSM,
     orientation: { nose: [1, 0, 0], up: [0, 1, 0] },
+    // flexible paper is the default in the game (rigid paper is the idealised special case)
+    flexible: true,
   };
 
   get current(): PaperModel {
@@ -86,7 +88,8 @@ export class History {
   load(design: DesignFile) {
     const { models } = replayDesign(design);
     const { ops, ...meta } = design;
-    this.meta = meta;
+    // designs that do not say (presets, older files) fly as flexible paper
+    this.meta = { ...meta, flexible: meta.flexible ?? true };
     this.ops = [...ops];
     this.models = models;
     this.cursor = ops.length;

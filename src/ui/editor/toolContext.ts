@@ -1,6 +1,7 @@
 import * as V from '../../core/math/vec3';
 import type { Vec3 } from '../../core/math/vec3';
 import type { PaperModel } from '../../core/paper/model';
+import type { RigidTransform } from '../../core/math/transform';
 import type { FoldScope, Op } from '../../core/paper/ops';
 import type { OpResult } from '../../core/paper/replay';
 import type { PaperHit } from '../../render/PaperMesh';
@@ -42,7 +43,14 @@ export interface ToolContext {
   hint(text: string): void;
   mouse(e: PointerEvent): [number, number];
   ray(e: PointerEvent): Ray;
-  hitPaper(e: PointerEvent): PaperHit | null;
+  /**
+   * Paper under the cursor, in the folded model's coordinates (what the tools work on). The
+   * paper is shown as it rests (springback, damage); `frame` maps folded coordinates of that
+   * piece of paper to where it is shown.
+   */
+  hitPaper(e: PointerEvent): (PaperHit & { frame: RigidTransform }) | null;
+  /** Show overlays, the ghost and screen positions in the frame of the paper being worked on. */
+  setFrame(frame: RigidTransform | null): void;
   hitClip(e: PointerEvent): string | null;
   toScreen(p: Vec3): [number, number] | null;
   /** Orient a plane normal towards the camera. */

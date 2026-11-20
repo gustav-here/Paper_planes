@@ -735,3 +735,58 @@ Resultat med standardkonfigurationen (släpp från 10 m, olika kastfarter):
   - "🔧 Reparera" finns i listen och på resultatkortet.
   - "🐢 Slow time" växlar mellan ½× och 1×.
   - ↓ ger nosen upp och ↑ nosen ned, som en styrspak.
+
+## 21. Återfjädring, plattböjning, tejp och flexibelt som standard
+- **Återfjädring** (`paper/springback.ts`, `paper.creaseSpringback = 0,05`). Ett släppt veck öppnar
+  sig med en andel av sin vikvinkel. Värdet motsvarar ett ordentligt tryckt veck: ett 180°-veck
+  glipar ungefär 9°. Det är en uppskattning som ska kalibreras mot riktiga plan.
+  - Ordning: per vikning, sista vikningen först. Det papper vikningen flyttade vrids tillbaka runt
+    sitt veck som en enhet.
+  - Låsta veck: ett veck som en senare vikning har böjt (inte längre en rak linje) öppnar sig inte.
+    Det gäller till exempel nosflikarna på darten efter vingvikningen.
+  - Lager som hålls fast: gem och tejp över vecket, eller papper ovanpå, hindrar vecket från att
+    öppna sig. Delvis blockerade veck provar en mindre öppning.
+  - Till sist passas modellen in med minsta kvadrat mot den vikta modellen, så att kroppsaxlarna
+    stämmer. Ett glipande mittveck öppnar sig då symmetriskt (±4,5°).
+  - Gäller alla kast, både stelt och flexibelt papper, via `prepare`. Editorn visar den ideala
+    vikningen, och valideringstesterna använder den ideala geometrin.
+  - Skador räknas om till den vikta geometrin (`damageOnFolded`) innan de blir operationer.
+- **Aero för glipande lager.** Nästan plana lager (inom 25°) som överlappar och ligger nära
+  varandra (inom 12 mm) räknas som en platta. Om de rör sig var för sig, som olika paneler, får den
+  större ytan överlappet. Överlappande yta räknas alltså bara en gång.
+- **Plattböjning i flexibelt papper.** Varje vecks gångjärn har det plana papperet bortom vecket
+  (sett från kroppen) i serie med vecket.
+  - Formel: k_p = r_c² / ∫₀^{r_c} (r_c − r)² / (D·w(r)) dr, där w(r) är papperets bredd över alla
+    lager på avståndet r från vecket och r_c är lastens tyngdpunkt.
+  - Bara veckets andel av rörelsen kan ge plastisk deformation.
+  - Effekt: vingarna böjer sig 2–4° vid lugna kast och 20–40° vid hårda.
+- **Paneler och kontakt.**
+  - Panelträdets rot är kroppen, alltså mitten av panelgrafen.
+  - Varje veck har ett stopp där sidorna ligger plant mot varandra (en kontaktfjäder,
+    `contactStiffnessFactor`), så papper inte kan gå igenom papper.
+  - Slingor genom glipande lager löses genom att lagren trycks ihop.
+  - Gångjärnslinjer inom 3 mm från en rät linje räknas som ett gångjärn.
+- **Tejp** (verktyg J). En 19 × 30 mm remsa vikt över en kant väger 0,03 g. Den håller ihop lagren
+  som ett gem (`ClipOp.kind = 'tape'`).
+- **Flexibelt papper är standard** i spelet. Designer som inte anger något flyger flexibelt.
+- **Kastläget:**
+  - Rutorna placeras under listen även när den bryts på flera rader.
+  - "Flygdata" (förut Felsökning) är på från start.
+  - Knappen Slow time är borttagen. Tidsskalan finns kvar i menyn och på tangenterna 1–4.
+
+## 22. Synlig skrynkling och återfjädring i vikläget
+- **Intryckt kant.** En hård krock mot en kant blir ett dragspel av fem omväxlande veck genom alla
+  lager (`crumpleFolds = 5`) över en zon som är 2,5 gånger intryckningsdjupet.
+  - Första och sista vecket viks α, de mellersta 2α, där cos α = 1 − k / ((k − 1)·2,5) ⇒ 60°.
+    Spetsen fortsätter då rakt fram men blir djupet kortare.
+  - Om papperet inte tillåter ett rakt dragspel, till exempel glidplanets trubbiga nos där vecket
+    skulle gå in i vingarna, provas diagonala veck vid hörnet och därefter grundare intryckningar.
+  - Skador fästs vid papperet (arkkoordinater), så att ordningen skrynkla → böj → riv håller även när
+    de andra skadorna flyttar papper.
+  - Skrynklat papper ritas något gråare och flammigt.
+- **Vikläget visar planet som det vilar.** Editorn visar den vikta modellen med återfjädring och
+  med eventuella skador. Verktygen räknar fortfarande på den exakt vikta modellen.
+  - `hitPaper` översätter träffen via arkkoordinater till den vikta modellen och returnerar en
+    *frame* (vikt → visad) för den papperbit man arbetar på.
+  - Linjer, markeringar, spöken och skärmpositioner ritas i den framen, och strålar räknas tillbaka.
+    Vik-linjen hamnar därför på det papper som syns.

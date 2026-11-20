@@ -18,14 +18,32 @@ import type { Clip, Facet, PaperModel } from './model';
 import { computeEdges } from './edges';
 import type { EdgeGraph } from './edges';
 
+export interface HolderSpec {
+  massKg: number;
+  /** How far it reaches in from the edge (on each side of the stack). */
+  lengthM: number;
+  /** Width along the edge. */
+  widthM: number;
+}
+
 /** Standard small paper clip (≈ 28 mm "No. 3"). Mass is set per clip op (default 1 g). */
-export const CLIP_SPEC = {
+export const CLIP_SPEC: HolderSpec = {
   massKg: 0.001,
-  /** How far the clip reaches in from the edge. */
   lengthM: 0.028,
-  /** Width of the clip across the edge. */
   widthM: 0.008,
 };
+
+/**
+ * A strip of ordinary 19 mm clear tape, 30 mm long, folded over the edge (15 mm on each side).
+ * Tape is ≈ 50 µm film + adhesive ≈ 55 g/m² ⇒ 19 × 30 mm ≈ 0.03 g.
+ */
+export const TAPE_SPEC: HolderSpec = {
+  massKg: 0.00003,
+  lengthM: 0.015,
+  widthM: 0.019,
+};
+
+export const holderSpec = (c: Pick<Clip, 'kind'>): HolderSpec => (c.kind === 'tape' ? TAPE_SPEC : CLIP_SPEC);
 
 export interface ClipPlacement {
   facetId: number;
@@ -75,6 +93,7 @@ export function findClipPlacement(
   p: Vec3,
   maxDist: number,
   graph: EdgeGraph = computeEdges(model),
+  spec: HolderSpec = CLIP_SPEC,
 ): ClipPlacement | null {
   const byId = new Map(model.facets.map((f) => [f.id, f]));
   const segs: { f: Facet; seg: [Vec2, Vec2] }[] = [];
@@ -96,7 +115,7 @@ export function findClipPlacement(
     if (L2 < 1e-14) continue;
     let t = V.dot(V.sub(p, a3), ab) / L2;
     // keep the clip fully on the edge where possible
-    const halfW = CLIP_SPEC.widthM / 2 / Math.sqrt(L2);
+    const halfW = spec.widthM / 2 / Math.sqrt(L2);
     t = halfW < 0.5 ? Math.min(1 - halfW, Math.max(halfW, t)) : 0.5;
     const pos = V.lerp(a3, b3, t);
     const distance = V.dist(pos, p);
@@ -143,12 +162,13 @@ export function resolveClip(model: PaperModel, clip: Clip): ResolvedClip | null 
   const position = toModel(f, clip.at);
   const edgeDirModel = V.normalize(applyRigidLinear(f.T, [clip.edgeDir[0], 0, clip.edgeDir[1]]));
   const normal = canonicalNormal(facetNormal(f));
-  const hw = CLIP_SPEC.widthM / 2;
+  const spec = holderSpec(clip);
+  const hw = spec.widthM / 2;
   const footprint: Vec3[] = [
     V.addScaled(position, edgeDirModel, -hw),
     V.addScaled(position, edgeDirModel, hw),
-    V.addScaled(V.addScaled(position, edgeDirModel, hw), inw.inward, CLIP_SPEC.lengthM),
-    V.addScaled(V.addScaled(position, edgeDirModel, -hw), inw.inward, CLIP_SPEC.lengthM),
+    V.addScaled(V.addScaled(position, edgeDirModel, hw), inw.inward, spec.lengthM),
+    V.addScaled(V.addScaled(position, edgeDirModel, -hw), inw.inward, spec.lengthM),
   ];
   const basis = planeBasis(normal);
   const fp2 = projectToPlane(footprint, position, basis);
@@ -162,6 +182,6 @@ export function resolveClip(model: PaperModel, clip: Clip): ResolvedClip | null 
     normal,
     edgeDirModel,
     clamped,
-    centerOfMass: V.addScaled(position, inw.inward, CLIP_SPEC.lengthM / 2),
+    centerOfMass: V.addScaled(position, inw.inward, spec.lengthM / 2),
   };
 }

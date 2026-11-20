@@ -58,6 +58,14 @@ export interface PaperConfig {
   bendingStiffness: number;
   /** Width of the zone a crease bends over (m); creaseStiffnessPerM ≈ D / creaseZoneM. */
   creaseZoneM: number;
+  /**
+   * Springback: the fraction of its fold angle a released crease opens again. Copy paper creased
+   * firmly (thumbnail-pressed) keeps most of a fold; a 180° fold then gapes ≈ 9° (0.05 · 180°).
+   * Estimate from hand-folding; to be calibrated against real planes.
+   */
+  creaseSpringback: number;
+  /** Folded layers that close onto each other meet a contact spring this many times stiffer than the crease. */
+  contactStiffnessFactor: number;
   /** Structural damping of creases as a time constant (s): c = k·τ. */
   creaseDampingS: number;
   /** A crease bent further than this from its rest angle yields permanently (deg). */
@@ -69,8 +77,13 @@ export interface PaperConfig {
   /** Crumple depth (m) per m/s above the threshold, and its maximum. */
   crumpleDepthPerMs: number;
   crumpleMaxDepth: number;
-  /** Crumple bend (deg) per m/s above the threshold (max 90°). */
-  crumpleDegPerMs: number;
+  /**
+   * The crushed edge buckles into an accordion over a zone this many times longer than the
+   * crush depth (crumpled paper folds in short zigzags), …
+   */
+  crumpleZoneFactor: number;
+  /** … of this many alternating folds. */
+  crumpleFolds: number;
   /** A cut end within this distance of a crumpling impact tears further (m). */
   tearImpactRadius: number;
   /** Crease moment per metre of crease above which a cut end on it tears (N·m/m). */
@@ -144,13 +157,16 @@ export const DEFAULT_CONFIG: PhysicsConfig = {
     creaseStiffnessPerM: 0.08,
     bendingStiffness: 2.5e-4,
     creaseZoneM: 0.003,
+    creaseSpringback: 0.05,
+    contactStiffnessFactor: 30,
     creaseDampingS: 0.01,
     creaseYieldDeg: 15,
     servoStiffnessFactor: 20,
     crumpleSpeed: 4.5,
     crumpleDepthPerMs: 0.003,
     crumpleMaxDepth: 0.02,
-    crumpleDegPerMs: 25,
+    crumpleZoneFactor: 2.5,
+    crumpleFolds: 5,
     tearImpactRadius: 0.015,
     tearMomentPerM: 0.02,
     tearLengthGain: 0.01,

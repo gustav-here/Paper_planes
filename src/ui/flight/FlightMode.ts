@@ -4,7 +4,7 @@ import * as V from '../../core/math/vec3';
 import * as Q from '../../core/math/quat';
 import type { Vec3 } from '../../core/math/vec3';
 import type { DesignFile, Op } from '../../core/paper/ops';
-import { damageToOps } from '../../core/physics/damage';
+import { damageOnFolded, damageToOps } from '../../core/physics/damage';
 import { DEFAULT_CONFIG } from '../../core/physics/config';
 import { DEFAULT_LAUNCH, launchState } from '../../core/physics/launch';
 import type { LaunchParams } from '../../core/physics/launch';
@@ -84,7 +84,7 @@ export class FlightMode {
   private launch: LaunchParams = { ...DEFAULT_LAUNCH };
   private phase: Phase = 'aim';
   private cam: CamMode = 'follow';
-  private debug = false;
+  private debug = true;
   private paused = false;
   private scale = 1;
   private plot: TimeSeriesPlot;
@@ -122,6 +122,13 @@ export class FlightMode {
     ]);
     this.restoreAim();
     this.bindDom();
+    // flight data (forces, centre of mass, graphs) is shown from the start
+    this.setDebug(true);
+    // the info panels sit below the top bar, however many rows it wraps into
+    const bar = document.querySelector('.flight-bar') as HTMLElement;
+    new ResizeObserver(() => {
+      if (bar.offsetHeight) document.documentElement.style.setProperty('--flight-top-h', `${bar.offsetTop + bar.offsetHeight + 10}px`);
+    }).observe(bar);
   }
 
   // ---------------------------------------------------------------- lifecycle
@@ -285,7 +292,8 @@ export class FlightMode {
     const events = sim.damage();
     if (events.length && this.mine && this.current === this.mine) {
       // damage stays with the plane (until it is refolded): fly the damaged plane from now on
-      const r = damageToOps(this.mine.model, events, this.mine.design.orientation.up, cfg.paper);
+      // damage is expressed on the plane as folded (the design's own geometry)
+      const r = damageToOps(this.mine.folded, damageOnFolded(this.mine.model, this.mine.folded, events), this.mine.design.orientation.up, cfg.paper);
       if (r.ops.length) {
         const design: DesignFile = { ...this.mine.design, ops: [...this.mine.design.ops, ...r.ops] };
         try {
@@ -575,7 +583,6 @@ export class FlightMode {
   private setScale(s: number) {
     this.scale = s;
     ($('fl-speed') as HTMLSelectElement).value = String(s);
-    $('fl-slow').classList.toggle('on', s === 0.5);
     if (!this.paused) this.stepper.timeScale = s;
   }
 
@@ -686,10 +693,6 @@ export class FlightMode {
     };
     $('fl-debug').onclick = () => this.setDebug(!this.debug);
     $('fl-repair').onclick = () => this.repair();
-    $('fl-slow').onclick = () => {
-      this.setScale(this.scale === 0.5 ? 1 : 0.5);
-      $('fl-slow').blur();
-    };
 
     const arrow = (e: KeyboardEvent, down: boolean) => {
       const map: Record<string, keyof FlightMode['keys']> = { ArrowUp: 'up', ArrowDown: 'down', ArrowLeft: 'left', ArrowRight: 'right' };

@@ -54,6 +54,8 @@ export interface ClipOp {
   /** Edge direction at that point, sheet coordinates. */
   edgeDir: Vec2;
   massKg: number;
+  /** Paper clip (default) or a strip of tape folded over the edge. */
+  kind?: 'clip' | 'tape';
 }
 
 export interface UnclipOp {
@@ -119,6 +121,7 @@ function checkOp(o: unknown, i: number): Op {
     case 'clip':
       if (!isVec(op.at, 2) || !isVec(op.edgeDir, 2) || !isNum(op.massKg) || op.massKg <= 0)
         fail(`ops[${i}] clip invalid`);
+      if (op.kind !== undefined && op.kind !== 'clip' && op.kind !== 'tape') fail(`ops[${i}].kind invalid`);
       return op as unknown as ClipOp;
     case 'unclip':
       if (typeof op.target !== 'string') fail(`ops[${i}].target missing`);
@@ -153,7 +156,8 @@ export function validateDesign(obj: unknown): DesignFile {
     name: typeof d.name === 'string' ? d.name : 'Namnlös',
     paper: { widthM: paper.widthM as number, heightM: paper.heightM as number, gsm: paper.gsm as number },
     orientation: { nose: orient.nose as Vec3, up: orient.up as Vec3 },
-    flexible: d.flexible === true,
+    // absent = not stated (the game then chooses its default); otherwise keep the choice
+    ...(typeof d.flexible === 'boolean' ? { flexible: d.flexible } : {}),
     ops,
   };
 }

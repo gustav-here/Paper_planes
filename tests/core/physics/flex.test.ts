@@ -3,13 +3,13 @@ import { makeDart, makeGlider } from '../../../src/core/presets';
 import { replayDesign } from '../../../src/core/paper/replay';
 import { validateDesign } from '../../../src/core/paper/ops';
 import type { DesignFile, Op } from '../../../src/core/paper/ops';
-import { totalArea } from '../../../src/core/paper/model';
+import { toModel, totalArea } from '../../../src/core/paper/model';
 import { buildAirframe } from '../../../src/core/physics/airframe';
 import { DEFAULT_CONFIG, makeConfig } from '../../../src/core/physics/config';
 import type { PhysicsConfig } from '../../../src/core/physics/config';
 import { FlightSim } from '../../../src/core/physics/simulation';
 import { MultiBodySim, buildFlexAirframe } from '../../../src/core/physics/multibody';
-import { damageToOps } from '../../../src/core/physics/damage';
+import { damageOnFolded, damageToOps } from '../../../src/core/physics/damage';
 import { createSimulator, prepare } from '../../../src/core/physics/factory';
 import type { LaunchParams } from '../../../src/core/physics/launch';
 
@@ -24,7 +24,7 @@ function flex(d: DesignFile, cfg: PhysicsConfig = DEFAULT_CONFIG, l = launch) {
 describe('flexible paper (hinged panels)', () => {
   it('very stiff creases reproduce the rigid plane', () => {
     for (const d of [makeDart(), makeGlider()]) {
-      const cfg = makeConfig({ paper: { creaseStiffnessPerM: 0.8 } });
+      const cfg = makeConfig({ paper: { creaseStiffnessPerM: 0.8, bendingStiffness: 2.5e-2 } });
       const { sim, rigid } = flex(d, cfg);
       const a = sim.run(10).firstImpact!;
       const b = rigid.run(10).firstImpact!;
@@ -115,4 +115,88 @@ describe('damage', () => {
     };
     expect(Math.abs(fly({ ...d, ops: [...d.ops, ...r.ops] }) - fly(d))).toBeGreaterThan(0.05);
   });
+});
+
+describe('springback and paper bending in flight', () => {
+  const hard: LaunchParams = { speed: 13, elevationDeg: 10, headingDeg: 0, heightM: 1.6, aoaDeg: 5 };
+
+  it('the air counts a gaping stack once', () => {
+    for (const d of [makeDart(), makeGlider()]) {
+      const ideal = buildAirframe(replayDesign(d).models.at(-1)!, d.orientation, DEFAULT_CONFIG, d.ops);
+      const area = (s: { area: number }[]) => s.reduce((a, x) => a + x.area, 0);
+      const p = prepare({ ...d, flexible: true }, DEFAULT_CONFIG);
+      expect(area(p.af.mesh.surfaces)).toBeCloseTo(area(ideal.mesh.surfaces), 4);
+      expect(area(p.flex!.af.mesh.surfaces) / area(ideal.mesh.surfaces)).toBeCloseTo(1, 1);
+    }
+  });
+
+  it('hard throws bend the wings much more than gentle ones, without permanent damage', () => {
+    const p = prepare({ ...makeGlider(), flexible: true }, DEFAULT_CONFIG);
+    const wings = p.flex!.set.hinges.map((h, j) => (h.length > 0.4 ? j : -1)).filter((j) => j >= 0);
+    expect(wings).toHaveLength(2);
+    const maxBend = (l: LaunchParams) => {
+      const s = createSimulator(p, DEFAULT_CONFIG, l) as MultiBodySim;
+      let m = 0;
+      while (!s.log.firstImpact && s.t < 1.5) {
+        s.step();
+        const a = s.hingeAnglesDeg();
+        m = Math.max(m, ...wings.map((j) => Math.abs(a[j])));
+      }
+      return { m, dmg: s.damage().length };
+    };
+    const gentle = maxBend(launch);
+    const strong = maxBend(hard);
+    expect(strong.m).toBeGreaterThan(10);
+    expect(strong.m).toBeGreaterThan(3 * gentle.m);
+    expect(strong.dmg).toBe(0);
+  });
+
+  it('folded layers close up to flat but never pass through each other', () => {
+    const p = prepare({ ...makeDart(), flexible: true }, DEFAULT_CONFIG);
+    const sim = createSimulator(p, DEFAULT_CONFIG, { ...hard, speed: 15, aoaDeg: 10 }) as MultiBodySim;
+    const hs = p.flex!.set.hinges;
+    let worst = -Infinity;
+    while (!sim.done && sim.t < 3) {
+      sim.step();
+      const a = sim.hingeAnglesDeg();
+      hs.forEach((h, j) => {
+        if (h.control < 0) worst = Math.max(worst, (a[j] - (h.closeAt * 180) / Math.PI) * h.closeDir);
+      });
+    }
+    expect(worst).toBeLessThan(1.5);
+  });
+
+  it('damage on the relaxed plane becomes ops on the design as folded', () => {
+    const d: DesignFile = { ...makeDart(), flexible: true };
+    const p = prepare(d, DEFAULT_CONFIG);
+    const sim = createSimulator(p, DEFAULT_CONFIG, { speed: 13, elevationDeg: -45, headingDeg: 0, heightM: 1.2 });
+    while (!sim.done) sim.step();
+    const events = damageOnFolded(p.model, p.folded, sim.damage());
+    expect(events.length).toBeGreaterThan(0);
+    const r = damageToOps(p.folded, events, d.orientation.up, DEFAULT_CONFIG.paper);
+    expect(r.ops.length).toBeGreaterThan(0);
+    const replayed = replayDesign({ ...d, ops: [...d.ops, ...r.ops] }).models.at(-1)!;
+    expect(JSON.stringify(replayed.facets)).toBe(JSON.stringify(r.model.facets));
+  });
+});
+
+describe('crushed edges', () => {
+  const noseLength = (m: import('../../../src/core/paper/model').PaperModel) =>
+    Math.max(...m.facets.flatMap((f) => f.poly.map((p) => toModel(f, p)[0])));
+
+  for (const make of [makeDart, makeGlider]) {
+    it(`a nose-first crash pushes the nose of the ${make().name} in (an accordion of folds)`, () => {
+      const d: DesignFile = { ...make(), flexible: true };
+      const p = prepare(d, DEFAULT_CONFIG);
+      const sim = createSimulator(p, DEFAULT_CONFIG, { speed: 15, elevationDeg: -60, headingDeg: 0, heightM: 1.2 });
+      while (!sim.done) sim.step();
+      const r = damageToOps(p.folded, damageOnFolded(p.model, p.folded, sim.damage()), d.orientation.up, DEFAULT_CONFIG.paper);
+      const crumple = r.ops.filter((o) => o.id.startsWith('dmg-crumple'));
+      expect(crumple.length).toBe(DEFAULT_CONFIG.paper.crumpleFolds);
+      // alternating folds, and the nose ends up shorter but still pointing forward
+      expect(new Set(crumple.map((o) => (o.type === 'fold' ? o.kind : '')))).toEqual(new Set(['valley', 'mountain']));
+      expect(noseLength(r.model)).toBeLessThan(noseLength(p.folded) - 0.002);
+      expect(totalArea(r.model)).toBeCloseTo(totalArea(p.folded), 10);
+    });
+  }
 });

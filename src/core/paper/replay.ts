@@ -53,7 +53,7 @@ export function applyOp(model: PaperModel, op: Op, opts: FoldOptions = {}): OpRe
       };
     }
     case 'clip': {
-      const clip = { id: op.id, at: op.at, edgeDir: op.edgeDir, massKg: op.massKg };
+      const clip = { id: op.id, at: op.at, edgeDir: op.edgeDir, massKg: op.massKg, ...(op.kind ? { kind: op.kind } : {}) };
       if (!clipStillAttached(model, clip)) throw new PaperError('clipNotOnEdge');
       return { model: { ...model, clips: [...model.clips, clip] }, warnings: [] };
     }

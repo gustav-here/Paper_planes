@@ -342,8 +342,18 @@ export class MultiBodySim implements Simulator {
     // crease springs (and control servos); damping is handled implicitly in step()
     set.hinges.forEach((hg, j) => {
       rhs[6 + j] += -hg.stiffness * (this.theta[j] - this.rest[j]) - hg.damping * u[6 + j];
+      // folded layers meeting: a stiff contact spring stops paper passing through paper
+      const kc = this.contactK(j);
+      if (kc) rhs[6 + j] += -kc * (this.theta[j] - hg.closeAt) - kc * this.cfg.paper.creaseDampingS * u[6 + j];
     });
     return { M, rhs };
+  }
+
+  /** Contact stiffness of hinge j if its two sides are pressed onto each other, else 0. */
+  private contactK(j: number): number {
+    const hg = this.fx.set.hinges[j];
+    if (hg.control >= 0) return 0;
+    return (this.theta[j] - hg.closeAt) * hg.closeDir > 0 ? hg.creaseStiffness * this.cfg.paper.contactStiffnessFactor : 0;
   }
 
   /**
@@ -475,9 +485,11 @@ export class MultiBodySim implements Simulator {
       });
       const A = M.map((x, idx) => x - h * D[idx]);
       this.fx.set.hinges.forEach((hg, j) => {
-        A[(6 + j) * n + 6 + j] += h * hg.damping + h * h * hg.stiffness;
+        const kc = this.contactK(j);
+        const k = hg.stiffness + kc;
+        A[(6 + j) * n + 6 + j] += h * (hg.damping + kc * this.cfg.paper.creaseDampingS) + h * h * k;
         // backward Euler for the spring: −k(θ + h·θ̇_new) → extra −h·k·θ̇ on the right
-        f[6 + j] -= h * hg.stiffness * this.u[6 + j];
+        f[6 + j] -= h * k * this.u[6 + j];
       });
       const du = mulVecN(invert(A, n), f, n);
       for (let i = 0; i < n; i++) this.u[i] += h * du[i];
@@ -613,8 +625,10 @@ export class MultiBodySim implements Simulator {
     this.fx.set.hinges.forEach((hg, j) => {
       // flat paper bending over a whole tab stays elastic; only creases yield
       if (hg.control >= 0 || hg.kind === 'slit') return;
+      // the hinge is the crease in series with elastic paper: only the crease's share yields
       const dev = this.theta[j] - this.rest[j];
-      if (Math.abs(dev) > y) this.rest[j] += dev - Math.sign(dev) * y;
+      const share = hg.stiffness / hg.creaseStiffness;
+      if (Math.abs(dev * share) > y) this.rest[j] = this.theta[j] - (Math.sign(dev) * y) / share;
     });
   }
 

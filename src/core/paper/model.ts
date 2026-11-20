@@ -35,12 +35,14 @@ export interface CutSegment {
   opId: string;
 }
 
-/** A paper clip attached at a point on a stack edge (sheet coordinates). */
+/** A paper clip or a piece of tape attached at a point on a stack edge (sheet coordinates). */
 export interface Clip {
   id: string;
   at: Vec2;
   edgeDir: Vec2;
   massKg: number;
+  /** Paper clip (default) or tape folded over the edge. Both hold the layers together. */
+  kind?: 'clip' | 'tape';
 }
 
 export interface PaperModel {

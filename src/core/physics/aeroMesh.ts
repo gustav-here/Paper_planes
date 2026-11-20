@@ -115,6 +115,86 @@ function groupByPlane(facets: Facet[], tagOf: (f: Facet) => number): { fs: Facet
   return groups.map((g) => ({ fs: g.fs, tag: g.tag }));
 }
 
+/** One plane group of facets: its frame and the union outline in plane coordinates. */
+interface PlaneGroup {
+  n: Vec3;
+  e1: Vec3;
+  e2: Vec3;
+  /** Model-space point of the plane closest to the centre of mass (plane-coordinate origin). */
+  originModel: Vec3;
+  union: MultiPolygon;
+  area: number;
+  tag: number;
+}
+
+/** Layers this close in angle that overlap are one stack for the air (a gaping fold). */
+const STACK_ANGLE_DEG = 25;
+/** …and no farther apart than this where they overlap (m). */
+const STACK_GAP_M = 0.012;
+
+function areaOf(mp: MultiPolygon): number {
+  return mp.reduce((s, p) => s + polygonAreaCentroid(p).area, 0);
+}
+
+/** Group `b`'s outline expressed in group `a`'s plane coordinates (orthogonal projection). */
+function projectInto(b: PlaneGroup, a: PlaneGroup): MultiPolygon {
+  return b.union.map((poly) =>
+    poly.map((ring) =>
+      ring.map((q) => {
+        const p = V.add(V.add(b.originModel, V.scale(b.e1, q[0])), V.scale(b.e2, q[1]));
+        const r = V.sub(p, a.originModel);
+        return [V.dot(r, a.e1), V.dot(r, a.e2)] as [number, number];
+      }),
+    ),
+  );
+}
+
+/**
+ * Layers that a fold left slightly open (springback) still act as one plate for the air: a
+ * near-coplanar layer overlapping a larger one joins it (same tag) or, if it moves on its own
+ * (another panel), keeps only the part the larger one does not cover. Exactly coplanar layers
+ * are already one group. The area that overlaps is counted once.
+ */
+function mergeStacks(groups: PlaneGroup[]): PlaneGroup[] {
+  const cosLim = Math.cos((STACK_ANGLE_DEG * Math.PI) / 180);
+  const order = [...groups].sort((x, y) => y.area - x.area);
+  const out: PlaneGroup[] = [];
+  for (const g of order) {
+    let cur: PlaneGroup | null = g;
+    for (const big of out) {
+      if (!cur) break;
+      if (Math.abs(V.dot(big.n, cur.n)) < cosLim) continue;
+      if (big.tag === cur.tag && parallelNormals(big.n, cur.n, 1e-9)) continue;
+      const proj = projectInto(cur, big);
+      let inter: MultiPolygon;
+      try {
+        inter = robust((x) => polygonClipping.intersection(x[0], x[1]), [big.union, proj]);
+      } catch {
+        continue;
+      }
+      const ia = areaOf(inter);
+      if (ia < 0.1 * Math.min(cur.area, big.area) || ia < 1e-6) continue;
+      // close enough where they overlap?
+      const c = polygonAreaCentroid(inter[0]).c;
+      const pc = V.add(V.add(big.originModel, V.scale(big.e1, c[0])), V.scale(big.e2, c[1]));
+      const dist = Math.abs(V.dot(cur.n, V.sub(pc, cur.originModel)));
+      if (dist > STACK_GAP_M) continue;
+      if (big.tag === cur.tag) {
+        big.union = robust((x) => polygonClipping.union(x[0], x[1]), [big.union, proj]);
+        big.area = areaOf(big.union);
+        cur = null;
+      } else {
+        const back = projectInto(big, cur);
+        cur.union = robust((x) => polygonClipping.difference(x[0], x[1]), [cur.union, back]);
+        cur.area = areaOf(cur.union);
+        if (cur.area < 1e-8) cur = null;
+      }
+    }
+    if (cur) out.push(cur);
+  }
+  return out;
+}
+
 /**
  * Build aero surfaces and square-grid elements from the folded model.
  * @param com centre of mass (model space); output is relative to it.
@@ -129,6 +209,7 @@ export function buildAeroMesh(
 ): AeroMesh {
   const surfaces: AeroSurface[] = [];
   const elements: AeroElement[] = [];
+  const groups: PlaneGroup[] = [];
   for (const { fs: group, tag } of groupByPlane(model.facets, (f) => tags?.get(f.id) ?? -1)) {
     const n = canonicalNormal(facetNormal(group[0]));
     let e1 = V.rejectFrom([1, 0, 0], n);
@@ -147,6 +228,9 @@ export function buildAeroMesh(
       return [ring];
     });
     const union: MultiPolygon = polys.length === 1 ? [polys[0]] : robust((g) => polygonClipping.union(g[0], ...g.slice(1)), polys);
+    groups.push({ n, e1, e2, originModel, union, area: areaOf(union), tag });
+  }
+  for (const { n, e1, e2, originModel, union, tag } of mergeStacks(groups)) {
     let area = 0;
     let cx = 0;
     let cy = 0;

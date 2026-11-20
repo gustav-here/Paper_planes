@@ -15,6 +15,9 @@ const GRID_LIFT = 0.00004;
 const GRID_SQUARES_ACROSS = 10;
 const FRONT = new THREE.Color('#fbf9f3');
 const BACK = new THREE.Color('#e9e2d0');
+/** Crushed paper (impact damage): duller, greyer, with a mottled look per crumpled facet. */
+const CRUMPLED = [new THREE.Color('#ddd3bd'), new THREE.Color('#cbbfa4')];
+const isCrumpled = (f: Facet) => f.foldPath.some((id) => id.startsWith('dmg-crumple'));
 /** Tints: control flaps (orange) and hover highlight (blue). */
 export type FacetTint = 'control' | 'hover' | 'controlHover';
 const TINTS: Record<FacetTint, [THREE.Color, THREE.Color]> = {
@@ -190,9 +193,16 @@ export class PaperView {
     const attr = geo.getAttribute('color') as THREE.BufferAttribute;
     // triangles alternate front/back per facet fan (see update)
     for (let t = 0; t < this.triFacet.length; t++) {
-      const tint = this.tints.get(this.triFacet[t]);
+      const id = this.triFacet[t];
+      const tint = this.tints.get(id);
       const back = t % 2 === 1;
-      const c = tint ? TINTS[tint][back ? 1 : 0] : back ? BACK : FRONT;
+      let c = tint ? TINTS[tint][back ? 1 : 0] : back ? BACK : FRONT;
+      const f = this.facets.get(id);
+      if (!tint && f && isCrumpled(f)) {
+        // deterministic per-facet shade: the crinkled zigzag catches the light unevenly
+        const shade = 0.86 + 0.14 * (((id * 2654435761) >>> 0) / 4294967296);
+        c = CRUMPLED[back ? 1 : 0].clone().multiplyScalar(shade);
+      }
       for (let k = 0; k < 3; k++) attr.setXYZ(t * 3 + k, c.r, c.g, c.b);
     }
     attr.needsUpdate = true;

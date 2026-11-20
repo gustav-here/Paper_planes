@@ -19,9 +19,6 @@
           <button id="btn-redo" title="Gör om (Shift+Ctrl/Cmd+Z)">↷ Gör om</button>
         </div>
         <div class="group">
-          <button id="btn-flip-long" title="Vänd 90° runt långsidan (F)">⇅ Vänd 90°</button>
-          <button id="btn-flip-short" title="Vänd 90° runt kortsidan (Shift+F)">⇆ Vänd 90°</button>
-          <button id="btn-rotate" title="Rotera 90° (R)">⟳ Rotera</button>
           <button id="btn-xray" class="toggle" title="Röntgen: genomskinligt papper (X)">◐ Röntgen</button>
           <button id="btn-reset-view" title="Återställ kamera">⌂</button>
           <button id="btn-physics" class="toggle" title="Fysik: massa, tyngdpunkt och stabilitet (I)">⚖ Fysik</button>
@@ -42,6 +39,7 @@
         <button data-tool="fold" title="Vik (V)"><span class="ico">⟋</span>Vik</button>
         <button data-tool="cut" title="Sax (S)"><span class="ico">✂</span>Sax</button>
         <button data-tool="clip" title="Gem (G)"><span class="ico">📎</span>Gem</button>
+        <button data-tool="tape" title="Tejp (J): håller ihop lagren vid en kant, nästan utan vikt"><span class="ico">🩹</span>Tejp</button>
         <button data-tool="control" title="Klaff (K): gör en vikt flik styrbar"><span class="ico">🕹</span>Klaff</button>
         <button data-tool="view" title="Vy – rotera kameran med vänster knapp (O)"><span class="ico">👁</span>Vy</button>
       </aside>
@@ -115,8 +113,7 @@
             <option value="side">Kamera: från sidan</option>
             <option value="free">Kamera: fri</option>
           </select>
-          <button id="fl-slow" class="toggle" title="Slow time: tiden går hälften så fort (2 / 1)">🐢 Slow time</button>
-          <button id="fl-debug" class="toggle" title="Felsökning: tyngdpunkt, hastighet, krafter och grafer (D)">🛠 Felsökning</button>
+          <button id="fl-debug" class="toggle" title="Flygdata: tyngdpunkt, hastighet, krafter och grafer (D)">📈 Flygdata</button>
         </div>
       </header>
 
@@ -138,6 +135,11 @@
       <div class="flight-only plot-wrap" id="plot-wrap"><canvas id="fl-plot"></canvas></div>
 
       <div class="view-ball" id="view-ball" title="360-boll: dra för att snurra modellen · dubbelklicka för att ställa den rättvänd igen"><span>360°</span></div>
+      <div class="view-buttons">
+        <button id="btn-flip-long" title="Vänd 90° runt långsidan (F)">⇅</button>
+        <button id="btn-flip-short" title="Vänd 90° runt kortsidan (Shift+F)">⇆</button>
+        <button id="btn-rotate" title="Rotera 90° (R)">↻</button>
+      </div>
 
       <div class="hint" id="hint"></div>
       <div class="toasts" id="toasts"></div>

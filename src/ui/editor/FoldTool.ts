@@ -102,6 +102,7 @@ export class FoldTool implements Tool {
       if (this.ctx.options.pointToPoint) {
         const hit = this.ctx.hitPaper(e);
         if (!hit) return;
+        this.ctx.setFrame(hit.frame);
         const plane = { point: hit.point, normal: this.ctx.towardsViewer(hit.normal, hit.point) };
         const A = new Snapper(this.ctx.model(), plane).snap(hit.point, this.ctx.mouse(e), (p) => this.ctx.toScreen(p), null, e.shiftKey).point;
         this.s = { k: 'p2p', A, plane };

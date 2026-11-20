@@ -1,5 +1,6 @@
 import * as V from '../../core/math/vec3';
 import type { Vec3 } from '../../core/math/vec3';
+import type { RigidTransform } from '../../core/math/transform';
 import { Snapper } from './Snapping';
 import type { Plane, SnapResult } from './Snapping';
 import { rayPlane } from './toolContext';
@@ -29,6 +30,7 @@ export class LineDraw {
   private trySetPlane(e: PointerEvent): boolean {
     const hit = this.ctx.hitPaper(e);
     if (!hit) return false;
+    this.ctx.setFrame(hit.frame);
     this.plane = { point: hit.point, normal: this.ctx.towardsViewer(hit.normal, hit.point) };
     this.snapper = new Snapper(this.ctx.model(), this.plane);
     const start = this.startEvent!;
@@ -56,7 +58,7 @@ export class LineDraw {
   private choosePlane(e: PointerEvent) {
     const start = this.startEvent!;
     const SAMPLES = 9;
-    const votes: { plane: Plane; n: number }[] = [];
+    const votes: { plane: Plane; n: number; frame: RigidTransform }[] = [];
     for (let i = 0; i < SAMPLES; i++) {
       const t = i / (SAMPLES - 1);
       const probe = { clientX: start.clientX + (e.clientX - start.clientX) * t, clientY: start.clientY + (e.clientY - start.clientY) * t } as PointerEvent;
@@ -64,13 +66,14 @@ export class LineDraw {
       if (!hit) continue;
       const v = votes.find((x) => samePlane(x.plane, hit.point, hit.normal));
       if (v) v.n++;
-      else votes.push({ plane: { point: hit.point, normal: this.ctx.towardsViewer(hit.normal, hit.point) }, n: 1 });
+      else votes.push({ plane: { point: hit.point, normal: this.ctx.towardsViewer(hit.normal, hit.point) }, n: 1, frame: hit.frame });
     }
     if (!votes.length || !this.plane) return;
     const cur = votes.find((x) => samePlane(x.plane, this.plane!.point, this.plane!.normal));
     const best = votes.reduce((a, b) => (b.n > a.n ? b : a));
     if (best === cur || (cur && cur.n >= best.n)) return;
     this.plane = best.plane;
+    this.ctx.setFrame(best.frame);
     this.snapper = new Snapper(this.ctx.model(), this.plane);
     const raw = rayPlane(this.ctx.ray(start), this.plane);
     if (raw) this.p0 = this.snapAt(start, raw, null).point;
@@ -94,6 +97,7 @@ export class LineDraw {
       ctx.snapDot(null);
       return;
     }
+    ctx.setFrame(hit.frame);
     const plane = { point: hit.point, normal: ctx.towardsViewer(hit.normal, hit.point) };
     const s = new Snapper(ctx.model(), plane).snap(hit.point, ctx.mouse(e), (p) => ctx.toScreen(p), null, e.shiftKey);
     ctx.snapDot(s.kind === 'point' || s.kind === 'edge' ? ctx.toScreen(s.point) : null, s.kind);
