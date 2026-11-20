@@ -99,6 +99,8 @@ export class FlightMode {
   private round: Round | null = null;
   private replaying: LeaderEntry | null = null;
   private keys = { up: false, down: false, left: false, right: false };
+  /** Keys pressed since the last physics step (so a tap shorter than a step is not lost). */
+  private tapped = { up: false, down: false, left: false, right: false };
   active = false;
 
   constructor(
@@ -270,8 +272,11 @@ export class FlightMode {
     const sim = this.sim;
     if (!this.replaying) {
       const k = this.keys;
+      const t = this.tapped;
+      const on = (x: keyof FlightMode['keys']) => (k[x] || t[x] ? 1 : 0);
       // like a control stick: ↓ (pull) = nose up, ↑ (push) = nose down
-      sim.controls.set(sim.stepIndex, (k.down ? 1 : 0) - (k.up ? 1 : 0), (k.right ? 1 : 0) - (k.left ? 1 : 0));
+      sim.controls.set(sim.stepIndex, on('down') - on('up'), on('right') - on('left'));
+      this.tapped = { up: false, down: false, left: false, right: false };
     }
     this.prevPoses = this.curPoses;
     this.prevPos = sim.position();
@@ -742,6 +747,8 @@ export class FlightMode {
       const k = map[e.key];
       if (!k) return false;
       this.keys[k] = down;
+      // a quick tap still reaches at least one physics step
+      if (down) this.tapped[k] = true;
       e.preventDefault();
       return true;
     };
@@ -751,10 +758,15 @@ export class FlightMode {
     window.addEventListener('blur', () => (this.keys = { up: false, down: false, left: false, right: false }));
     window.addEventListener('keydown', (e) => {
       if (!this.active) return;
+      // in flight the arrow keys always steer, whatever has keyboard focus (a slider, a menu)
+      if (this.phase === 'flying' && arrow(e, true)) {
+        const el = document.activeElement as HTMLElement | null;
+        if (el && (el.tagName === 'SELECT' || el.tagName === 'INPUT')) el.blur();
+        return;
+      }
       const tag = (e.target as HTMLElement).tagName;
       if (tag === 'INPUT' && (e.target as HTMLInputElement).type !== 'range') return;
       if (tag === 'SELECT') return;
-      if (this.phase === 'flying' && arrow(e, true)) return;
       switch (e.key) {
         case ' ':
         case 'Enter':

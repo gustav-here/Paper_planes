@@ -63,4 +63,62 @@ describe('control flaps', () => {
     for (let i = 0; i < 240; i++) sim.step();
     expect(sim.deflectionsDeg()[0]).toBeCloseTo(25, 9);
   });
+
+  it('every flap is an elevon: pitch and roll mix, clipped to the travel', () => {
+    const af = airframeFromDesign(withControls(makeGlider()), DEFAULT_CONFIG);
+    const sim = new FlightSim(af, DEFAULT_CONFIG, launch, [{ step: 0, pitch: 1, roll: 1 }]);
+    for (let i = 0; i < 240; i++) sim.step();
+    // stick back and right: the right flap goes fully up (both inputs agree), the left cancels out
+    const byRoll = new Map(af.controls.map((g, i) => [g.rollSign, sim.deflectionsDeg()[i]]));
+    expect(byRoll.get(1)).toBeCloseTo(25, 6);
+    expect(byRoll.get(-1)).toBeCloseTo(0, 6);
+  });
+
+  it('a flap level with the centre of mass still works as an elevator', () => {
+    // a single flap folded up at the trailing edge right under the CoM: no longer ignored for pitch
+    const af = airframeFromDesign(withControls(makeGlider()), DEFAULT_CONFIG);
+    for (const g of af.controls) expect(g.pitchSign).not.toBe(0);
+  });
+});
+
+describe('flap size', () => {
+  /** Glider with control elevators of the given depth (m), the same everywhere else. */
+  const glider = (chord: number) => withControls(makeGlider(0.015, 85, { elevatorDeg: 10, elevatorChord: chord }));
+  const CHORDS = [0.01, 0.02, 0.03];
+
+  it('bigger flaps have more area', () => {
+    const area = (c: number) => {
+      const af = airframeFromDesign(glider(c), DEFAULT_CONFIG);
+      return af.controls.reduce((s, g) => s + g.surfaces.reduce((a, sid) => a + af.mesh.surfaces[sid].area, 0), 0);
+    };
+    const a = CHORDS.map(area);
+    expect(a[1] / a[0]).toBeCloseTo(2, 1);
+    expect(a[2] / a[0]).toBeCloseTo(3, 1);
+  });
+
+  it('bigger flaps roll the plane faster (about in proportion to their area)', () => {
+    const rollRate = (c: number) => {
+      const af = airframeFromDesign(glider(c), DEFAULT_CONFIG);
+      const run = (roll: number) => {
+        const sim = new FlightSim(af, DEFAULT_CONFIG, { ...launch, speed: 6 }, [{ step: 0, pitch: 0, roll }]);
+        while (sim.t < 0.15) sim.step();
+        return sim.state.w[0];
+      };
+      return Math.abs(run(1) - run(0));
+    };
+    const r = CHORDS.map(rollRate);
+    expect(r[1]).toBeGreaterThan(1.6 * r[0]);
+    expect(r[2]).toBeGreaterThan(1.4 * r[1]);
+  });
+
+  it('bigger flaps pitch the plane harder', () => {
+    const dPitch = (c: number) => {
+      const d = glider(c);
+      const base = fly(d, [], 0.4).sim.log.samples.at(-1)!.pitchDeg;
+      return fly(d, [{ step: 0, pitch: 1, roll: 0 }], 0.4).sim.log.samples.at(-1)!.pitchDeg - base;
+    };
+    const p = CHORDS.map(dPitch);
+    expect(p[1]).toBeGreaterThan(p[0] + 2);
+    expect(p[2]).toBeGreaterThan(p[1] + 1);
+  });
 });

@@ -7,8 +7,10 @@ import type { Op } from '../paper/ops';
 
 /**
  * A control flap: the paper moved by a fold marked `control`, hinged on that fold's crease.
- * Its response to the stick follows from where it sits: behind the CoM it acts as an elevator,
- * ahead of it as a canard, off-centre as an aileron (so mirrored pairs become elevons).
+ * Every flap mixes both stick axes (elevon): pitch with the sign set by where it sits (behind or
+ * level with the CoM it acts as an elevator, clearly ahead of it as a canard) and roll by which
+ * side it is on (only a flap on the centre line has no roll). The stick sum is clipped to the
+ * flap's travel.
  */
 export interface ControlGroup {
   /** Fold op id (a mirrored twin has the id followed by '). */
@@ -21,7 +23,7 @@ export interface ControlGroup {
   hingeA: Vec3;
   /** Area centroid (body frame). */
   centroid: Vec3;
-  /** +1 behind the CoM (elevator), −1 ahead of it (canard), 0 at the CoM. */
+  /** +1 behind the CoM or level with it (elevator), −1 clearly ahead of it (canard). */
   pitchSign: number;
   /** +1 on the right wing, −1 on the left, 0 on the centre line. */
   rollSign: number;
@@ -109,7 +111,8 @@ export function buildControlGroups(
       hingeP,
       hingeA,
       centroid,
-      pitchSign: x < -SIDE_TOL ? 1 : x > SIDE_TOL ? -1 : 0,
+      // a trailing-edge flap level with the CoM still pitches the plane like an elevator
+      pitchSign: x > SIDE_TOL ? -1 : 1,
       rollSign: y > SIDE_TOL ? 1 : y < -SIDE_TOL ? -1 : 0,
     });
   });

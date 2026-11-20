@@ -51,9 +51,10 @@ Webbläsarspel: vik ett pappersflygplan av ett A4 och kasta det. Flygbeteendet s
   Snitt och snittändar sparas för framtida hållbarhets-/styvhetsmodell.
 - Omöjliga veck (papper genom papper): varning i etapp 1, blockeras från etapp 2.
 - Kaststyrka 1–15 m/s utan förstärkning.
-- Klaffar (`FoldOp.control`) vrider sina ytor runt sitt veck. Effekten uppstår ur aeromodellen,
-  och läget i förhållande till tyngdpunkten avgör om klaffen fungerar som höjd-, skev- eller
-  canardroder. ±25° med 125°/s.
+- Klaffar (`FoldOp.control`) vrider sina ytor runt sitt veck. Effekten uppstår ur aeromodellen.
+  Varje klaff blandar höjd och skevning (elevon). Läget avgör tecknen: bakom eller i höjd med
+  tyngdpunkten fungerar den som höjdroder, tydligt framför som canard, och sidan avgör skevningen.
+  ±25° med 125°/s.
 - Flexibelt papper (`DesignFile.flexible`): gångjärnsförsedda stela paneler i reducerade
   koordinater med linjärt implicit Euler. Stelt papper är standard och används av valideringen.
 - Fold-scope `all` = alla lager vid den *dragna* linjen och det som sitter fast i dem (snitt begränsar).

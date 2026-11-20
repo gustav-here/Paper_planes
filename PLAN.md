@@ -812,3 +812,21 @@ Resultat med standardkonfigurationen (släpp från 10 m, olika kastfarter):
 - I den flexibla modellen räknas papper som fortsätter nästan plant (under 3°) som samma panel.
     Med gem blir kölen därför en panel med vriden viloform. Den kan inte vridas isär ytterligare
     under flygningen; det skulle kräva vridleder.
+
+## 24. Klaffar som kombinerade höjd- och skevroder
+- **Varje klaff blandar höjd och skevning** (elevon): utslag = clip(höjd · pitchSign + skev ·
+  rollSign) · 25°.
+  - pitchSign är +1 bakom eller i höjd med tyngdpunkten och −1 tydligt framför den. En klaff i
+    höjd med tyngdpunkten ignorerades förut för höjdled.
+  - rollSign beror på vilken sida klaffen sitter på. Bara en klaff mitt på centerlinjen saknar
+    skevning.
+- **Piltangenterna styr alltid under flygningen**, även om en meny eller ett reglage har fokus.
+  Fokus tas då bort från menyn. Ett kort tryck som släpps innan nästa fysiksteg räknas ändå för ett steg.
+- **Verifierat att klaffens storlek påverkar effekten** (glidplan med höjdroder 10/20/30/40 mm,
+  stelt och flexibelt papper):
+  - Klaffytan är 17, 35, 52 och 70 cm².
+  - Rollhastigheten efter 0,15 s är 1,6, 3,5, 6,0 och 8,5 rad/s, ungefär proportionell mot ytan.
+  - Stigningen efter 0,4 s med fullt höjdroder är +17,6°, +23,8°, +26,3° och +28,0°. Den ökar men
+    planar ut, eftersom planets egen dämpning i stigning tar över.
+  - Darten ger samma bild: +16° till +31°.
+  - Testerna finns i `tests/core/physics/controls.test.ts`.
