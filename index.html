@@ -12,6 +12,7 @@
 
       <header class="topbar">
         <div class="brand">Pappersflygplan <span>· vikning</span></div>
+        <button id="btn-fly" class="primary" title="Gå till kastläget (T)">✈ Kasta</button>
         <div class="group">
           <button id="btn-undo" title="Ångra (Ctrl/Cmd+Z)">↶ Ångra</button>
           <button id="btn-redo" title="Gör om (Shift+Ctrl/Cmd+Z)">↷ Gör om</button>
@@ -45,19 +46,17 @@
 
       <section class="options" id="opts-fold">
         <h3>Vik</h3>
-        <div class="seg" id="fold-kind">
-          <button data-kind="valley" title="Dalveck (D): fliken viks mot dig">Dal</button>
-          <button data-kind="mountain" title="Bergsveck (B): fliken viks bort från dig">Berg</button>
-        </div>
+        <p>Dra uppåt för dalveck (mot dig), nedåt för bergsveck (bort från dig).</p>
         <label>Lager
           <select id="fold-scope">
+            <option value="top" selected>Översta flik</option>
             <option value="all">Alla lager</option>
-            <option value="top">Översta flik</option>
             <option value="bottom">Understa flik</option>
             <option value="flap">Klickad flik</option>
           </select>
         </label>
         <label class="check"><input type="checkbox" id="fold-mirror" /> Spegla (M)</label>
+        <button class="mirror-last" id="btn-mirror-last" title="Gör det senaste vecket en gång till, spegelvänt på andra halvan (N)">⇋ Spegla senaste</button>
         <label class="check"><input type="checkbox" id="fold-p2p" /> Punkt → punkt (P)</label>
       </section>
 
@@ -70,6 +69,7 @@
           </select>
         </label>
         <label class="check"><input type="checkbox" id="cut-mirror" /> Spegla (M)</label>
+        <button class="mirror-last" id="btn-mirror-last-cut" title="Gör det senaste snittet en gång till, spegelvänt på andra halvan (N)">⇋ Spegla senaste</button>
       </section>
 
       <section class="options" id="opts-clip">
@@ -85,6 +85,43 @@
         </div>
         <div class="body"></div>
       </section>
+
+      <!-- throw / flight mode -->
+      <header class="flight-only flight-bar">
+        <button id="fl-back" title="Tillbaka till vikningen (Esc)">← Vikning</button>
+        <div class="brand"><span id="fl-title"></span></div>
+        <div class="group">
+          <button id="fl-pause" title="Paus (P)">⏸ Paus</button>
+          <button id="fl-step" title="Stega ett tidssteg, 1/240 s (.)">⏭ Steg</button>
+          <select id="fl-speed" aria-label="Tidsskala" title="Tidsskala (1–4)">
+            <option value="1">1×</option>
+            <option value="0.5">½×</option>
+            <option value="0.25">¼×</option>
+            <option value="0.1">⅒×</option>
+          </select>
+          <select id="fl-cam" aria-label="Kamera" title="Kamera (C)">
+            <option value="follow">Kamera: följ</option>
+            <option value="side">Kamera: från sidan</option>
+            <option value="free">Kamera: fri</option>
+          </select>
+          <button id="fl-debug" class="toggle" title="Felsökning: tyngdpunkt, hastighet, krafter och grafer (D)">🛠 Felsökning</button>
+        </div>
+      </header>
+
+      <section class="flight-only aim-panel" id="aim-panel">
+        <h3>Kast</h3>
+        <label>Styrka <span id="aim-speed-v"></span><input type="range" id="aim-speed" min="1" max="15" step="0.5" /></label>
+        <label>Vinkel uppåt <span id="aim-elev-v"></span><input type="range" id="aim-elev" min="-30" max="45" step="1" /></label>
+        <label>Riktning <span id="aim-head-v"></span><input type="range" id="aim-head" min="-45" max="45" step="1" /></label>
+        <label>Nosvinkel vid släpp <span id="aim-aoa-v"></span><input type="range" id="aim-aoa" min="-10" max="20" step="1" /></label>
+        <label>Släpphöjd <span id="aim-height-v"></span><input type="range" id="aim-height" min="0.5" max="2.5" step="0.1" /></label>
+        <button id="btn-throw" class="primary">Kasta! (mellanslag)</button>
+        <p class="note" id="aim-info">Planet släpps utan rotation med vingarna vågräta. Distansen mäts till första nedslaget.</p>
+      </section>
+
+      <div class="flight-only fl-stats" id="fl-stats"></div>
+      <section class="flight-only result-card" id="result-card"></section>
+      <div class="flight-only plot-wrap" id="plot-wrap"><canvas id="fl-plot"></canvas></div>
 
       <div class="hint" id="hint"></div>
       <div class="toasts" id="toasts"></div>

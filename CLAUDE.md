@@ -18,6 +18,9 @@ Webbläsarspel: vik ett pappersflygplan av ett A4 och kasta det. Flygbeteendet s
 - `src/render/` (three.js) och `src/ui/` (DOM) läser från core, aldrig tvärtom.
 - Fysiken stegar med fast `dt` (standard 1/240 s) via ackumulator i `app/GameLoop.ts`,
   oberoende av bildfrekvens.
+- Kastläget (`src/ui/flight/FlightMode.ts`) stegar `FlightSim` via `GameLoop.stepper` och renderar
+  i en egen värld-scen (`render/World.ts`, `render/FlightView.ts`). Editorn och kastläget delar renderer
+  via `Stage.setView`.
 - Designer är listor av operationer (`ops`) i JSON (`format: "paperplane-design"`,
   `version`). Höj `version` och skriv migrering vid formatändringar.
 

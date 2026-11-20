@@ -7,12 +7,22 @@ const SHEET_Z = 0.21;
 /** Screen space reserved for the HUD (px): left tool panels, top bar, bottom hint/status. */
 const HUD = { left: 310, top: 140, bottom: 70, right: 20 };
 
+/** A scene + camera pair that can be shown on the shared renderer (editor table, flight world). */
+export interface View {
+  scene: THREE.Scene;
+  camera: THREE.PerspectiveCamera;
+  /** Called every frame before rendering (e.g. controls.update()). */
+  update?: () => void;
+}
+
 /** Renderer, camera, orbit controls and lighting for the folding table. */
 export class Stage {
   readonly renderer: THREE.WebGLRenderer;
   readonly scene = new THREE.Scene();
   readonly camera: THREE.PerspectiveCamera;
   readonly controls: OrbitControls;
+  private active: View | null = null;
+  private extraCameras: THREE.PerspectiveCamera[] = [];
 
   constructor(readonly canvas: HTMLCanvasElement) {
     this.renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
@@ -97,11 +107,30 @@ export class Stage {
     const w = this.canvas.clientWidth || window.innerWidth;
     const h = this.canvas.clientHeight || window.innerHeight;
     this.renderer.setSize(w, h, false);
-    this.camera.aspect = w / h;
-    this.camera.updateProjectionMatrix();
+    for (const cam of [this.camera, ...this.extraCameras]) {
+      cam.aspect = w / h;
+      cam.updateProjectionMatrix();
+    }
+  }
+
+  /** Register another camera so it follows canvas resizes. */
+  addCamera(cam: THREE.PerspectiveCamera) {
+    this.extraCameras.push(cam);
+    this.resize();
+  }
+
+  /** Show another view (null = the folding table). The table's controls only work when it is shown. */
+  setView(v: View | null) {
+    this.active = v;
+    this.controls.enabled = v === null;
   }
 
   render() {
+    if (this.active) {
+      this.active.update?.();
+      this.renderer.render(this.active.scene, this.active.camera);
+      return;
+    }
     this.controls.update();
     this.renderer.render(this.scene, this.camera);
   }

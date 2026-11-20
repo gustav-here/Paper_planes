@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import * as M from '../../../src/core/math/mat3';
 import { createSheet, facetVertices, totalArea } from '../../../src/core/paper/model';
 import { A4_80GSM } from '../../../src/core/paper/paperSpec';
-import { findSymmetry } from '../../../src/core/paper/symmetry';
+import { findSymmetry, mirrorFold } from '../../../src/core/paper/symmetry';
 import { applyOp } from '../../../src/core/paper/replay';
 import { CENTER_LINE, cut, fold } from './helpers';
 
@@ -64,5 +64,22 @@ describe('symmetry', () => {
     const r = applyOp(sheet(), fold(CENTER_LINE[0], CENTER_LINE[1], [0, 0, 1], { mirror: true }));
     expect(r.mirrored).toBe(false);
     expect(r.warnings.map((w) => w.code)).toContain('mirrorOnAxis');
+  });
+});
+
+describe('mirror the last fold afterwards ("Spegla senaste")', () => {
+  it('folding one corner and then its mirror image restores symmetry', () => {
+    const before = sheet();
+    const op = cornerFold(false);
+    const after = applyOp(before, op).model;
+    expect(findSymmetry(after)).toBeNull();
+    const R = findSymmetry(before)!;
+    const twin = { ...mirrorFold(op, R), id: 's1' };
+    const both = applyOp(after, twin).model;
+    expect(findSymmetry(both)).not.toBeNull();
+    // same result as folding with mirror: true in one go
+    const direct = applyOp(before, cornerFold(true)).model;
+    const key = (m: typeof both) => m.facets.map((f) => facetVertices(f).map((v) => v.map((c) => c.toFixed(9)).join()).sort().join('|')).sort().join('#');
+    expect(key(both)).toBe(key(direct));
   });
 });

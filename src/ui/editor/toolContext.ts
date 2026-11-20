@@ -1,14 +1,13 @@
 import * as V from '../../core/math/vec3';
 import type { Vec3 } from '../../core/math/vec3';
 import type { PaperModel } from '../../core/paper/model';
-import type { FoldKind, FoldScope, Op } from '../../core/paper/ops';
+import type { FoldScope, Op } from '../../core/paper/ops';
 import type { OpResult } from '../../core/paper/replay';
 import type { PaperHit } from '../../render/PaperMesh';
 import type { Overlay } from '../../render/Overlay';
 import type { SnapKind, Plane } from './Snapping';
 
 export interface EditorOptions {
-  foldKind: FoldKind;
   foldScope: FoldScope;
   foldMirror: boolean;
   pointToPoint: boolean;

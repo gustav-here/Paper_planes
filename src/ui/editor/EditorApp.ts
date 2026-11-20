@@ -25,6 +25,9 @@ import { FoldTool } from './FoldTool';
 import { CutTool } from './CutTool';
 import { ClipTool } from './ClipTool';
 import type { SnapKind } from './Snapping';
+import { detectOrientation } from '../../core/paper/orientation';
+import { cutIsSelfMirror, foldIsSelfMirror, mirrorCut, mirrorFold } from '../../core/paper/symmetry';
+import { symmetryOf } from '../../render/modelCache';
 import type { EditorOptions, Ray, Tool, ToolContext, ToastAction, ToastKind } from './toolContext';
 
 type ToolName = 'fold' | 'cut' | 'clip' | 'view';
@@ -34,8 +37,7 @@ const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as 
 /** The folding editor: owns history, the paper view on the table, tools and the DOM HUD. */
 export class EditorApp implements ToolContext {
   readonly options: EditorOptions = {
-    foldKind: 'valley',
-    foldScope: 'all',
+    foldScope: 'top',
     foldMirror: false,
     pointToPoint: false,
     cutDepth: 'all',
@@ -62,6 +64,13 @@ export class EditorApp implements ToolContext {
   private rootPosInit = false;
   private raycaster = new THREE.Raycaster();
   private pointerDown = false;
+  /** Model whose orientation was last auto-detected, and whether the player overrode it since. */
+  private orientedModel: PaperModel | null = null;
+  private manualOrientation = false;
+  /** False while the throw/flight mode is shown: the editor ignores input. */
+  active = true;
+  /** Called when the player wants to throw the current model. */
+  onFly: ((model: PaperModel, design: { name: string; orientation: { nose: Vec3; up: Vec3 } }) => void) | null = null;
 
   constructor(private stage: Stage) {
     stage.scene.add(createTable());
@@ -71,6 +80,7 @@ export class EditorApp implements ToolContext {
       () => this.history.meta.orientation,
       (o) => {
         this.history.meta.orientation = o;
+        this.manualOrientation = true;
         this.placeNoseArrow(this.shown());
         this.refreshPhysics();
       },
@@ -297,9 +307,55 @@ export class EditorApp implements ToolContext {
     $('btn-physics').classList.toggle('on', this.physics.visible);
   }
 
+  /**
+   * Find nose/up from the folded geometry (symmetry plane, centre fold down) whenever the model
+   * changes, unless the player chose an orientation by hand for this model.
+   */
+  private autoOrient(force = false) {
+    const m = this.history.current;
+    if (!force && m === this.orientedModel) return;
+    if (m !== this.orientedModel) this.manualOrientation = false;
+    this.orientedModel = m;
+    if (this.manualOrientation) return;
+    const o = detectOrientation(m, this.history.meta.orientation);
+    if (o.detected) this.history.meta.orientation = { nose: o.nose, up: o.up };
+  }
+
+  /** Can the last fold/cut be mirrored onto the other half? Returns the twin op or a reason. */
+  private mirrorLastOp(): { op: Op } | { reason: string } {
+    const last = this.history.appliedOps.at(-1);
+    if (!last || (last.type !== 'fold' && last.type !== 'cut')) return { reason: 'Det finns inget veck eller snitt att spegla.' };
+    if (last.mirror) return { reason: 'Det senaste vecket är redan speglat.' };
+    const R = symmetryOf(this.history.previous);
+    if (!R) return { reason: 'Går inte att spegla: modellen var inte symmetrisk före det senaste vecket.' };
+    if (last.type === 'fold') {
+      if (foldIsSelfMirror(last, R)) return { reason: 'Vecket ligger på mittlinjen – det har ingen spegelbild.' };
+      return { op: { ...mirrorFold(last, R), id: this.history.nextId('s') } };
+    }
+    if (cutIsSelfMirror(last, R)) return { reason: 'Snittet ligger på mittlinjen – det har ingen spegelbild.' };
+    return { op: { ...mirrorCut(last, R), id: this.history.nextId('s') } };
+  }
+
+  private mirrorLast() {
+    this.cancelTool();
+    const r = this.mirrorLastOp();
+    if ('reason' in r) {
+      this.toast(r.reason, 'warn');
+      return;
+    }
+    if (this.commit(r.op)) this.toast('Speglade det senaste till andra halvan.', 'ok');
+  }
+
   private syncView() {
+    this.autoOrient();
     this.syncPaper();
     this.placeNoseArrow(this.shown());
+    const ml = this.mirrorLastOp();
+    for (const id of ['btn-mirror-last', 'btn-mirror-last-cut']) {
+      const b = $<HTMLButtonElement>(id);
+      b.disabled = 'reason' in ml;
+      b.title = 'reason' in ml ? ml.reason : 'Gör det senaste en gång till, spegelvänt på andra halvan (N)';
+    }
     this.refreshPhysics();
     if (this.toolName !== 'view') this.tools[this.toolName].refresh();
     ($('btn-undo') as HTMLButtonElement).disabled = !this.history.canUndo;
@@ -346,6 +402,9 @@ export class EditorApp implements ToolContext {
     }
     this.root.position.copy(this.rootPos);
     this.root.updateMatrixWorld(true);
+    const c = this.stage.canvas;
+    this.overlay.resolution.set(c.clientWidth, c.clientHeight);
+    this.overlay.update(this.stage.camera, c.clientHeight);
   }
 
   /** Rotate the view so the design's nose points away from the player and its "up" is up. */
@@ -356,6 +415,15 @@ export class EditorApp implements ToolContext {
     const z = new THREE.Vector3().crossVectors(x, y);
     const toModel = new THREE.Matrix4().makeBasis(x, y, z); // world axes → model axes
     this.viewTarget.setFromRotationMatrix(toModel.transpose());
+  }
+
+  /** Hand the committed model over to the throw mode. */
+  private fly() {
+    this.cancelTool();
+    // the plane is thrown with its centre fold down (unless the player set nose/up by hand)
+    this.autoOrient(true);
+    this.syncView();
+    this.onFly?.(this.history.current, { name: this.history.meta.name, orientation: this.history.meta.orientation });
   }
 
   private rotateView(axis: THREE.Vector3, angle: number) {
@@ -387,7 +455,7 @@ export class EditorApp implements ToolContext {
     c.parentElement!.addEventListener(
       'pointerdown',
       (e) => {
-        if (e.button !== 2 || e.target !== c) return;
+        if (!this.active || e.button !== 2 || e.target !== c) return;
         const id = this.hitClip(e);
         if (!id) return;
         e.stopPropagation();
@@ -398,19 +466,20 @@ export class EditorApp implements ToolContext {
       { capture: true },
     );
     c.addEventListener('pointerdown', (e) => {
-      if (e.button !== 0 || this.toolName === 'view') return;
+      if (!this.active || e.button !== 0 || this.toolName === 'view') return;
       this.pointerDown = true;
       c.setPointerCapture(e.pointerId);
       this.tools[this.toolName].down(e);
     });
     c.addEventListener('pointermove', (e) => {
+      if (!this.active) return;
       if (e.buttons & 6 && !this.pointerDown) return; // orbiting/panning with right/middle
       this.highlightClip(this.clipGroup.children.length ? this.hitClip(e) : null);
       if (this.toolName === 'view') return;
       this.tools[this.toolName].move(e);
     });
     c.addEventListener('pointerup', (e) => {
-      if (e.button !== 0 || !this.pointerDown) return;
+      if (!this.active || e.button !== 0 || !this.pointerDown) return;
       this.pointerDown = false;
       if (this.toolName !== 'view') this.tools[this.toolName].up(e);
     });
@@ -434,12 +503,6 @@ export class EditorApp implements ToolContext {
     this.preview = null;
   }
 
-  private setFoldKind(kind: EditorOptions['foldKind']) {
-    this.options.foldKind = kind;
-    document.querySelectorAll<HTMLButtonElement>('#fold-kind button').forEach((b) => b.classList.toggle('active', b.dataset.kind === kind));
-    this.tools.fold.refresh();
-  }
-
   private loadDesign(obj: unknown) {
     try {
       const d = validateDesign(obj);
@@ -456,8 +519,6 @@ export class EditorApp implements ToolContext {
 
   private bindDom() {
     document.querySelectorAll<HTMLButtonElement>('.tools button').forEach((b) => (b.onclick = () => this.setTool(b.dataset.tool as ToolName)));
-    document.querySelectorAll<HTMLButtonElement>('#fold-kind button').forEach((b) => (b.onclick = () => this.setFoldKind(b.dataset.kind as EditorOptions['foldKind'])));
-    this.setFoldKind('valley');
 
     const scope = $<HTMLSelectElement>('fold-scope');
     scope.onchange = () => (this.options.foldScope = scope.value as EditorOptions['foldScope']);
@@ -482,6 +543,9 @@ export class EditorApp implements ToolContext {
     $('btn-flip-short').onclick = () => this.rotateView(new THREE.Vector3(0, 0, 1), Math.PI / 2);
     $('btn-rotate').onclick = () => this.rotateView(new THREE.Vector3(0, 1, 0), Math.PI / 2);
     $('btn-reset-view').onclick = () => this.stage.resetCamera();
+    $('btn-fly').onclick = () => this.fly();
+    $('btn-mirror-last').onclick = () => this.mirrorLast();
+    $('btn-mirror-last-cut').onclick = () => this.mirrorLast();
     $('btn-physics').onclick = () => {
       this.physics.setVisible(!this.physics.visible);
       this.refreshPhysics();
@@ -538,6 +602,7 @@ export class EditorApp implements ToolContext {
     };
 
     window.addEventListener('keydown', (e) => {
+      if (!this.active) return;
       const tag = (e.target as HTMLElement).tagName;
       if (tag === 'SELECT' || (tag === 'INPUT' && (e.target as HTMLInputElement).type === 'text')) return;
       const mod = e.metaKey || e.ctrlKey;
@@ -559,8 +624,6 @@ export class EditorApp implements ToolContext {
         case 's': this.setTool('cut'); break;
         case 'g': this.setTool('clip'); break;
         case 'o': this.setTool('view'); break;
-        case 'd': this.setFoldKind('valley'); break;
-        case 'b': this.setFoldKind('mountain'); break;
         case 'm':
           if (this.toolName === 'cut') cm.click();
           else fm.click();
@@ -568,6 +631,8 @@ export class EditorApp implements ToolContext {
         case 'p': p2p.click(); break;
         case 'x': $('btn-xray').click(); break;
         case 'i': $('btn-physics').click(); break;
+        case 't': this.fly(); break;
+        case 'n': this.mirrorLast(); break;
         case 'f': this.rotateView(new THREE.Vector3(e.shiftKey ? 0 : 1, 0, e.shiftKey ? 1 : 0), Math.PI / 2); break;
         case 'r': this.rotateView(new THREE.Vector3(0, 1, 0), Math.PI / 2); break;
       }

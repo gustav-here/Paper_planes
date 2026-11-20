@@ -1,6 +1,6 @@
 # Pappersflygplan – plan
 
-Status: **godkänd. Etapp 1 och 2 klara** (se §14–15 för avvikelser mot planen). Nästa: etapp 3.
+Status: **godkänd. Etapp 1–3 klara** (se §14–16 för avvikelser mot planen). Nästa: senare etapper (§11).
 
 ## 0. Grundprincip
 
@@ -616,3 +616,32 @@ Resultat med standardkonfigurationen (släpp från 10 m, olika kastfarter):
 | Dart | 6,5° | −0,32 | 3,4 | ≈ 1,5 m/s |
 | Glidplan | 9,1° | −0,29 | 4,6 | ≈ 0,9 m/s |
 | Dart + gem på nosen | 4,6° | −0,48 | – | snabbare och brantare |
+
+## 16. Etapp 3: kast och felsökning
+
+- **Kastläge** (knappen ✈ Kasta eller T i editorn): reglage för styrka 1–15 m/s, vinkel uppåt,
+  riktning, nosvinkel vid släpp och släpphöjd (sparas per webbläsare). Planet släpps utan rotation
+  med vingarna vågräta. Mellanslag kastar.
+- **Fri flykt** stegas med fast 240 Hz via `FixedStepper`. Renderingen interpolerar mellan stegen.
+  Paus (P), stega ett tidssteg (.), tidsskala 1×/½×/¼×/⅒× (1–4).
+- **Värld:** stor hall, mätlinjer varje meter längs +X (etikett var 5 m), röd släpplinje och en
+  skuggande sol som följer planet.
+- **Kamera:** följ (behåller användarens orbit-vinkel och flyttas med planet), från sidan, fri (C).
+- **Felsökning** (D): tyngdpunkt, hastighetsvektor, lyft (grönt) och motstånd (rött) per ytelement,
+  samt graf över höjd och fart mot tid.
+- **Resultat:** distans och flygtid till första nedslaget (officiellt), nedslagsfart, maxhöjd och
+  vilopunkt med glid- och studssträcka. Markörer och spår visas i två färger (luft blå, mark orange).
+  De 30 senaste kasten sparas i localStorage, med bästa resultat per modell.
+- Efter etapp 3 (önskemål): dal och berg är sammanslagna i vinkeldraget. Uppåt ger dalveck (mot
+  betraktaren), nedåt ger bergsveck, och man kan passera noll i samma drag. Stoppvinkeln för omöjliga veck
+  räknas separat för varje håll. Dal/Berg-knapparna och tangenterna D och B är borttagna.
+- Fler önskemål efter etapp 3:
+  - "Översta flik" är förvalt lager.
+  - Vecklinjen är tjock och streckad (Line2) med mörk kontur och ändpunkter.
+  - Vinkeldraget kräver nu ungefär 110 px för 180° (0,6 px/°).
+  - Knappen **Spegla senaste** (N), under Spegla i vik- och saxpanelen, gör om det senaste vecket
+    eller snittet spegelvänt på andra halvan. Det blir en egen operation, så den går att ångra separat.
+  - **Automatisk riktning** (`core/paper/orientation.ts`): symmetriplanet ger vingaxeln, nosen är
+    arkets överkant projicerad in i planet och upp väljs så att mittvecket (arkets mittlinje) hamnar
+    nedåt. Riktningen räknas om när modellen ändras och vid kast, utom när spelaren har valt
+    riktning för hand i fysikpanelen.
