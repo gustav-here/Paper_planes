@@ -95,6 +95,12 @@ Webbläsarspel: vik ett pappersflygplan av ett A4 och kasta det. Flygbeteendet s
 - Valideringstesterna (`tests/validation`) och de flexibla testerna kör riktiga flygningar.
   Hela sviten tar ungefär en minut, och testtimeout är 60 s.
 
+## CI och publicering
+- `.github/workflows/ci.yml` kör lint, typkontroll, tester och bygge vid varje push och pull request.
+  Varje push till `main` publiceras på GitHub Pages: <https://gustav-here.github.io/Paper_planes/>.
+- Vite bygger med relativa sökvägar (`base: './'`). Prova bygget under en undermapp med
+  launch-konfigurationen `pages-preview` (`/Paper_planes/` på port 5174).
+
 ## Arbetssätt
 - Bygg en etapp i taget. Varje etapp avslutas med fungerande `npm run dev`, gröna tester och
   en kort sammanfattning av vad användaren ska prova.
