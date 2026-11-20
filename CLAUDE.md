@@ -66,9 +66,17 @@ Webbläsarspel: vik ett pappersflygplan av ett A4 och kasta det. Flygbeteendet s
   `Prepared.folded` är exakt vikt). Validering och editor använder den vikta geometrin.
 - Flexibelt papper är standard i spelet. Gångjärnen har plan pappersböjning i serie med vecket och
   ett kontaktstopp vid 180°.
+- Böjformer (`physics/bendModes.ts`): stora plana paneler böjer sig själva med några släta former
+  (extra frihetsgrader). Luften verkar på den böjda ytan, och kastläget ritar den böjd. Bortom
+  35° lutning styvnar formerna, eftersom papper inte kan töjas. Se PLAN.md §26.
 - Editorn visar modellen med återfjädring och skador. Verktygen arbetar i den vikta modellen
   via `ToolContext.hitPaper` (som returnerar en frame) och `setFrame`. Rita aldrig verktygsgrafik
   direkt i visningskoordinater.
+- Platser (`core/game/venues.ts`: gymnastiksal, Månen, Solen) sätter g, ρ och kontaktytor via
+  `venueConfig`. Gymnastiksalen är standard. Inget i fysiken får bero på vilken plats det är,
+  utöver de parametrarna.
+- Procedurtexturer i `render/venues` ritas på 2D-canvas utan `filter` (det kraschade
+  grafikprocessen).
 - Skador blir vanliga operationer (`dmg-…`) efter spelarens egna och gäller tills planet viks om.
 - Simulatorer implementerar `Simulator` (`physics/simulator.ts`). Använd `prepare`/`createSimulator`
   (`physics/factory.ts`) i stället för att skapa dem direkt.

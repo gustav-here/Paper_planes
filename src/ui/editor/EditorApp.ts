@@ -22,6 +22,7 @@ import { PaperView } from '../../render/PaperMesh';
 import type { PaperHit } from '../../render/PaperMesh';
 import { Overlay } from '../../render/Overlay';
 import { createClipObject } from '../../render/ClipMesh';
+import { createAshPile } from '../../render/AshPile';
 import { PhysicsOverlay } from '../../render/PhysicsOverlay';
 import { PhysicsPanel } from '../hud/PhysicsPanel';
 import { ERROR_TEXT, warningText } from '../hud/messages';
@@ -519,8 +520,8 @@ export class EditorApp implements ToolContext {
     $<HTMLInputElement>('flexible-paper').checked = this.history.meta.flexible === true;
     const repair = $<HTMLButtonElement>('btn-repair');
     const dmg = this.history.damage.length;
-    repair.hidden = dmg === 0;
-    repair.textContent = `⚠ Skadat (${dmg}) · Reparera`;
+    repair.hidden = dmg === 0 && !this.burned;
+    repair.textContent = this.burned ? '🔥 Uppbränt · Reparera' : `⚠ Skadat (${dmg}) · Reparera`;
   }
 
   private applyXRay() {
@@ -579,6 +580,29 @@ export class EditorApp implements ToolContext {
   /** The plane was repaired in throw mode. */
   repairDamage() {
     this.history.damage = [];
+    this.setBurned(false);
+    this.syncView();
+  }
+
+  /** The plane burned up: only a little heap of ash is left on the table (until repaired). */
+  burned = false;
+  private ashPile: THREE.Group | null = null;
+
+  setBurned(on: boolean) {
+    this.burned = on;
+    if (on && !this.ashPile) {
+      this.ashPile = createAshPile();
+      // on the table itself (not with the paper, which the view may have turned over)
+      this.stage.scene.add(this.ashPile);
+    }
+    if (this.ashPile) this.ashPile.visible = on;
+    this.paper.group.visible = !on;
+    this.clipGroup.visible = !on;
+    if (on) {
+      this.cancelTool();
+      this.overlay.clear();
+      this.hint('Planet brann upp. Tryck på Reparera för ett nytt ark, vikt likadant.');
+    } else if (this.toolName !== 'view') this.tools[this.toolName].refresh();
     this.syncView();
   }
 
@@ -636,6 +660,10 @@ export class EditorApp implements ToolContext {
     );
     c.addEventListener('pointerdown', (e) => {
       if (!this.active || e.button !== 0 || this.toolName === 'view') return;
+      if (this.burned) {
+        this.toast('Det finns bara aska kvar. Tryck på Reparera för ett nytt ark.', 'info');
+        return;
+      }
       this.pointerDown = true;
       c.setPointerCapture(e.pointerId);
       this.tools[this.toolName].down(e);
@@ -677,6 +705,7 @@ export class EditorApp implements ToolContext {
       const d = validateDesign(obj);
       this.cancelTool();
       this.history.load(d);
+      if (this.burned) this.setBurned(false);
       this.showUpright();
       this.syncView();
       this.toast(`Laddade ”${d.name}”.`, 'ok');
@@ -738,7 +767,9 @@ export class EditorApp implements ToolContext {
     $('btn-mirror-last').onclick = () => this.mirrorLast();
     $('btn-repair').onclick = () => {
       this.history.damage = [];
-      this.toast('Planet är reparerat.', 'ok');
+      const wasBurned = this.burned;
+      this.setBurned(false);
+      this.toast(wasBurned ? 'Ett nytt ark, vikt likadant.' : 'Planet är reparerat.', 'ok');
       this.syncView();
     };
     const flex = $<HTMLInputElement>('flexible-paper');
@@ -778,6 +809,7 @@ export class EditorApp implements ToolContext {
       if (this.history.appliedOps.length && !confirm('Börja om med ett nytt platt ark? Osparade veck försvinner.')) return;
       this.cancelTool();
       this.history.reset();
+      if (this.burned) this.setBurned(false);
       this.viewTarget.identity();
       this.syncView();
     };

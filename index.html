@@ -93,6 +93,11 @@
         <button id="fl-back" title="Tillbaka till vikningen (Esc)">← Vikning</button>
         <div class="brand"><span id="fl-title"></span></div>
         <button id="fl-repair" hidden title="Ta bort skadorna från kasten">🔧 Reparera</button>
+        <select id="fl-venue" aria-label="Plats" title="Var planet kastas">
+          <option value="gym" selected>🏀 Gymnastiksal</option>
+          <option value="moon">🌕 Månen</option>
+          <option value="sun">☀️ Solen</option>
+        </select>
         <select id="fl-mode" aria-label="Spelläge" title="Spelläge">
           <option value="free">Fritt kast</option>
           <option value="time">Längst flygtid</option>
@@ -132,6 +137,7 @@
 
       <div class="flight-only fl-stats" id="fl-stats"></div>
       <section class="flight-only result-card" id="result-card"></section>
+      <div class="flight-only burn-text" id="burn-text">Flygplanet brann upp</div>
       <div class="flight-only plot-wrap" id="plot-wrap"><canvas id="fl-plot"></canvas></div>
 
       <div class="view-ball" id="view-ball" title="360-boll: dra för att snurra modellen · dubbelklicka för att ställa den rättvänd igen"><span>360°</span></div>

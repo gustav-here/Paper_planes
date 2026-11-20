@@ -1,88 +1,28 @@
 import * as THREE from 'three';
-import { createTextSprite } from './TextSprite';
-
-/** Procedural hall floor: light, slightly mottled with faint tile seams every metre. */
-function floorTexture(): THREE.CanvasTexture {
-  const size = 512;
-  const c = document.createElement('canvas');
-  c.width = c.height = size;
-  const g = c.getContext('2d')!;
-  g.fillStyle = '#c9c4b8';
-  g.fillRect(0, 0, size, size);
-  // deterministic speckle
-  let seed = 12345;
-  const rnd = () => ((seed = (seed * 1103515245 + 12345) & 0x7fffffff) / 0x7fffffff);
-  for (let i = 0; i < 5000; i++) {
-    const l = 66 + rnd() * 14;
-    g.fillStyle = `hsla(40, 8%, ${l}%, ${0.25 + rnd() * 0.3})`;
-    g.fillRect(rnd() * size, rnd() * size, 1 + rnd() * 3, 1 + rnd() * 3);
-  }
-  g.strokeStyle = 'rgba(90,85,75,0.35)';
-  g.lineWidth = 3;
-  g.strokeRect(0, 0, size, size);
-  const t = new THREE.CanvasTexture(c);
-  t.colorSpace = THREE.SRGBColorSpace;
-  t.wrapS = t.wrapT = THREE.RepeatWrapping;
-  t.anisotropy = 8;
-  return t;
-}
+import type { VenueId } from '../core/game/venues';
+import { buildGym } from './venues/gym';
+import { buildMoon } from './venues/moon';
+import { buildSun } from './venues/sun';
+import type { VenueLook } from './venues/common';
 
 export interface World {
   scene: THREE.Scene;
-  /** Sun whose shadow camera follows the plane. */
+  /** Key light whose shadow camera follows the plane. */
   sun: THREE.DirectionalLight;
   /** Move the shadow-casting light so it covers `p`. */
   followLight(p: THREE.Vector3): void;
+  /** Show another place to throw (scenery, sky and light). */
+  setVenue(id: VenueId): void;
+  venue: VenueId;
 }
 
-const LENGTH = 40; // measured distance (m)
+const BUILDERS: Record<VenueId, () => VenueLook> = { gym: buildGym, moon: buildMoon, sun: buildSun };
 
-/**
- * A large indoor hall: floor at y = 0, distance lines along +X from the release point every
- * metre (labels every 5 m), and a release line at x = 0.
- */
-export function createWorld(): World {
+/** The world around the throw: one of the venues, lit by a fill light and a shadow-casting key light. */
+export function createWorld(initial: VenueId = 'gym'): World {
   const scene = new THREE.Scene();
-  scene.background = new THREE.Color('#9fb3c8');
-  scene.fog = new THREE.Fog('#9fb3c8', 25, 90);
-
-  const tex = floorTexture();
-  tex.repeat.set(200, 200);
-  const floor = new THREE.Mesh(
-    new THREE.PlaneGeometry(200, 200),
-    new THREE.MeshStandardMaterial({ map: tex, roughness: 0.85 }),
-  );
-  floor.rotation.x = -Math.PI / 2;
-  floor.receiveShadow = true;
-  scene.add(floor);
-
-  // distance lines (slightly above the floor to avoid z-fighting)
-  const thin: number[] = [];
-  const thick: number[] = [];
-  const y = 0.002;
-  for (let m = 0; m <= LENGTH; m++) {
-    const half = m % 5 === 0 ? 4 : 1.5;
-    (m % 5 === 0 ? thick : thin).push(m, y, -half, m, y, half);
-  }
-  thin.push(0, y, 0, LENGTH, y, 0); // centre line
-  const mk = (arr: number[], color: string, opacity: number) => {
-    const geo = new THREE.BufferGeometry();
-    geo.setAttribute('position', new THREE.Float32BufferAttribute(arr, 3));
-    return new THREE.LineSegments(geo, new THREE.LineBasicMaterial({ color, transparent: true, opacity }));
-  };
-  scene.add(mk(thin, '#ffffff', 0.55), mk(thick, '#ffffff', 0.95));
-  // release line
-  const rel = new THREE.Mesh(new THREE.PlaneGeometry(0.06, 8), new THREE.MeshBasicMaterial({ color: '#e0645a' }));
-  rel.rotation.x = -Math.PI / 2;
-  rel.position.set(0, 0.003, 0);
-  scene.add(rel);
-  for (let m = 5; m <= LENGTH; m += 5) {
-    const s = createTextSprite(`${m} m`, { height: 0.32, color: '#1d2430' });
-    s.position.set(m, 0.2, -4.4);
-    scene.add(s);
-  }
-
-  scene.add(new THREE.HemisphereLight('#f2f6ff', '#8a7f6e', 1.1));
+  const fill = new THREE.HemisphereLight('#f2f6ff', '#8a7f6e', 1.1);
+  scene.add(fill);
   const sun = new THREE.DirectionalLight('#fff3df', 2.0);
   sun.castShadow = true;
   sun.shadow.mapSize.set(2048, 2048);
@@ -97,6 +37,37 @@ export function createWorld(): World {
     sun.position.copy(p).add(offset);
     sun.target.updateMatrixWorld();
   };
+
+  // scenery is built once per venue and kept (switching back is instant)
+  const built = new Map<VenueId, VenueLook>();
+  let current: VenueLook | null = null;
+  const world: World = {
+    scene,
+    sun,
+    followLight,
+    venue: initial,
+    setVenue(id: VenueId) {
+      if (current) scene.remove(current.group);
+      let look = built.get(id);
+      if (!look) {
+        look = BUILDERS[id]();
+        built.set(id, look);
+      }
+      current = look;
+      world.venue = id;
+      scene.add(look.group);
+      scene.background = look.background;
+      scene.fog = look.fog;
+      sun.color.set(look.key.color);
+      sun.intensity = look.key.intensity;
+      offset.copy(look.key.offset).normalize().multiplyScalar(10);
+      fill.color.set(look.fill.sky);
+      fill.groundColor.set(look.fill.ground);
+      fill.intensity = look.fill.intensity;
+      followLight(sun.target.position.clone());
+    },
+  };
+  world.setVenue(initial);
   followLight(new THREE.Vector3());
-  return { scene, sun, followLight };
+  return world;
 }

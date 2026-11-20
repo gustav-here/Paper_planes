@@ -5,6 +5,7 @@ import * as P from '../core/math/polygon2d';
 import type { Vec2 } from '../core/math/vec2';
 import { canonicalNormal, facetNormal, facetVertices, toModel } from '../core/paper/model';
 import type { Facet, PaperModel } from '../core/paper/model';
+import type { PanelBend } from '../core/physics/simulator';
 import { edgesOf, levelsOf } from './modelCache';
 
 /** Visual distance between stacked layers (real paper is 0.1 mm; slightly exaggerated). */
@@ -39,7 +40,51 @@ export interface PaperHit {
   normal: Vec3;
 }
 
-/** Three.js view of a PaperModel, in model coordinates (parent applies view rotation/lift). */
+/** Geometry whose vertices can be bent: the flat positions (and normals) it was built with. */
+interface Bendable {
+  obj: THREE.Mesh | THREE.LineSegments;
+  base: Float32Array;
+  baseNormal?: Float32Array;
+  /** Distinct flat positions (a vertex is shared by many triangles, both sides) and each vertex's one. */
+  uniq: Float32Array;
+  map: Uint32Array;
+}
+
+function bendable(obj: THREE.Mesh | THREE.LineSegments, pos: number[], nor?: number[]): Bendable {
+  const index = new Map<string, number>();
+  const uniq: number[] = [];
+  const map = new Uint32Array(pos.length / 3);
+  for (let i = 0; i < pos.length; i += 3) {
+    // 0.01 mm grid: copies of a point land in the same cell
+    const key = `${Math.round(pos[i] * 1e5)},${Math.round(pos[i + 1] * 1e5)},${Math.round(pos[i + 2] * 1e5)}`;
+    let k = index.get(key);
+    if (k === undefined) {
+      k = uniq.length / 3;
+      index.set(key, k);
+      uniq.push(pos[i], pos[i + 1], pos[i + 2]);
+    }
+    map[i / 3] = k;
+  }
+  return { obj, base: new Float32Array(pos), baseNormal: nor ? new Float32Array(nor) : undefined, uniq: new Float32Array(uniq), map };
+}
+
+/** Split triangle (a, b, c) into k² triangles of the same orientation. */
+function subdivideTriangle(a: Vec3, b: Vec3, c: Vec3, k: number): [Vec3, Vec3, Vec3][] {
+  const P = (i: number, j: number): Vec3 => V.add(a, V.add(V.scale(V.sub(b, a), i / k), V.scale(V.sub(c, a), j / k)));
+  const out: [Vec3, Vec3, Vec3][] = [];
+  for (let i = 0; i < k; i++)
+    for (let j = 0; i + j < k; j++) {
+      out.push([P(i, j), P(i + 1, j), P(i, j + 1)]);
+      if (i + j < k - 1) out.push([P(i + 1, j), P(i + 1, j + 1), P(i, j + 1)]);
+    }
+  return out;
+}
+
+/**
+ * Three.js view of a PaperModel, in model coordinates (parent applies view rotation/lift).
+ * With `maxEdge` the paper is drawn as small triangles (and lines in short pieces) so it can be
+ * bent smoothly with `bend`.
+ */
 export class PaperView {
   readonly group = new THREE.Group();
   readonly material = new THREE.MeshStandardMaterial({
@@ -66,7 +111,16 @@ export class PaperView {
   private triFacet: number[] = [];
   private tints = new Map<number, FacetTint>();
   private facets = new Map<number, Facet>();
+  private bendables: Bendable[] = [];
+  private bent = false;
   model: PaperModel | null = null;
+
+  constructor(private readonly opts: { maxEdge?: number } = {}) {}
+
+  private pieces(a: Vec3, b: Vec3): number {
+    const e = this.opts.maxEdge;
+    return e ? Math.max(1, Math.ceil(V.dist(a, b) / e)) : 1;
+  }
 
   update(model: PaperModel) {
     if (model === this.model) return;
@@ -84,25 +138,27 @@ export class PaperView {
       const off = this.offsetVec(f, levels.get(f.id) ?? 0);
       const vs = facetVertices(f).map((v) => V.add(v, off));
       for (let i = 1; i + 1 < vs.length; i++) {
-        let a = vs[0];
-        let b = vs[i];
-        let c = vs[i + 1];
-        if (V.dot(V.cross(V.sub(b, a), V.sub(c, a)), n) < 0) [b, c] = [c, b];
-        // front (visible from +n)
-        pos.push(...a, ...b, ...c);
-        for (let k = 0; k < 3; k++) {
-          nor.push(...n);
-          col.push(FRONT.r, FRONT.g, FRONT.b);
+        const a0 = vs[0];
+        let b0 = vs[i];
+        let c0 = vs[i + 1];
+        if (V.dot(V.cross(V.sub(b0, a0), V.sub(c0, a0)), n) < 0) [b0, c0] = [c0, b0];
+        const k = Math.max(this.pieces(a0, b0), this.pieces(b0, c0), this.pieces(c0, a0));
+        for (const [a, b, c] of k > 1 ? subdivideTriangle(a0, b0, c0, k) : [[a0, b0, c0] as [Vec3, Vec3, Vec3]]) {
+          // front (visible from +n)
+          pos.push(...a, ...b, ...c);
+          for (let j = 0; j < 3; j++) {
+            nor.push(...n);
+            col.push(FRONT.r, FRONT.g, FRONT.b);
+          }
+          this.triFacet.push(f.id);
+          // back (visible from −n)
+          pos.push(...a, ...c, ...b);
+          for (let j = 0; j < 3; j++) {
+            nor.push(-n[0], -n[1], -n[2]);
+            col.push(BACK.r, BACK.g, BACK.b);
+          }
+          this.triFacet.push(f.id);
         }
-        this.triFacet.push(f.id);
-        // back (visible from −n)
-        a = vs[0];
-        pos.push(...a, ...c, ...b);
-        for (let k = 0; k < 3; k++) {
-          nor.push(-n[0], -n[1], -n[2]);
-          col.push(BACK.r, BACK.g, BACK.b);
-        }
-        this.triFacet.push(f.id);
       }
     }
     const geo = new THREE.BufferGeometry();
@@ -114,6 +170,7 @@ export class PaperView {
     this.mesh = new THREE.Mesh(geo, this.material);
     this.mesh.castShadow = true;
     this.group.add(this.mesh);
+    if (this.opts.maxEdge) this.bendables.push(bendable(this.mesh, pos, nor));
 
     const graph = edgesOf(model);
     const border: number[] = [];
@@ -123,7 +180,7 @@ export class PaperView {
       const n = facetNormal(f);
       for (const s of [LINE_LIFT, -LINE_LIFT]) {
         const o = V.addScaled(off, n, s);
-        arr.push(...V.add(toModel(f, a), o), ...V.add(toModel(f, b), o));
+        this.pushPieces(arr, V.add(toModel(f, a), o), V.add(toModel(f, b), o));
       }
     };
     for (const b of graph.borders) pushSeg(border, this.facets.get(b.facet)!, b.seg[0], b.seg[1]);
@@ -141,12 +198,76 @@ export class PaperView {
     this.rebuildGrid();
   }
 
+  /** Segment a–b, in short pieces when the paper can bend. */
+  private pushPieces(arr: number[], a: Vec3, b: Vec3) {
+    const k = this.pieces(a, b);
+    for (let i = 0; i < k; i++) arr.push(...V.lerp(a, b, i / k), ...V.lerp(a, b, (i + 1) / k));
+  }
+
   private makeLines(arr: number[], mat: THREE.LineBasicMaterial) {
     const g = new THREE.BufferGeometry();
     g.setAttribute('position', new THREE.Float32BufferAttribute(arr, 3));
     const l = new THREE.LineSegments(g, mat);
     this.group.add(l);
+    if (this.opts.maxEdge) this.bendables.push(bendable(l, arr));
     return l;
+  }
+
+  /**
+   * Bend the paper (flexible flight): every vertex moves w along the panel's bending normal and
+   * the shading normals tilt with the slope. Null restores the flat paper.
+   */
+  bend(b: PanelBend | null) {
+    if (!b && !this.bent) return;
+    for (const it of this.bendables) {
+      const pos = it.obj.geometry.getAttribute('position') as THREE.BufferAttribute;
+      const arr = pos.array as Float32Array;
+      const nAttr = it.baseNormal ? (it.obj.geometry.getAttribute('normal') as THREE.BufferAttribute) : null;
+      const nor = nAttr ? (nAttr.array as Float32Array) : null;
+      if (!b) {
+        arr.set(it.base);
+        if (nor && it.baseNormal) nor.set(it.baseNormal);
+      } else {
+        const bn = b.normal;
+        // deflection and slope once per distinct point
+        const nu = it.uniq.length / 3;
+        const W = new Float32Array(nu);
+        const G = new Float32Array(nu * 3);
+        for (let k = 0; k < nu; k++) {
+          const { w, grad } = b.at([it.uniq[3 * k], it.uniq[3 * k + 1], it.uniq[3 * k + 2]]);
+          W[k] = w;
+          G[3 * k] = grad[0];
+          G[3 * k + 1] = grad[1];
+          G[3 * k + 2] = grad[2];
+        }
+        for (let i = 0; i < arr.length; i += 3) {
+          const k = it.map[i / 3];
+          const w = W[k];
+          const grad = [G[3 * k], G[3 * k + 1], G[3 * k + 2]];
+          arr[i] = it.base[i] + bn[0] * w;
+          arr[i + 1] = it.base[i + 1] + bn[1] * w;
+          arr[i + 2] = it.base[i + 2] + bn[2] * w;
+          if (nor && it.baseNormal) {
+            // surface z = w(x, y) over the panel plane: normal ∝ n − (n·n_b)∇w
+            const n0x = it.baseNormal[i];
+            const n0y = it.baseNormal[i + 1];
+            const n0z = it.baseNormal[i + 2];
+            const s = n0x * bn[0] + n0y * bn[1] + n0z * bn[2];
+            const x = n0x - s * grad[0];
+            const y = n0y - s * grad[1];
+            const z = n0z - s * grad[2];
+            const l = Math.hypot(x, y, z) || 1;
+            nor[i] = x / l;
+            nor[i + 1] = y / l;
+            nor[i + 2] = z / l;
+          }
+        }
+      }
+      pos.needsUpdate = true;
+      if (nAttr) nAttr.needsUpdate = true;
+      it.obj.geometry.computeBoundingSphere();
+    }
+    this.bent = !!b;
   }
 
   /** Render offset for a facet at a given stack level. */
@@ -234,6 +355,7 @@ export class PaperView {
       this.group.remove(g);
       g.geometry.dispose();
     }
+    this.bendables = this.bendables.filter((b) => !this.grid.includes(b.obj as THREE.LineSegments));
     this.grid = [];
     const m = this.model;
     if (!m || !this.gridOn) return;
@@ -263,7 +385,7 @@ export class PaperView {
         const arr = l.dashed ? dashed : solid;
         for (const sgn of [1, -1]) {
           const o = V.addScaled(off, n, sgn * GRID_LIFT);
-          arr.push(...V.add(toModel(f, A), o), ...V.add(toModel(f, B), o));
+          this.pushPieces(arr, V.add(toModel(f, A), o), V.add(toModel(f, B), o));
         }
       }
     }
@@ -274,6 +396,7 @@ export class PaperView {
       if (mat instanceof THREE.LineDashedMaterial) ls.computeLineDistances();
       this.group.add(ls);
       this.grid.push(ls);
+      if (this.opts.maxEdge) this.bendables.push(bendable(ls, arr));
     };
     make(solid, this.gridMat);
     make(dashed, this.gridDashMat);
@@ -286,6 +409,8 @@ export class PaperView {
       o.geometry.dispose();
     }
     this.mesh = this.lines = this.creases = null;
+    this.bendables = [];
+    this.bent = false;
     for (const g of this.grid) {
       this.group.remove(g);
       g.geometry.dispose();

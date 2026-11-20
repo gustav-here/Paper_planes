@@ -111,6 +111,8 @@ export interface ThrowRecord {
 
 export interface LeaderEntry extends ThrowRecord {
   mode: GameMode;
+  /** Where it was thrown (older entries: the gym). */
+  venue?: import('./venues').VenueId;
   score: number;
   designName: string;
   date: string;

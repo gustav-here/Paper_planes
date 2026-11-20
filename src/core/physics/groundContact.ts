@@ -20,7 +20,7 @@ const SLOP = 2e-4;
 const BAUMGARTE = 0.2;
 
 /**
- * Floor y = 0: sequential impulses with restitution and Coulomb friction; penetration is
+ * Solid surfaces (floor, walls, ceiling): sequential impulses with restitution and Coulomb friction; penetration is
  * removed gently through a Baumgarte velocity bias with slop (no position teleporting, which
  * made resting planes jitter). Impulses act through the generalized mass M (incl. added mass).
  * Chosen over a spring–damper: a 5 g object against a stiff spring needs tiny time steps.
@@ -29,14 +29,17 @@ const BAUMGARTE = 0.2;
 export function resolveGround(s: BodyState, af: Airframe, cfg: GroundConfig, dt: number): ContactResult {
   const q = Q.normalize(s.q);
   const qi = Q.conjugate(q);
-  const nWorld: Vec3 = [0, 1, 0];
-  const active: { r: Vec3; index: number; depth: number; target: number; jn: number; jt: Vec3 }[] = [];
-  let minY = Infinity;
+  const active: { r: Vec3; index: number; depth: number; target: number; jn: number; jt: Vec3; n: Vec3 }[] = [];
+  // deepest penetration per surface (for the safety net)
+  const minGap = cfg.planes.map(() => Infinity);
   af.contacts.forEach((r, index) => {
-    const y = s.x[1] + Q.rotate(q, r)[1];
-    minY = Math.min(minY, y);
-    if (y > 1e-5) return;
-    active.push({ r, index, depth: -y, target: 0, jn: 0, jt: [0, 0, 0] });
+    const p = V.add(s.x, Q.rotate(q, r));
+    cfg.planes.forEach((pl, k) => {
+      const gap = V.dot(pl.n, p) - pl.d;
+      minGap[k] = Math.min(minGap[k], gap);
+      if (gap > 1e-5) return;
+      active.push({ r, index, depth: -gap, target: 0, jn: 0, jt: [0, 0, 0], n: pl.n });
+    });
   });
   if (active.length === 0) return { touching: false, impactSpeed: 0, hardest: null };
 
@@ -59,7 +62,7 @@ export function resolveGround(s: BodyState, af: Airframe, cfg: GroundConfig, dt:
   let hardest: ContactResult['hardest'] = null;
   for (const c of active) {
     const vel = velAt(c.r);
-    const vn = V.dot(vel, nWorld);
+    const vn = V.dot(vel, c.n);
     const bounce = vn < 0 && -vn > cfg.restitutionThreshold ? -cfg.restitution * vn : 0;
     const push = (BAUMGARTE * Math.max(0, c.depth - SLOP)) / dt;
     c.target = Math.max(bounce, push);
@@ -71,16 +74,16 @@ export function resolveGround(s: BodyState, af: Airframe, cfg: GroundConfig, dt:
   for (let it = 0; it < cfg.iterations; it++) {
     for (const c of active) {
       // normal
-      const vn = V.dot(velAt(c.r), nWorld);
-      const kn = invMass(c.r, nWorld);
+      const vn = V.dot(velAt(c.r), c.n);
+      const kn = invMass(c.r, c.n);
       let dj = (c.target - vn) / kn;
       const old = c.jn;
       c.jn = Math.max(0, old + dj);
       dj = c.jn - old;
-      if (dj !== 0) applyImpulse(c.r, V.scale(nWorld, dj));
+      if (dj !== 0) applyImpulse(c.r, V.scale(c.n, dj));
       // friction (isotropic, clamped to the friction cone)
       const vel = velAt(c.r);
-      const vt = V.rejectFrom(vel, nWorld);
+      const vt = V.rejectFrom(vel, c.n);
       const vtl = V.length(vt);
       if (vtl < 1e-9) continue;
       const t = V.scale(vt, 1 / vtl);
@@ -94,7 +97,9 @@ export function resolveGround(s: BodyState, af: Airframe, cfg: GroundConfig, dt:
       applyImpulse(c.r, delta);
     }
   }
-  // safety net for deep penetration only (hard impacts): never more than 1 mm into the floor
-  if (minY < -0.001) s.x = [s.x[0], s.x[1] - minY - 0.001, s.x[2]];
+  // safety net for deep penetration only (hard impacts): never more than 1 mm into a surface
+  cfg.planes.forEach((pl, k) => {
+    if (minGap[k] < -0.001) s.x = V.addScaled(s.x, pl.n, -minGap[k] - 0.001);
+  });
   return { touching: true, impactSpeed, hardest };
 }

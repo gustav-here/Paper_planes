@@ -708,3 +708,38 @@ button.warn-chip[hidden] {
 .result-card .verify button {
   margin-left: 6px;
 }
+
+.burn-text {
+  position: absolute;
+  left: 50%;
+  top: 42%;
+  transform: translate(-50%, -50%) scale(0.92);
+  font-size: clamp(28px, 5vw, 56px);
+  font-weight: 800;
+  color: #fff6dc;
+  text-shadow: 0 2px 0 #3a2200, 0 0 24px rgba(60, 25, 0, 0.9), 0 0 6px rgba(40, 15, 0, 0.9);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.35s ease, transform 0.35s ease;
+  white-space: nowrap;
+}
+
+body.mode-flight .burn-text.visible {
+  opacity: 1;
+  transform: translate(-50%, -50%) scale(1);
+}
+
+.no-webgl {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  padding: 24px;
+  text-align: center;
+  background: rgba(20, 22, 26, 0.92);
+  color: var(--text);
+  z-index: 100;
+}

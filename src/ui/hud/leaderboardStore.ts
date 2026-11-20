@@ -1,9 +1,12 @@
 import type { GameMode, LeaderEntry } from '../../core/game/competition';
 import { insertEntry } from '../../core/game/competition';
+import type { VenueId } from '../../core/game/venues';
 
 const KEY = 'paperplanes.leaderboard.v1';
 
-type Boards = Partial<Record<GameMode, LeaderEntry[]>>;
+/** One top list per game mode and venue (the gym's lists keep their original keys). */
+type Boards = Partial<Record<string, LeaderEntry[]>>;
+const boardKey = (mode: GameMode, venue: VenueId) => (venue === 'gym' ? mode : `${venue}:${mode}`);
 
 function load(): Boards {
   try {
@@ -15,15 +18,16 @@ function load(): Boards {
   }
 }
 
-export function leaderboard(mode: GameMode): LeaderEntry[] {
-  return load()[mode] ?? [];
+export function leaderboard(mode: GameMode, venue: VenueId = 'gym'): LeaderEntry[] {
+  return load()[boardKey(mode, venue)] ?? [];
 }
 
 /** Add a result; returns its rank (0-based) or −1 if it did not make the top ten. */
 export function submit(entry: LeaderEntry): number {
   const boards = load();
-  const { list, rank } = insertEntry(boards[entry.mode] ?? [], entry);
-  boards[entry.mode] = list;
+  const key = boardKey(entry.mode, entry.venue ?? 'gym');
+  const { list, rank } = insertEntry(boards[key] ?? [], entry);
+  boards[key] = list;
   try {
     localStorage.setItem(KEY, JSON.stringify(boards));
   } catch {

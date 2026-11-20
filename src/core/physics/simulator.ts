@@ -11,6 +11,15 @@ export interface PanelPose {
   t: Vec3;
 }
 
+/**
+ * How a render panel's paper is bent right now: the deflection w along `normal` (model space)
+ * at a model point, and its in-plane gradient.
+ */
+export interface PanelBend {
+  normal: Vec3;
+  at(p: Vec3): { w: number; grad: Vec3 };
+}
+
 /** Something that happened to the paper during a flight and leaves permanent damage. */
 export type DamageEvent =
   /** Hard floor impact at a point: the paper there crumples. Model coordinates. */
@@ -41,6 +50,8 @@ export interface Simulator {
   worldVelocity(): Vec3;
   speed(): number;
   panelPoses(): PanelPose[];
+  /** Bending of each render panel's own paper (flexible model with bending shapes), or null. */
+  panelBending?(): (PanelBend | null)[];
   /** Element centres and lift/drag forces in the world frame (debug overlay). */
   debugForces(): { pos: Vec3[]; lift: Vec3[]; drag: Vec3[] };
   /** Current flap deflections (deg), one per control group. */

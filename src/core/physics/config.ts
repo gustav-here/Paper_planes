@@ -1,3 +1,4 @@
+import type { Vec3 } from '../math/vec3';
 /**
  * Every physical constant used by the flight model. All values are GLOBAL: nothing here may
  * depend on which aeroplane is flying. Behaviour must emerge from geometry and mass.
@@ -29,7 +30,15 @@ export interface AeroConfig {
   chordCacheDeg: number;
 }
 
+/** A solid surface: the free space is where n·x ≥ d (n: unit normal pointing into the room). */
+export interface ContactPlane {
+  n: Vec3;
+  d: number;
+}
+
 export interface GroundConfig {
+  /** Solid surfaces the paper can hit: the floor (y ≥ 0), and walls and a ceiling indoors. */
+  planes: ContactPlane[];
   /** Coefficient of restitution, paper on a hard floor (barely bounces). */
   restitution: number;
   /** Below this approach speed (m/s) contacts are treated as inelastic (avoids jitter). */
@@ -56,6 +65,17 @@ export interface PaperConfig {
   creaseStiffnessPerM: number;
   /** Bending stiffness of flat, uncreased 80 g/m² paper, D ≈ E t³/12 with E ≈ 3 GPa, t ≈ 0.1 mm (N·m). */
   bendingStiffness: number;
+  /** Large flat panels bend smoothly (bending shapes, flexible paper; see bendModes.ts). */
+  bendingModes: boolean;
+  /**
+   * The bending shapes are linear (the paper moves straight along its normal), which only holds
+   * for moderate slopes: real paper cannot stretch, so a strongly bent wing curls in and turns
+   * away from the air instead. Beyond about this slope (degrees) at the panel's steepest point
+   * the shape stiffens quickly (by `bendingLimitStiffening` × its own stiffness at that slope,
+   * growing with the 6th power of the amplitude).
+   */
+  bendingLimitSlopeDeg: number;
+  bendingLimitStiffening: number;
   /** Width of the zone a crease bends over (m); creaseStiffnessPerM ≈ D / creaseZoneM. */
   creaseZoneM: number;
   /**
@@ -149,6 +169,7 @@ export const DEFAULT_CONFIG: PhysicsConfig = {
     chordCacheDeg: 1,
   },
   ground: {
+    planes: [{ n: [0, 1, 0], d: 0 }],
     restitution: 0.15,
     restitutionThreshold: 0.3,
     friction: 0.4,
@@ -160,6 +181,9 @@ export const DEFAULT_CONFIG: PhysicsConfig = {
   paper: {
     creaseStiffnessPerM: 0.08,
     bendingStiffness: 2.5e-4,
+    bendingModes: true,
+    bendingLimitSlopeDeg: 35,
+    bendingLimitStiffening: 30,
     creaseZoneM: 0.003,
     creaseSpringback: 0.05,
     contactStiffnessFactor: 30,

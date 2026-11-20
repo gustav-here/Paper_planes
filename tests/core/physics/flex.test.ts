@@ -113,7 +113,8 @@ describe('damage', () => {
       while (!s.done) s.step();
       return s.log.firstImpact!.distance;
     };
-    expect(Math.abs(fly({ ...d, ops: [...d.ops, ...r.ops] }) - fly(d))).toBeGreaterThan(0.05);
+    // a few centimetres over ≈ 5.7 m (the bending wings cushion the nose, so the crash is milder)
+    expect(Math.abs(fly({ ...d, ops: [...d.ops, ...r.ops] }) - fly(d))).toBeGreaterThan(0.02);
   });
 });
 
@@ -134,20 +135,24 @@ describe('springback and paper bending in flight', () => {
     const p = prepare({ ...makeGlider(), flexible: true }, DEFAULT_CONFIG);
     const wings = p.flex!.set.hinges.map((h, j) => (h.length > 0.4 ? j : -1)).filter((j) => j >= 0);
     expect(wings).toHaveLength(2);
+    // the wings swing at their creases, and their flat paper bends (bending shapes)
     const maxBend = (l: LaunchParams) => {
       const s = createSimulator(p, DEFAULT_CONFIG, l) as MultiBodySim;
-      let m = 0;
+      let hinge = 0;
+      let bend = 0;
       while (!s.log.firstImpact && s.t < 1.5) {
         s.step();
         const a = s.hingeAnglesDeg();
-        m = Math.max(m, ...wings.map((j) => Math.abs(a[j])));
+        hinge = Math.max(hinge, ...wings.map((j) => Math.abs(a[j])));
+        bend = Math.max(bend, s.maxBendingM());
       }
-      return { m, dmg: s.damage().length };
+      return { hinge, bend, dmg: s.damage().length };
     };
     const gentle = maxBend(launch);
     const strong = maxBend(hard);
-    expect(strong.m).toBeGreaterThan(10);
-    expect(strong.m).toBeGreaterThan(3 * gentle.m);
+    expect(strong.bend).toBeGreaterThan(0.02);
+    expect(strong.bend).toBeGreaterThan(1.8 * gentle.bend);
+    expect(strong.hinge).toBeGreaterThan(2 * gentle.hinge);
     expect(strong.dmg).toBe(0);
   });
 

@@ -11,6 +11,7 @@ import { computeMassProperties } from './massProperties';
 import type { Airframe } from './airframe';
 import type { PaperConfig } from './config';
 import { onTab, slitTabs } from './slits';
+import { isBendingPanel } from './bendModes';
 
 /**
  * Flexible paper as hinged rigid panels. A panel is paper that cannot bend in this model:
@@ -319,8 +320,9 @@ export function buildPanels(model: PaperModel, af: Airframe, paper: PaperConfig)
       const slit = e.slit && !isControl;
       const kCrease = paper.creaseStiffnessPerM * e.length * (isControl ? paper.servoStiffnessFactor : 1);
       let k = kCrease;
-      if (!slit && !isControl) {
-        // the flat paper beyond the crease (away from the body) bends too, in series with it
+      if (!slit && !isControl && !(paper.bendingModes && isBendingPanel(panelFacets[other], false))) {
+        // the flat paper beyond the crease (away from the body) bends too, in series with it;
+        // large flat panels get their own bending shapes instead (bendModes.ts)
         const kp = plateStiffness(panelFacets[other], a, axis, paper.bendingStiffness);
         k = 1 / (1 / kCrease + 1 / kp);
       }

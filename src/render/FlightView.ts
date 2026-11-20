@@ -1,10 +1,11 @@
+import { AshEffect, samplePaper } from './AshEffect';
 import * as THREE from 'three';
 import * as V from '../core/math/vec3';
 import type { Vec3 } from '../core/math/vec3';
 import type { PaperModel } from '../core/paper/model';
 import { resolveClip } from '../core/paper/clips';
 import type { FlightEvent } from '../core/physics/simulation';
-import type { PanelPose } from '../core/physics/simulator';
+import type { PanelBend, PanelPose } from '../core/physics/simulator';
 import type { Target } from '../core/game/competition';
 import { PaperView } from './PaperMesh';
 import { createClipObject } from './ClipMesh';
@@ -70,6 +71,9 @@ class SegmentSet {
  * Everything drawn in the flight world: the folded plane (posed by the simulation), flight and
  * ground trails, impact/rest markers and the debug overlay (CoM, velocity, per-element forces).
  */
+/** Longest triangle edge of the paper in flight (m): fine enough to show smooth bending. */
+const BEND_EDGE = 0.012;
+
 export class FlightView {
   /** One group per render panel, placed model → world by the simulation. */
   readonly plane = new THREE.Group();
@@ -87,6 +91,7 @@ export class FlightView {
   private markers = new THREE.Group();
   private sprites: THREE.Sprite[] = [];
   private forceScale = 1;
+  private ash: AshEffect | null = null;
 
   constructor(readonly scene: THREE.Scene) {
     scene.add(this.plane, this.air.line, this.ground.line, this.markers, this.debug, this.targetGroup);
@@ -115,7 +120,8 @@ export class FlightView {
     panels.forEach((ids, i) => ids.forEach((id) => owner.set(id, i)));
     panels.forEach((ids) => {
       const g = new THREE.Group();
-      const pv = new PaperView();
+      // small triangles, so flexible paper can be drawn bent
+      const pv = new PaperView({ maxEdge: BEND_EDGE });
       const set = new Set(ids);
       pv.update({ ...model, facets: model.facets.filter((f) => set.has(f.id)), clips: [] });
       pv.setGrid(this.gridOn);
@@ -137,6 +143,11 @@ export class FlightView {
   setGrid(on: boolean) {
     this.gridOn = on;
     for (const p of this.papers) p.setGrid(on);
+  }
+
+  /** Bend each panel's paper (flexible flight), or straighten it all with null. */
+  setPanelBending(bends: (PanelBend | null)[] | null) {
+    this.papers.forEach((pv, i) => pv.bend(bends?.[i] ?? null));
   }
 
   setPanelPoses(poses: PanelPose[]) {
@@ -238,7 +249,32 @@ export class FlightView {
     this.marker(e.pos, '#f08c2e', `Vila ${e.distance.toFixed(2).replace('.', ',')} m\n(+${slide.toFixed(2).replace('.', ',')} m glid/studs)`);
   }
 
+  /** The paper burns up: the plane is replaced by flakes of ash. */
+  burn() {
+    this.endAsh();
+    this.ash = new AshEffect(samplePaper(this.plane, 2500));
+    this.plane.visible = false;
+    this.scene.add(this.ash.points);
+  }
+
+  /** Advance effects; returns true while the ash is still in the air. */
+  updateEffects(dt: number): boolean {
+    if (!this.ash) return false;
+    if (this.ash.update(dt)) return true;
+    this.endAsh();
+    return false;
+  }
+
+  private endAsh() {
+    if (!this.ash) return;
+    this.scene.remove(this.ash.points);
+    this.ash.dispose();
+    this.ash = null;
+  }
+
   clear() {
+    this.endAsh();
+    this.plane.visible = true;
     this.air.clear();
     this.ground.clear();
     for (const c of [...this.markers.children]) {

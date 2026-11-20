@@ -5,7 +5,24 @@ import { GameLoop } from './app/GameLoop';
 import { DEFAULT_CONFIG } from './core/physics/config';
 
 const canvas = document.getElementById('viewport') as HTMLCanvasElement;
-const stage = new Stage(canvas);
+
+/** Without WebGL there is nothing to draw: say why instead of showing an empty page. */
+function noGraphics(why: string) {
+  const el = document.createElement('div');
+  el.className = 'no-webgl';
+  el.innerHTML = `<h2>3D-grafiken kunde inte startas</h2><p>${why}</p><p>Starta om webbläsaren (eller appen) och ladda sidan igen.</p>`;
+  document.body.appendChild(el);
+}
+canvas.addEventListener('webglcontextlost', () => noGraphics('Grafikkortet tappade kontakten med sidan.'));
+canvas.addEventListener('webglcontextrestored', () => document.querySelectorAll('.no-webgl').forEach((e) => e.remove()));
+
+let stage: Stage;
+try {
+  stage = new Stage(canvas);
+} catch {
+  noGraphics('Webbläsaren gav inte sidan tillgång till WebGL (den kan ha spärrats efter ett grafikfel).');
+  throw new Error('WebGL unavailable');
+}
 const editor = new EditorApp(stage);
 
 // Physics steps at a fixed rate (DEFAULT_CONFIG.dt = 1/240 s) independent of the frame rate.
@@ -29,12 +46,13 @@ const flight: FlightMode = new FlightMode(stage, loop.stepper, () => {
 
 flight.onDamage = (ops) => editor.addDamage(ops);
 flight.onRepair = () => editor.repairDamage();
+flight.onBurn = () => editor.setBurned(true);
 
 editor.onFly = (design, gridPaper) => {
   editor.active = false;
   document.body.classList.add('mode-flight');
   stage.setView(flight.view);
-  flight.enter(design, gridPaper);
+  flight.enter(design, gridPaper, editor.burned);
 };
 
 loop.start();

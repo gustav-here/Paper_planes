@@ -98,11 +98,27 @@ export interface SurfacePose {
   v0: Vec3;
 }
 
+/**
+ * Bending of the paper per element, in the surface's rest frame (flexible model): the element
+ * moves `disp` along the rest normal, tilts so that its normal becomes n − slope (slope: in-plane
+ * gradient of the deflection), and moves with extra speed `vel` along the normal.
+ */
+export interface ElementDeform {
+  disp: Float64Array;
+  slope: Float64Array;
+  vel: Float64Array;
+}
+
 export interface AeroOptions {
   debug?: AeroDebug;
   poses?: (SurfacePose | null)[];
   /** Filled with force and moment about the body origin per surface (body frame). */
   perSurface?: { F: Vec3; T: Vec3 }[];
+  deform?: ElementDeform;
+  /** Filled with the force on each element (body frame, 3 per element). */
+  elementForces?: Float64Array;
+  /** Only evaluate these surfaces (the others are skipped and left untouched in the outputs). */
+  only?: Set<number>;
 }
 
 /** Recompute chord coordinates and aspect ratio of one surface for in-plane flow direction w2. */
@@ -187,7 +203,7 @@ export function evaluateAero(
   cache: AeroCache,
   opts: AeroOptions = {},
 ): AeroResult {
-  const { debug, poses, perSurface } = opts;
+  const { debug, poses, perSurface, deform, elementForces, only } = opts;
   const force: Vec3 = [0, 0, 0];
   const torque: Vec3 = [0, 0, 0];
   const els = af.mesh.elements;
@@ -201,6 +217,7 @@ export function evaluateAero(
   }
 
   for (const s of af.mesh.surfaces) {
+    if (only && !only.has(s.id)) continue;
     const c = cache.surfaces[s.id];
     const P = poses?.[s.id] ?? null;
     const place = (p: Vec3): Vec3 => (P ? V.add(M3.mulVec(P.R, p), P.t) : p);
@@ -208,12 +225,13 @@ export function evaluateAero(
       const base = V.add(v, V.cross(w, p));
       return P ? V.add(base, V.add(V.cross(P.w, p), P.v0)) : base;
     };
-    const n = P ? M3.mulVec(P.R, s.normal) : s.normal;
+    const nSurf = P ? M3.mulVec(P.R, s.normal) : s.normal;
+    const n0 = nSurf;
     let sF: Vec3 = [0, 0, 0];
     let sT: Vec3 = [0, 0, 0];
     // in-plane direction of the air relative to the surface (air moves opposite to the plate)
     const uc = velAt(place(s.centroid));
-    const inPlane = V.negate(V.rejectFrom(uc, n));
+    const inPlane = V.negate(V.rejectFrom(uc, n0));
     const ipl = V.length(inPlane);
     let uniform = false;
     if (ipl < 1e-6 * Math.max(V.length(uc), 1e-9) || ipl < 1e-9) {
@@ -231,11 +249,22 @@ export function evaluateAero(
     for (let i = 0; i < s.elementCount; i++) {
       const idx = s.firstElement + i;
       const e = els[idx];
-      const center = place(e.center);
+      let center: Vec3;
+      let u: Vec3;
+      let n = nSurf;
+      if (deform && (deform.disp[idx] !== 0 || deform.vel[idx] !== 0 || deform.slope[idx * 3] !== 0 || deform.slope[idx * 3 + 1] !== 0 || deform.slope[idx * 3 + 2] !== 0)) {
+        center = place(V.addScaled(e.center, s.normal, deform.disp[idx]));
+        const nRest = V.normalize([s.normal[0] - deform.slope[idx * 3], s.normal[1] - deform.slope[idx * 3 + 1], s.normal[2] - deform.slope[idx * 3 + 2]]);
+        n = P ? M3.mulVec(P.R, nRest) : nRest;
+        u = V.addScaled(velAt(center), nSurf, deform.vel[idx]);
+      } else {
+        center = place(e.center);
+        u = velAt(center);
+      }
       if (debug?.pos) debug.pos[idx] = center;
-      const u = velAt(center);
       const speed = V.length(u);
       if (speed < 1e-6) {
+        if (elementForces) elementForces.fill(0, idx * 3, idx * 3 + 3);
         if (debug) {
           debug.lift[idx] = [0, 0, 0];
           debug.drag[idx] = [0, 0, 0];
@@ -271,6 +300,11 @@ export function evaluateAero(
       const L = V.scale(eL, qa * gbar * CL);
       const D = V.scale(eD, qa * (gbar * (CD - cfg.CD0) + cfg.CD0));
       const F = V.add(L, D);
+      if (elementForces) {
+        elementForces[idx * 3] = F[0];
+        elementForces[idx * 3 + 1] = F[1];
+        elementForces[idx * 3 + 2] = F[2];
+      }
       force[0] += F[0];
       force[1] += F[1];
       force[2] += F[2];

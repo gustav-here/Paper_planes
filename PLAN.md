@@ -830,3 +830,67 @@ Resultat med standardkonfigurationen (släpp från 10 m, olika kastfarter):
     planar ut, eftersom planets egen dämpning i stigning tar över.
   - Darten ger samma bild: +16° till +31°.
   - Testerna finns i `tests/core/physics/controls.test.ts`.
+
+## 25. Platser att kasta på
+- **Platser** (`core/game/venues.ts`) bestämmer bara världen runt planet: tyngdkraft, luft och fasta
+  ytor. Planet och fysiken är desamma överallt. Gymnastiksalen är alltid vald när spelet startar.
+  - **Gymnastiksal:** 30 × 16 m med 7 m i takhöjd, g = 9,81, luft. Planet kastas 3 m från ena
+    kortväggen.
+    - Golv, väggar och tak är kontaktytor, så planet stannar mot väggen. Distansen räknas till
+      första nedslaget, på golvet eller i en vägg.
+    - Golvet har linjer för basket (rött), volleyboll (gult), badminton (blått) och
+      handboll/innebandy (svart), och distanslinjer från kastpunkten varje meter.
+    - Väggarna har träpaneler, och salen har korgar, handbollsmål, ribbstolar, bänkar,
+      fönster, tak med lampor och mattor.
+  - **Månen:** g = 1,62 och ingen atmosfär (ρ = 0). Inget lyft, inget motstånd och ingen
+    tillskottsmassa, så planet flyger en ren kastparabel. Testerna jämför med den analytiska
+    parabeln.
+    - Det finns ett grått regolit med stenar, rundade kullar vid horisonten, svart himmel,
+      hårt lågt solljus och distanslinjer varje 5 m.
+  - **Solen:** g = 274, ingen yta att landa på. Efter 0,2 s brinner papperet upp.
+    - Planet blir svarta flagor i pixelstorlek som först faller isär och sedan stiger uppåt
+      och försvinner inom 0,5 s. Därefter visas "Flygplanet brann upp".
+    - I vikläget ligger en liten askhög på bordet tills man trycker på Reparera, som ger ett
+      nytt ark vikt likadant. Att ladda en modell eller börja om tar också bort askan.
+- **Kontaktytor:** `GroundConfig.planes` är en lista av plan (fritt där n·x ≥ d). Båda
+  simulatorerna löser kontakt mot alla plan med samma impulsmodell.
+- **Topplistor per plats och spelläge.** Gymnastiksalens listor behåller de gamla nycklarna, och
+  uppspelningar sker på den plats där kastet gjordes.
+- **WebGL-fel:** om grafiken inte kan startas, eller går förlorad, visar sidan ett meddelande i
+  stället för en tom yta.
+  - 2D-canvasens `filter: blur` per penseldrag i stora texturer fick grafikprocessen att startas
+    om, och då spärrade Chrome WebGL för hela `localhost`. Använd inte canvasfilter i
+    procedurtexturer.
+
+## 26. Böjformer: plant papper som böjer sig i fartvinden
+- **Varför:** ett ovikt ark, eller en bred vinge, var en stel platta mellan vecken. Riktigt papper
+  böjer sig mellan vecken. Ett 10 cm utskjutande A4 sjunker flera centimeter av sin egen vikt
+  (D = 2,5·10⁻⁴ N·m), och vid hårda kast böjer sig vingarna mer.
+- **Modell** (`physics/bendModes.ts`, flexibelt papper): stora plana paneler (minst 25 cm², plana
+  inom 12°, inte klaffar) får några släta böjformer φₖ. Nedböjningen är w = Σ qₖ φₖ längs
+  panelens normal, och amplituderna qₖ är extra frihetsgrader i flerkroppsmodellen.
+  - Paneler som hänger i ett veck är fast inspända där: d̃² (böjning ut från vecket), d̃²s̃
+    (vridning) och d̃²(s̃²−⅓) (välvning). Den fria rotpanelen (kroppen eller ett helt ovikt ark)
+    får x̃², ỹ² och x̃ỹ, ortogonala mot stel rörelse.
+  - Styvheten är plattenergin ∫ D [(∇²w)² − (1−ν)(…)] dA med ν = 0,3. Former som svänger
+    snabbare än 120 Hz (smala remsor) räknas som stela och tas bort.
+  - Trögheten är panelens papper och medföljande luft från samma masspunkter, så att
+    massmatrisen alltid är positivt definit.
+  - Luftkrafterna räknas på den böjda ytan: varje element flyttas med w, lutas med ∇w och får
+    hastigheten ẇ. Den generaliserade kraften är Qₖ = Σ (F·n) φₖ.
+  - Styvhet och dämpning integreras implicit, som vecken. Luftens dämpning tas fram med
+    finita differenser för de element varje frihetsgrad påverkar, och räknas om var tredje steg.
+  - En platta som böjs i ett veck har inte längre plattböjningen i serie i gångjärnet. Den
+    finns i formerna i stället.
+- **Mjuk gräns:** formerna är linjära, så papperet rör sig rakt längs normalen och skulle
+  töjas vid stora utslag. Riktigt papper kan inte töjas, utan böjer sig inåt och vrider sig ur
+  vinden. Bortom 35° lutning (`bendingLimitSlopeDeg`) styvnar formen snabbt: 30 × sin egen
+  styvhet vid gränsen, och den extra styvheten växer med amplituden upphöjd till sex.
+  - Innan gränsen fanns böjde sig glidplanets vingar 168 mm vid 12 m/s. Med gränsen blir det
+    ungefär 35–45 mm.
+- **Typiska värden:** ett kastat A4 böjer sig 25–35 mm. Glidplanets vingar böjer sig ungefär
+  13 mm i glid och 40 mm direkt efter ett hårt kast. Simuleringen går 5–14 gånger snabbare än
+  realtid i Node.
+- **Visning:** i kastläget ritas papperet med trianglar på högst 12 mm (`PaperView` med `maxEdge`).
+  Varje bildruta flyttas hörnen och kantlinjerna längs böjningen
+  (`Simulator.panelBending` → `FlightView.setPanelBending`), och ljusnormalerna lutas med ∇w.

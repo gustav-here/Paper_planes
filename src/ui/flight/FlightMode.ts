@@ -33,6 +33,8 @@ import { TimeSeriesPlot } from '../hud/TimeSeriesPlot';
 import { loadFlights, saveFlight } from '../hud/flightLogStore';
 import type { StoredFlight } from '../hud/flightLogStore';
 import { leaderboard, submit } from '../hud/leaderboardStore';
+import { DEFAULT_VENUE, VENUES, venueConfig } from '../../core/game/venues';
+import type { VenueId } from '../../core/game/venues';
 
 type Phase = 'aim' | 'flying' | 'done';
 type CamMode = 'follow' | 'side' | 'free';
@@ -44,7 +46,8 @@ const fmt = (x: number, d = 2) => {
   return (Number(s) === 0 ? (0).toFixed(d) : s).replace('.', ',');
 };
 const AIM_KEY = 'paperplanes.aim.v1';
-const cfg = DEFAULT_CONFIG;
+/** Physics shared by every venue (each venue sets its own gravity, air and surfaces). */
+const BASE = DEFAULT_CONFIG;
 
 interface Slider {
   key: keyof LaunchParams;
@@ -72,6 +75,15 @@ export class FlightMode {
   onDamage: ((ops: Op[]) => void) | null = null;
   /** Called when the player repairs the plane in throw mode. */
   onRepair: (() => void) | null = null;
+  /** Called when the plane burns up (on the Sun). */
+  onBurn: (() => void) | null = null;
+  /** Where the plane is thrown, and the physics there. Always the gym when the game starts. */
+  private venue: VenueId = DEFAULT_VENUE;
+  private cfg = venueConfig(DEFAULT_VENUE, BASE);
+  /** The player's plane is ash (until repaired). */
+  private burned = false;
+  /** Seconds since the plane burned (the ash animation), or −1. */
+  private burnClock = -1;
   /** The damaged plane, used from the next throw on. */
   private pending: Prepared | null = null;
   private world: World;
@@ -140,13 +152,14 @@ export class FlightMode {
   // ---------------------------------------------------------------- lifecycle
 
   /** Enter throw mode with a design (its ops already include any damage). */
-  enter(design: DesignFile, gridPaper = false) {
+  enter(design: DesignFile, gridPaper = false, burned = false) {
     this.active = true;
+    this.burned = burned;
     this.controls.enabled = true;
     this.fv.setGrid(gridPaper);
     this.replaying = null;
     try {
-      this.mine = prepare(design, cfg);
+      this.mine = prepare(design, this.cfg);
     } catch (e) {
       this.mine = null;
       $('aim-info').textContent = `Kunde inte bygga flygplanet: ${String(e)}`;
@@ -169,12 +182,34 @@ export class FlightMode {
     this.current = p;
     const damaged = p.design.ops.filter((o) => o.id.startsWith('dmg-')).length;
     $('fl-title').textContent = p.design.name + (p.design.flexible ? ' · flexibelt' : ' · stelt') + (damaged ? ` · skadat (${damaged})` : '');
-    const probe = createSimulator(p, cfg, this.launch);
+    const probe = createSimulator(p, this.cfg, this.launch);
     this.fv.setModel(p.model, probe.panels, p.af.mass, p.af.mesh.elements.length);
     this.updateRepair();
     $('aim-controls').innerHTML = p.af.controls.length
       ? `Styr klaffarna med <kbd>↓</kbd> nosen upp, <kbd>↑</kbd> nosen ned och <kbd>←</kbd><kbd>→</kbd> (skevning).`
       : '';
+  }
+
+  /** Throw somewhere else: other gravity, air and surroundings (the plane is rebuilt for it). */
+  setVenue(id: VenueId, rebuild = true) {
+    if (id === this.venue && this.world.venue === id) return;
+    this.venue = id;
+    this.cfg = venueConfig(id, BASE);
+    this.world.setVenue(id);
+    ($('fl-venue') as HTMLSelectElement).value = id;
+    // the target camera starts again from the release point
+    this.lastTarget.set(0, this.launch.heightM, 0);
+    if (!rebuild || !this.mine) return;
+    try {
+      this.mine = prepare(this.mine.design, this.cfg);
+      if (this.pending) this.pending = prepare(this.pending.design, this.cfg);
+    } catch {
+      /* keep the plane as it was */
+    }
+    this.replaying = null;
+    this.use(this.mine);
+    this.startRound();
+    this.toAim(true);
   }
 
   private startRound() {
@@ -204,6 +239,7 @@ export class FlightMode {
     this.plot.clear();
     this.shownImpact = false;
     $('result-card').classList.remove('visible');
+    $('burn-text').classList.remove('visible');
     $('aim-panel').classList.add('visible');
     this.aimArrow.visible = true;
     this.updateAimPose();
@@ -211,6 +247,7 @@ export class FlightMode {
     if (resetCamera) this.aimCamera();
     this.updateStats();
     this.updateRepair();
+    this.updateAimInfo();
   }
 
   private throwNow(replay: LeaderEntry | null = null) {
@@ -223,9 +260,14 @@ export class FlightMode {
       this.applyPending();
     }
     if (!this.current) return;
+    if (!replay && this.burned) {
+      this.updateAimInfo();
+      $('aim-panel').classList.add('visible');
+      return;
+    }
     if (!replay && this.round && isRoundOver(this.round)) this.startRound();
     const launch = replay ? replay.launch : { ...this.launch };
-    this.sim = createSimulator(this.current, cfg, launch, replay ? replay.inputs : undefined);
+    this.sim = createSimulator(this.current, this.cfg, launch, replay ? replay.inputs : undefined);
     this.curPoses = this.sim.panelPoses();
     this.prevPoses = this.curPoses;
     this.prevPos = this.sim.position();
@@ -238,6 +280,8 @@ export class FlightMode {
     this.aimArrow.visible = false;
     $('aim-panel').classList.remove('visible');
     $('result-card').classList.remove('visible');
+    $('burn-text').classList.remove('visible');
+    this.burnClock = -1;
     this.stepper.reset();
     this.setPaused(false);
     // carry the camera (and the player's orbit offset) along to the new release point
@@ -254,7 +298,9 @@ export class FlightMode {
   /** Replay a stored throw exactly (verifies its score). */
   private replay(entry: LeaderEntry) {
     try {
-      const p = prepare(entry.design, cfg);
+      // replayed where it was thrown
+      if ((entry.venue ?? 'gym') !== this.venue) this.setVenue(entry.venue ?? 'gym', false);
+      const p = prepare(entry.design, this.cfg);
       this.replaying = entry;
       this.use(p);
       this.fv.setTarget(entry.target);
@@ -287,7 +333,39 @@ export class FlightMode {
       this.shownImpact = true;
       this.fv.markImpact(log.firstImpact);
     }
+    const burnAt = VENUES[this.venue].burnAfterS;
+    if (burnAt !== null && sim.t >= burnAt - 1e-9 && !this.replaying) {
+      this.burnUp();
+      return;
+    }
     if (sim.done) this.finish();
+  }
+
+  /** The paper catches fire and turns to ash (on the Sun). */
+  private burnUp() {
+    this.phase = 'done';
+    this.burned = true;
+    this.pending = null;
+    this.burnClock = 0;
+    this.fv.setPanelPoses(this.curPoses);
+    this.fv.burn();
+    this.onBurn?.();
+    this.updateRepair();
+  }
+
+  /** After the ash is gone: say so, and offer a repair. */
+  private showBurned() {
+    $('burn-text').classList.add('visible');
+    if (this.round) this.round = recordScore(this.round, null);
+    this.renderCard(`
+      <h3>Flygplanet brann upp</h3>
+      <p class="note">Papper tål inte solens yta: det fattade eld efter ${String(VENUES.sun.burnAfterS).replace('.', ',')} s och blev aska.</p>
+      <div class="actions">
+        <button id="res-repair-burn" class="primary">🔧 Reparera</button>
+        <button id="res-back">Tillbaka till vikning</button>
+      </div>`);
+    const rb = document.getElementById('res-repair-burn') as HTMLButtonElement | null;
+    if (rb) rb.onclick = () => this.repair();
   }
 
   private finish() {
@@ -303,11 +381,11 @@ export class FlightMode {
     if (events.length && this.mine && this.current === this.mine) {
       // damage stays with the plane (until it is refolded): fly the damaged plane from now on
       // damage is expressed on the plane as folded (the design's own geometry)
-      const r = damageToOps(this.mine.folded, damageOnFolded(this.mine.model, this.mine.folded, events), this.mine.design.orientation.up, cfg.paper);
+      const r = damageToOps(this.mine.folded, damageOnFolded(this.mine.model, this.mine.folded, events), this.mine.design.orientation.up, this.cfg.paper);
       if (r.ops.length) {
         const design: DesignFile = { ...this.mine.design, ops: [...this.mine.design.ops, ...r.ops] };
         try {
-          this.pending = prepare(design, cfg);
+          this.pending = prepare(design, this.cfg);
           this.onDamage?.(r.ops);
           // show all of the damage on the plane where it came to rest
           this.showDamaged(this.pending.model);
@@ -334,8 +412,15 @@ export class FlightMode {
 
   // ---------------------------------------------------------------- per frame
 
-  frame(_frameDt: number, alpha: number) {
+  frame(frameDt: number, alpha: number) {
     if (!this.active) return;
+    if (this.burnClock >= 0) {
+      this.burnClock += frameDt;
+      if (!this.fv.updateEffects(frameDt)) {
+        this.burnClock = -1;
+        this.showBurned();
+      }
+    }
     let x: Vec3;
     if (this.sim) {
       const a = this.phase === 'flying' ? alpha : 1;
@@ -344,6 +429,7 @@ export class FlightMode {
         return { q: Q.slerp(Q.normalize(p.q), Q.normalize(c.q), a), t: V.lerp(p.t, c.t, a) };
       });
       this.fv.setPanelPoses(poses);
+      this.fv.setPanelBending(this.sim.panelBending?.() ?? null);
       x = V.lerp(this.prevPos, this.sim.position(), a);
       if (this.phase === 'flying') this.showCrumples();
       this.consumeSamples();
@@ -367,9 +453,9 @@ export class FlightMode {
     const events = sim.damage().filter((e) => e.kind === 'crumple');
     if (events.length <= this.shownCrumples) return;
     this.shownCrumples = events.length;
-    const r = damageToOps(p.folded, damageOnFolded(p.model, p.folded, events), p.design.orientation.up, cfg.paper);
+    const r = damageToOps(p.folded, damageOnFolded(p.model, p.folded, events), p.design.orientation.up, this.cfg.paper);
     if (!r.ops.length) return;
-    this.showDamaged(relaxCreases(r.model, [...p.design.ops, ...r.ops], cfg.paper.creaseSpringback));
+    this.showDamaged(relaxCreases(r.model, [...p.design.ops, ...r.ops], this.cfg.paper.creaseSpringback));
   }
 
   /**
@@ -436,14 +522,25 @@ export class FlightMode {
   private updateAimPose() {
     if (!this.current) return;
     const s = launchState(this.current.af, this.launch);
-    const probe = createSimulator(this.current, cfg, this.launch);
+    const probe = createSimulator(this.current, this.cfg, this.launch);
     this.fv.setPanelPoses(probe.panelPoses());
+    this.fv.setPanelBending(null);
     const el = this.launch.elevationDeg * DEG;
     const f = this.headingDir();
     const dir = f.clone().multiplyScalar(Math.cos(el)).add(new THREE.Vector3(0, Math.sin(el), 0)).normalize();
     this.aimArrow.position.set(...s.x);
     this.aimArrow.setDirection(dir);
     this.aimArrow.setLength(0.25 + 0.12 * this.launch.speed, 0.12, 0.07);
+  }
+
+  /** The note under the throw controls: what is special about the place (or that the plane is ash). */
+  private updateAimInfo() {
+    const notes: Record<VenueId, string> = {
+      gym: 'Planet släpps utan rotation med vingarna vågräta. Distansen mäts till första nedslaget, på golvet eller i en vägg.',
+      moon: 'Ingen luft: inget lyft och inget luftmotstånd, så planet flyger som en kastad sten. Tyngdkraften är en sjättedel av jordens.',
+      sun: 'Det finns ingen yta att landa på – och papper tål inte hettan.',
+    };
+    $('aim-info').textContent = this.burned ? 'Planet har brunnit upp. Tryck på Reparera för ett nytt ark, vikt likadant.' : notes[this.venue];
   }
 
   private updateModeInfo() {
@@ -527,6 +624,7 @@ export class FlightMode {
             launch: bestIdx === this.round.scores.length - 1 ? { ...log.launch } : this.bestLaunch ?? { ...log.launch },
             inputs: bestIdx === this.round.scores.length - 1 ? [...sim.controls.inputs] : this.bestInputs ?? [],
             target: this.round.target,
+            venue: this.venue,
           };
           const rank = submit(entry);
           rankHtml = rank >= 0 ? `<br><b>Plats ${rank + 1} på topplistan!</b>` : '';
@@ -572,7 +670,7 @@ export class FlightMode {
   }
 
   private boardHtml(mode: GameMode): string {
-    const list = leaderboard(mode).slice(0, 5);
+    const list = leaderboard(mode, this.venue).slice(0, 5);
     if (!list.length) return `<h4>Topplista · ${MODES[mode].name}</h4><p class="note">Inga resultat än. Gör klart en runda!</p>`;
     const items = list
       .map(
@@ -599,7 +697,7 @@ export class FlightMode {
     card.querySelectorAll<HTMLButtonElement>('[data-replay]').forEach((b) => {
       b.onclick = () => {
         if (!mode) return;
-        const e = leaderboard(mode)[Number(b.dataset.replay)];
+        const e = leaderboard(mode, this.venue)[Number(b.dataset.replay)];
         if (e) this.replay(e);
       };
     });
@@ -642,25 +740,32 @@ export class FlightMode {
   private updateRepair() {
     const b = $<HTMLButtonElement>('fl-repair');
     const n = this.damagedOps();
-    b.hidden = n === 0 || !!this.replaying;
-    b.disabled = this.phase === 'flying';
-    b.textContent = `🔧 Reparera (${n})`;
+    b.hidden = (n === 0 && !this.burned) || !!this.replaying;
+    b.disabled = this.phase === 'flying' || this.burnClock >= 0;
+    b.textContent = this.burned ? '🔥 Uppbränt · Reparera' : `🔧 Reparera (${n})`;
   }
 
   /** Remove all damage: the plane is as the player folded it again. */
   private repair() {
     const p = this.pending ?? this.mine;
-    if (!p || this.phase === 'flying' || this.replaying) return;
+    if (!p || this.phase === 'flying' || this.replaying || this.burnClock >= 0) return;
+    const wasBurned = this.burned;
     const design: DesignFile = { ...p.design, ops: p.design.ops.filter((o) => !o.id.startsWith('dmg-')) };
     try {
-      this.mine = prepare(design, cfg);
+      this.mine = prepare(design, this.cfg);
     } catch (e) {
       alert(`Kunde inte reparera: ${String(e)}`);
       return;
     }
     this.pending = null;
+    this.burned = false;
     this.use(this.mine);
     this.onRepair?.();
+    if (wasBurned) {
+      // a fresh sheet folded the same way
+      this.toAim(true);
+      return;
+    }
     const note = document.querySelector('#result-card .verify.bad');
     if (note) note.outerHTML = `<p class="verify ok">🔧 Planet är reparerat.</p>`;
     if (this.phase === 'aim') this.updateAimPose();
@@ -740,6 +845,11 @@ export class FlightMode {
       mode.blur();
     };
     $('fl-debug').onclick = () => this.setDebug(!this.debug);
+    const venue = $<HTMLSelectElement>('fl-venue');
+    venue.onchange = () => {
+      this.setVenue(venue.value as VenueId);
+      venue.blur();
+    };
     $('fl-repair').onclick = () => this.repair();
 
     const arrow = (e: KeyboardEvent, down: boolean) => {
