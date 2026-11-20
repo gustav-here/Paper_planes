@@ -116,8 +116,10 @@ export function clipSegmentConvex(a: Vec2, b: Vec2, poly: Vec2[]): [number, numb
     // inside: orient * cross(e, x - p) >= 0
     const num = orient * V2.cross(e, V2.sub(a, p));
     const den = orient * V2.cross(e, d);
-    if (Math.abs(den) < 1e-300) {
-      if (num < 0) return null;
+    const el = V2.length(e);
+    // segment parallel to this edge: inside if on or within ~1 nm of the inner side (cuts along an edge)
+    if (Math.abs(den) <= 1e-12 * el * V2.length(d)) {
+      if (num < -1e-9 * el) return null;
       continue;
     }
     const t = -num / den;

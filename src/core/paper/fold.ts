@@ -20,7 +20,7 @@ import { computeEdges, isConnected } from './edges';
 import { PaperError } from './errors';
 import type { PaperWarning } from './errors';
 import type { FoldOp } from './ops';
-import { sweepPenetrates } from './penetration';
+import { firstContactSample, sweepPenetrates } from './penetration';
 
 export interface FoldFrame {
   p0: Vec3;
@@ -49,11 +49,16 @@ export interface FoldResult {
   model: PaperModel;
   moved: number[];
   warnings: PaperWarning[];
+  /** With penetration 'scan': first angle (deg) at which paper would pass through paper; null = free. */
+  contactAngleDeg?: number | null;
 }
 
 export interface FoldOptions {
-  /** Penetration check: none (fast previews), or a sampled sweep. */
-  penetration?: 'none' | 'sweep';
+  /**
+   * Penetration check: none (fast previews), a sampled sweep up to the fold angle (warning),
+   * or a 1° scan reporting the first contact angle (used to stop the fold animation).
+   */
+  penetration?: 'none' | 'sweep' | 'scan';
 }
 
 const DEG = Math.PI / 180;
@@ -167,7 +172,8 @@ export function applyFold(model: PaperModel, op: FoldOp, opts: FoldOptions = {})
   const rot = rotationAbout(p0, d, phi);
 
   const warnings: PaperWarning[] = [];
-  if (opts.penetration === 'sweep') {
+  let contactAngleDeg: number | null | undefined;
+  if (opts.penetration === 'sweep' || opts.penetration === 'scan') {
     const mov = facets.filter((f) => moving.has(f.id));
     const stat = facets.filter((f) => !moving.has(f.id));
     // Zero-thickness stacks: a flap leaving its stack must not have paper on the side it swings towards.
@@ -180,7 +186,12 @@ export function applyFold(model: PaperModel, op: FoldOp, opts: FoldOptions = {})
           dirSign * (heightAlong(s, N) - heightAlong(mf, N)) > 0,
       ),
     );
-    if (blockedInStack || sweepPenetrates(stat, mov, p0, d, phi, Math.max(4, Math.ceil(op.angleDeg / 15)))) {
+    if (opts.penetration === 'scan') {
+      const steps = Math.max(1, Math.round(op.angleDeg));
+      const k = blockedInStack ? 0 : firstContactSample(stat, mov, p0, d, phi, steps);
+      contactAngleDeg = k === null ? null : (op.angleDeg * k) / steps;
+      if (k !== null) warnings.push({ code: 'penetration' });
+    } else if (blockedInStack || sweepPenetrates(stat, mov, p0, d, phi, Math.max(4, Math.ceil(op.angleDeg / 15)))) {
       warnings.push({ code: 'penetration' });
     }
   }
@@ -202,7 +213,7 @@ export function applyFold(model: PaperModel, op: FoldOp, opts: FoldOptions = {})
     return applyRigid(pre, facetCentroid(orig));
   });
 
-  return { model: { ...split, facets: out }, moved: [...moving], warnings };
+  return { model: { ...split, facets: out }, moved: [...moving], warnings, contactAngleDeg };
 }
 
 function restack(facets: Facet[], moving: Set<number>, preArrival: (f: Facet) => Vec3) {

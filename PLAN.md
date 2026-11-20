@@ -1,6 +1,6 @@
 # Pappersflygplan – plan
 
-Status: **godkänd. Etapp 1 klar** (se §14 för avvikelser mot planen). Nästa: etapp 2.
+Status: **godkänd. Etapp 1 och 2 klara** (se §14–15 för avvikelser mot planen). Nästa: etapp 3.
 
 ## 0. Grundprincip
 
@@ -585,3 +585,34 @@ visualisering av nedslag/studs/glid.
 - Efter etapp 1 (önskemål): startvyn är rakt ovanifrån så att arket syns som en oförvrängd
   A4-rektangel (kameran anpassas till fönstret och HUD:en), Vänd-knapparna vänder 90° per
   tryck, och ett gem tas bort med högerklick oavsett verktyg (osynlig träffyta runt gemet).
+
+## 15. Avvikelser och resultat i etapp 2
+
+- **Munk-momentet är avstängt som standard** (`munkMoment: false`). För en tunn platta är
+  potentialströmningens moment kring mittkordan exakt lika med Munk-momentet, och det ingår
+  redan via lastfördelningen med tryckcentrum vid ¼ korda. Med båda påslagna räknades samma
+  destabiliserande moment två gånger: planen stegrade sig med cirka 22 rad/s på 0,1 s. Tröghet från
+  tilläggsmassan (6×6, strip-teori) ingår fullt ut.
+- **Sidoförhållande per lyftsystem:** ytor vars plan ligger inom 45° från varandra (t.ex.
+  två vingar med V-form) delar spännvidd och area när AR beräknas. Annars skulle en
+  V-form på 1° plötsligt halvera AR. Regeln är global och bygger enbart på geometrin.
+- **Polygonunioner** (`polygon-clipping`) avrundas till ett fint rutnät (0,1–10 µm) vid
+  numeriska problem i tjocka staplar.
+- **Markkontakt:** genomträngning korrigeras med Baumgarte-hastighet med glapp, plus ett golv på 1 mm
+  vid hårda nedslag. Vila detekteras på glidande medelvärden.
+- **Presets fick höjdroder** (snitt 3 mm utanför vingroten + uppvikt flik 10°). Utan dem trimmar
+  plana vingar vid α≈0 och dyker, precis som riktiga plan. Endast geometri ändrades.
+- **Omöjliga veck blockeras:** en sökning med 1° steg ger vinkeln för första kontakt, och animationen
+  stannar där. Kollisionstestet skär nu polygonerna längs plan–plan-linjen (fångar också
+  korsningar där kanter sammanfaller).
+- **Fysikpanel i editorn** (knappen ⚖ eller I): massa, tyngdpunkt, ytelement, medflyttad luft,
+  trimvinkel, Cmα och glidtal vid trim, samt val av nos- och upp-riktning (sparas i designen).
+
+Resultat med standardkonfigurationen (släpp från 10 m, olika kastfarter):
+
+| Modell | Trim α | Cmα (1/rad) | Glidtal vid trim | Sjunkhastighet stationärt |
+|---|---|---|---|---|
+| Platt ark | ingen | positiv (instabil) | – | tumlar, ingen stabil glidning |
+| Dart | 6,5° | −0,32 | 3,4 | ≈ 1,5 m/s |
+| Glidplan | 9,1° | −0,29 | 4,6 | ≈ 0,9 m/s |
+| Dart + gem på nosen | 4,6° | −0,48 | – | snabbare och brantare |

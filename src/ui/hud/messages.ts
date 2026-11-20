@@ -15,7 +15,7 @@ export const ERROR_TEXT: Record<PaperErrorCode, string> = {
 export function warningText(w: PaperWarning): string {
   switch (w.code) {
     case 'penetration':
-      return 'Varning: vecket går igenom annat papper (fysiskt omöjligt). Det blockeras i etapp 2.';
+      return 'Varning: ett veck i filen går igenom annat papper (fysiskt omöjligt).';
     case 'mirrorUnavailable':
       return 'Spegling gick inte: modellen är inte längre symmetrisk.';
     case 'mirrorOnAxis':

@@ -1,7 +1,7 @@
 import * as V from '../../core/math/vec3';
 import type { Vec3 } from '../../core/math/vec3';
 import { applyAffine, applyAffineLinear } from '../../core/math/transform';
-import { applyOp } from '../../core/paper/replay';
+import { applyOp, foldAngleLimit } from '../../core/paper/replay';
 import { PaperError } from '../../core/paper/errors';
 import type { FoldOp } from '../../core/paper/ops';
 import { foldIsSelfMirror } from '../../core/paper/symmetry';
@@ -18,7 +18,20 @@ type State =
   | { k: 'drawing' }
   | { k: 'p2p'; A: Vec3; plane: Plane }
   | { k: 'ready'; p0: Vec3; p1: Vec3; N: Vec3; hoverSide: Vec3 | null }
-  | { k: 'angling'; p0: Vec3; p1: Vec3; N: Vec3; side: Vec3; pick: Vec3; startY: number; angle: number; error: string | null };
+  | {
+      k: 'angling';
+      p0: Vec3;
+      p1: Vec3;
+      N: Vec3;
+      side: Vec3;
+      pick: Vec3;
+      startY: number;
+      angle: number;
+      error: string | null;
+      /** Largest angle before paper would pass through paper (deg). */
+      limit: number;
+      stopped: boolean;
+    };
 
 const PX_PER_DEG = 1.35;
 const SNAP_ANGLES = [45, 90, 135, 180];
@@ -98,8 +111,19 @@ export class FoldTool implements Tool {
       const side = this.sideOf(s, q);
       if (!side) return;
       const hit = this.ctx.hitPaper(e);
-      this.s = { k: 'angling', p0: s.p0, p1: s.p1, N: s.N, side, pick: hit?.point ?? q, startY: e.clientY, angle: 0, error: null };
-      this.ctx.hint('Dra uppåt för större vinkel, nedåt för mindre. Släpp för att vika. Esc avbryter.');
+      const pick = hit?.point ?? q;
+      let limit = 180;
+      let error: string | null = null;
+      try {
+        limit = foldAngleLimit(this.ctx.model(), this.makeOp({ ...s, side, pick }, 180, 'limit'));
+        if (limit < 5) error = 'Fliken kan inte vikas åt det hållet: annat papper är i vägen.';
+      } catch (err) {
+        error = err instanceof PaperError ? ERROR_TEXT[err.code] : String(err);
+      }
+      this.s = { k: 'angling', p0: s.p0, p1: s.p1, N: s.N, side, pick, startY: e.clientY, angle: 0, error, limit, stopped: false };
+      this.ctx.hint(
+        error ?? 'Dra uppåt för större vinkel, nedåt för mindre. Släpp för att vika. Esc avbryter.',
+      );
       this.drawOverlay();
     }
   }
@@ -140,7 +164,9 @@ export class FoldTool implements Tool {
     if (s.k === 'angling') {
       let a = Math.max(0, Math.min(180, (s.startY - e.clientY) / PX_PER_DEG));
       if (!e.shiftKey) for (const t of SNAP_ANGLES) if (Math.abs(a - t) < 4) a = t;
-      s.angle = a;
+      // paper stops where it would run into other paper
+      s.stopped = a > s.limit;
+      s.angle = Math.min(a, s.limit);
       this.preview(e);
     }
   }
@@ -158,6 +184,7 @@ export class FoldTool implements Tool {
     if (s.k === 'angling') {
       this.ctx.angleLabel(null);
       this.ctx.setPreview(null);
+      if (s.error) this.ctx.toast(s.error, 'error');
       if (s.angle >= 5 && !s.error) {
         const op = this.makeOp(s, Math.round(s.angle * 10) / 10, this.ctx.nextId('v'));
         if (this.ctx.commit(op)) {
@@ -216,16 +243,20 @@ export class FoldTool implements Tool {
   private preview(e: PointerEvent) {
     const s = this.s;
     if (s.k !== 'angling') return;
-    const label = `${this.ctx.options.foldKind === 'valley' ? 'Dal' : 'Berg'} ${Math.round(s.angle)}°`;
+    if (s.error) {
+      // invalid or blocked from the start (checked once when the drag began)
+      this.ctx.angleLabel(s.error, this.ctx.mouse(e));
+      this.drawOverlay();
+      return;
+    }
+    const label = `${this.ctx.options.foldKind === 'valley' ? 'Dal' : 'Berg'} ${Math.round(s.angle)}°${s.stopped ? ' · stopp: papper i vägen' : ''}`;
     this.ctx.angleLabel(label, this.ctx.mouse(e));
     if (s.angle < 0.5) {
       this.ctx.setPreview(null);
-      s.error = null;
     } else {
       try {
         const r = applyOp(this.ctx.model(), this.makeOp(s, s.angle, 'preview'), { penetration: 'none' });
         this.ctx.setPreview(r.model);
-        s.error = null;
       } catch (err) {
         this.ctx.setPreview(null);
         s.error = err instanceof PaperError ? ERROR_TEXT[err.code] : String(err);

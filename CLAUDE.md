@@ -37,7 +37,9 @@ Webbläsarspel: vik ett pappersflygplan av ett A4 och kasta det. Flygbeteendet s
 - Kvasistationär tunnplattemodell per ytelement: lyft enligt Helmbold (finit AR beräknad ur
   geometri och flöde), stall via mjuk blandning mot separerad platta, kordvis lastfördelning
   (tryckcentrum ¼c fäst flöde → ½c vid 90°) där framkanten bestäms av aktuellt flöde.
-- Tillskottsmassa (6×6, kroppsram) med Munk-moment ingår från etapp 2 (config-flagga, på).
+- Tillskottsmassa (6×6, kroppsram, strip-teori) ingår. Munk-momentet är AV som standard: det
+  ingår redan i lastfördelningen med tryckcentrum vid ¼ korda (annars dubbelräknas det, se PLAN.md §15).
+- Sidoförhållandet räknas per lyftsystem (ytor inom 45° från varandra delar spännvidd).
 - Ingen skuggning mellan icke-koplanära ytor, ingen markeffekt, ingen vind.
 - Stel kropp 6 DOF i kroppsram (ν = v_b, ω_b), RK4.
 - Markkontakt: impulsbaserad med restitution och Coulomb-friktion. Officiellt resultat
@@ -66,6 +68,7 @@ Webbläsarspel: vik ett pappersflygplan av ett A4 och kasta det. Flygbeteendet s
 - `npm run dev` – Vite-server
 - `npm test` – Vitest (en gång), `npm run test:watch`
 - `npm run lint`, `npm run typecheck`
+- Valideringstesterna (`tests/validation`) kör riktiga flygningar och tar ~10 s.
 
 ## Arbetssätt
 - Bygg en etapp i taget. Varje etapp avslutas med fungerande `npm run dev`, gröna tester och

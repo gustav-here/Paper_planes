@@ -22,6 +22,7 @@
           <button id="btn-rotate" title="Rotera 90° (R)">⟳ Rotera</button>
           <button id="btn-xray" class="toggle" title="Röntgen: genomskinligt papper (X)">◐ Röntgen</button>
           <button id="btn-reset-view" title="Återställ kamera">⌂</button>
+          <button id="btn-physics" class="toggle" title="Fysik: massa, tyngdpunkt och stabilitet (I)">⚖ Fysik</button>
         </div>
         <div class="group">
           <input id="design-name" type="text" value="Min modell" aria-label="Modellens namn" />
@@ -74,6 +75,15 @@
       <section class="options" id="opts-clip">
         <h3>Gem</h3>
         <p>1 g. För musen längs en kant och klicka för att fästa. Högerklicka på ett gem för att ta bort det (fungerar med alla verktyg).</p>
+      </section>
+
+      <section class="physics-panel" id="physics-panel">
+        <h3>Fysik</h3>
+        <div class="orient">
+          <label>Nos <select id="phys-nose" aria-label="Nosriktning"></select></label>
+          <label>Upp <select id="phys-up" aria-label="Uppriktning"></select></label>
+        </div>
+        <div class="body"></div>
       </section>
 
       <div class="hint" id="hint"></div>

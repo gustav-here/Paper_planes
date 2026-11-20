@@ -8,7 +8,7 @@ import { clipStillAttached } from './clips';
 import { PaperError } from './errors';
 import type { PaperWarning } from './errors';
 import { cutIsSelfMirror, findSymmetry, foldIsSelfMirror, mirrorCut, mirrorFold } from './symmetry';
-import type { DesignFile, Op } from './ops';
+import type { DesignFile, FoldOp, Op } from './ops';
 
 export interface OpResult {
   model: PaperModel;
@@ -62,6 +62,25 @@ export function applyOp(model: PaperModel, op: Op, opts: FoldOptions = {}): OpRe
       return { model: { ...model, clips: model.clips.filter((c) => c.id !== op.target) }, warnings: [] };
     }
   }
+}
+
+/**
+ * Largest angle (deg, up to 180) a fold can reach before paper would pass through paper,
+ * for the fold and (if mirrored) its twin. 0 = blocked from the start. Throws PaperError
+ * if the fold itself is invalid.
+ */
+export function foldAngleLimit(model: PaperModel, op: FoldOp): number {
+  const full = { ...op, angleDeg: 180 };
+  let limit = 180;
+  const first = applyFold(model, full, { penetration: 'scan' });
+  if (first.contactAngleDeg != null) limit = Math.min(limit, first.contactAngleDeg - 1);
+  const R = op.mirror ? findSymmetry(model) : null;
+  if (R && !foldIsSelfMirror(op, R)) {
+    // the twin is checked against the unfolded state (the two halves rarely meet)
+    const twin = applyFold(model, mirrorFold(full, R), { penetration: 'scan' });
+    if (twin.contactAngleDeg != null) limit = Math.min(limit, twin.contactAngleDeg - 1);
+  }
+  return Math.max(0, limit);
 }
 
 export interface ReplayResult {

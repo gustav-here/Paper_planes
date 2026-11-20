@@ -10,7 +10,7 @@ import {
 import type { PaperModel } from '../../../src/core/paper/model';
 import { A4_80GSM } from '../../../src/core/paper/paperSpec';
 import { applyFold } from '../../../src/core/paper/fold';
-import { applyOp } from '../../../src/core/paper/replay';
+import { applyOp, foldAngleLimit } from '../../../src/core/paper/replay';
 import { computeEdges } from '../../../src/core/paper/edges';
 import { computeStackLevels, maxLayers } from '../../../src/core/paper/stack';
 import { PaperError } from '../../../src/core/paper/errors';
@@ -205,5 +205,24 @@ describe('determinism', () => {
     }
     expect(totalArea(m)).toBeCloseTo(A4_AREA, 10);
     for (const v of allVerts(m)) for (const c of v) expect(Number.isFinite(c)).toBe(true);
+  });
+});
+
+describe('fold angle limit (paper may not pass through paper)', () => {
+  it('a free fold can go all the way to 180°', () => {
+    expect(foldAngleLimit(sheet(), fold(CENTER_LINE[0], CENTER_LINE[1], [0, 0, 1]))).toBe(180);
+  });
+
+  it('a bottom flap folded towards the viewer is blocked by the layer above it', () => {
+    const op = fold([0.1485, 0, -0.05], [0.0985, 0, -0.105], [1, 0, -1], { scope: 'bottom' });
+    expect(foldAngleLimit(halfFold(), op)).toBe(0);
+  });
+
+  it('a strip swinging over a standing flap stops where it would hit it', () => {
+    const standing = applyFold(sheet(), fold(CENTER_LINE[0], CENTER_LINE[1], [0, 0, 1], { angleDeg: 90 })).model;
+    const strip = fold([-0.2, 0, -0.02], [0.2, 0, -0.02], [0, 0, -1], { scope: 'flap', pick: [0, 0, -0.08] });
+    const limit = foldAngleLimit(standing, strip);
+    expect(limit).toBeGreaterThan(95);
+    expect(limit).toBeLessThan(110);
   });
 });

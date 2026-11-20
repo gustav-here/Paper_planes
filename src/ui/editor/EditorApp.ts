@@ -17,6 +17,8 @@ import { PaperView } from '../../render/PaperMesh';
 import type { PaperHit } from '../../render/PaperMesh';
 import { Overlay } from '../../render/Overlay';
 import { createClipObject } from '../../render/ClipMesh';
+import { PhysicsOverlay } from '../../render/PhysicsOverlay';
+import { PhysicsPanel } from '../hud/PhysicsPanel';
 import { ERROR_TEXT, warningText } from '../hud/messages';
 import { History } from './History';
 import { FoldTool } from './FoldTool';
@@ -45,6 +47,8 @@ export class EditorApp implements ToolContext {
   private readonly paper = new PaperView();
   private readonly clipGroup = new THREE.Group();
   private readonly noseArrow: THREE.ArrowHelper;
+  private readonly physicsOverlay = new PhysicsOverlay();
+  private readonly physics: PhysicsPanel;
   private ghost: THREE.Object3D | null = null;
   private preview: PaperModel | null = null;
   private shownModel: PaperModel | null = null;
@@ -62,7 +66,15 @@ export class EditorApp implements ToolContext {
   constructor(private stage: Stage) {
     stage.scene.add(createTable());
     stage.scene.add(this.root);
-    this.root.add(this.paper.group, this.clipGroup, this.overlay.group);
+    this.root.add(this.paper.group, this.clipGroup, this.overlay.group, this.physicsOverlay.group);
+    this.physics = new PhysicsPanel(
+      () => this.history.meta.orientation,
+      (o) => {
+        this.history.meta.orientation = o;
+        this.placeNoseArrow(this.shown());
+        this.refreshPhysics();
+      },
+    );
     this.noseArrow = new THREE.ArrowHelper(new THREE.Vector3(1, 0, 0), new THREE.Vector3(), 0.04, 0xffd34d, 0.012, 0.008);
     this.root.add(this.noseArrow);
     this.tools = { fold: new FoldTool(this), cut: new CutTool(this), clip: new ClipTool(this) };
@@ -91,12 +103,19 @@ export class EditorApp implements ToolContext {
 
   setPreview(m: PaperModel | null) {
     this.preview = m;
+    // the physics overlay describes the committed model; hide it while previewing a fold
+    this.physicsOverlay.group.visible = m === null;
     this.syncPaper();
   }
 
   commit(op: Op): OpResult | null {
     try {
       const r = applyOp(this.history.current, op, { penetration: 'sweep' });
+      // paper may not pass through paper (designs loaded from files only get a warning)
+      if (op.type === 'fold' && r.warnings.some((w) => w.code === 'penetration')) {
+        this.toast('Vecket stoppades: papperet skulle gå igenom annat papper.', 'error');
+        return null;
+      }
       this.history.push(op, r.model);
       for (const w of r.warnings) this.toast(warningText(w), w.code === 'penetration' ? 'warn' : 'info');
       this.syncView();
@@ -272,8 +291,16 @@ export class EditorApp implements ToolContext {
     this.noseArrow.setDirection(new THREE.Vector3(...nose).normalize());
   }
 
+  private refreshPhysics() {
+    const af = this.physics.update(this.history.current);
+    this.physicsOverlay.update(this.physics.visible ? af : null);
+    $('btn-physics').classList.toggle('on', this.physics.visible);
+  }
+
   private syncView() {
     this.syncPaper();
+    this.placeNoseArrow(this.shown());
+    this.refreshPhysics();
     if (this.toolName !== 'view') this.tools[this.toolName].refresh();
     ($('btn-undo') as HTMLButtonElement).disabled = !this.history.canUndo;
     ($('btn-redo') as HTMLButtonElement).disabled = !this.history.canRedo;
@@ -455,6 +482,10 @@ export class EditorApp implements ToolContext {
     $('btn-flip-short').onclick = () => this.rotateView(new THREE.Vector3(0, 0, 1), Math.PI / 2);
     $('btn-rotate').onclick = () => this.rotateView(new THREE.Vector3(0, 1, 0), Math.PI / 2);
     $('btn-reset-view').onclick = () => this.stage.resetCamera();
+    $('btn-physics').onclick = () => {
+      this.physics.setVisible(!this.physics.visible);
+      this.refreshPhysics();
+    };
     $('btn-xray').onclick = () => {
       this.xray = !this.xray;
       this.applyXRay();
@@ -536,6 +567,7 @@ export class EditorApp implements ToolContext {
           break;
         case 'p': p2p.click(); break;
         case 'x': $('btn-xray').click(); break;
+        case 'i': $('btn-physics').click(); break;
         case 'f': this.rotateView(new THREE.Vector3(e.shiftKey ? 0 : 1, 0, e.shiftKey ? 1 : 0), Math.PI / 2); break;
         case 'r': this.rotateView(new THREE.Vector3(0, 1, 0), Math.PI / 2); break;
       }

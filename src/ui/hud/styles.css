@@ -324,3 +324,73 @@ select option {
     width: calc(100% - 28px);
   }
 }
+
+.physics-panel {
+  position: absolute;
+  right: 14px;
+  bottom: 88px;
+  width: 340px;
+  max-width: calc(100% - 28px);
+  display: none;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px 12px;
+  background: var(--panel);
+  border: 1px solid var(--panel-border);
+  border-radius: var(--radius);
+  font-size: 12.5px;
+}
+
+.physics-panel.visible {
+  display: flex;
+}
+
+.physics-panel h3 {
+  margin: 0;
+  font-size: 13px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--muted);
+}
+
+.physics-panel .orient {
+  display: flex;
+  gap: 12px;
+}
+
+.physics-panel .orient label {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+
+.physics-panel table {
+  border-collapse: collapse;
+  width: 100%;
+}
+
+.physics-panel th {
+  text-align: left;
+  font-weight: 500;
+  color: var(--muted);
+  padding: 2px 8px 2px 0;
+  vertical-align: top;
+  white-space: nowrap;
+}
+
+.physics-panel td {
+  padding: 2px 0;
+  font-variant-numeric: tabular-nums;
+}
+
+.physics-panel .note {
+  margin: 0;
+  color: var(--muted);
+  font-size: 11.5px;
+  line-height: 1.4;
+}
+
+.physics-panel .warn {
+  margin: 0;
+  color: var(--warn);
+}
