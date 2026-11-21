@@ -164,6 +164,28 @@ export interface PhysicsConfig {
   logInterval: number;
   /** Give up after this simulated time (s). */
   maxTime: number;
+  /** How far from perfect a real throw and a real fold are (used when a throw has a scatter seed). */
+  scatter: ScatterConfig;
+}
+
+/**
+ * Nobody throws exactly straight, and nobody folds both wings exactly alike. Each throw with a
+ * scatter seed gets these at random (normal, standard deviations below, cut off at 2.5σ):
+ * the plane leaves the hand banked a little, pointing a little off the throw, turning slightly,
+ * and (flexible paper) every crease rests a little away from where it was folded.
+ * Rough sizes for a careful hand throw and careful folding.
+ */
+export interface ScatterConfig {
+  bankDeg: number;
+  /** Nose off the throw direction, sideways (sideslip) and up/down. */
+  yawDeg: number;
+  pitchDeg: number;
+  /** Rotation at release (deg/s): roll, yaw, pitch. */
+  rollRateDeg: number;
+  yawRateDeg: number;
+  pitchRateDeg: number;
+  /** Each crease's rest angle (flexible paper), independently left and right. */
+  creaseDeg: number;
 }
 
 export const DEFAULT_CONFIG: PhysicsConfig = {
@@ -223,6 +245,7 @@ export const DEFAULT_CONFIG: PhysicsConfig = {
     damage: true,
   },
   logInterval: 1 / 60,
+  scatter: { bankDeg: 4, yawDeg: 3, pitchDeg: 2, rollRateDeg: 40, yawRateDeg: 20, pitchRateDeg: 25, creaseDeg: 1.5 },
   maxTime: 30,
 };
 

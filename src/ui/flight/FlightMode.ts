@@ -269,7 +269,8 @@ export class FlightMode {
       return;
     }
     if (!replay && this.round && isRoundOver(this.round)) this.startRound();
-    const launch = replay ? replay.launch : { ...this.launch };
+    // every real throw is a little off in its own way (replays keep the seed they were thrown with)
+    const launch = replay ? replay.launch : { ...this.launch, scatterSeed: (Math.random() * 2 ** 31) >>> 0 };
     this.sim = createSimulator(this.current, this.cfg, launch, replay ? replay.inputs : undefined);
     this.curPoses = this.sim.panelPoses();
     this.prevPoses = this.curPoses;
@@ -527,7 +528,7 @@ export class FlightMode {
 
   private updateAimPose() {
     if (!this.current) return;
-    const s = launchState(this.current.af, this.launch);
+    const s = launchState(this.current.af, this.launch, this.cfg.scatter);
     const probe = createSimulator(this.current, this.cfg, this.launch);
     this.fv.setPanelPoses(probe.panelPoses());
     this.fv.setPanelBending(null);

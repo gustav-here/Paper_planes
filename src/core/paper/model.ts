@@ -50,6 +50,11 @@ export interface Clip {
    * towards normal × inward, −1: the other way). The editor picks backwards, away from the nose.
    */
   lean?: 1 | -1;
+  /**
+   * How far the clip leans (deg), worked out when it was put on the plane as folded: the springback
+   * that opens the paper afterwards must not stand it upright again.
+   */
+  tiltDeg?: number;
 }
 
 export interface PaperModel {

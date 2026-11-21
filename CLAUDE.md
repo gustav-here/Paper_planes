@@ -89,6 +89,12 @@ Webbläsarspel: vik ett pappersflygplan av ett A4 och kasta det. Flygbeteendet s
 - Gem lutar bakåt (`Clip.lean`) så lite som behövs för att inte gå genom papper som lämnar dess plan.
   Tejp är alltid 2 cm. Den läggs platt över skarven mellan vinghalvorna (`bridge`) eller viks över
   en kant, och det som sticker ut utanför pappret klipps bort. Se PLAN.md §27.
+- Förinställningarna har inga snitt. Dart och Glidplan trimmas av uppvikta bakre vinghörn
+  (`reflexOps`). Tester av klaffar använder `ELEVATOR_TRIM` och `NO_REFLEX` (de gamla modellerna).
+- Varje kast i spelet har ett slumpfrö (`LaunchParams.scatterSeed`) för små avvikelser i kast och
+  veck (`PhysicsConfig.scatter`). Utan frö är kastet exakt, och testerna och vindtunneln är exakta.
+- Remsor med samma vikhistorik hör alltid till samma panel. Ett veck kan tryckas igenom en skarv
+  till 180° (`canPushThrough`, `FoldOp.through`): en flik i kölen blir en fena.
 - Skador blir vanliga operationer (`dmg-…`) efter spelarens egna och gäller tills planet viks om.
 - Simulatorer implementerar `Simulator` (`physics/simulator.ts`). Använd `prepare`/`createSimulator`
   (`physics/factory.ts`) i stället för att skapa dem direkt.

@@ -3,6 +3,7 @@ import type { Vec3 } from '../math/vec3';
 import type { Quat } from '../math/quat';
 import type { Airframe } from './airframe';
 import type { BodyState } from './rigidBody';
+import type { ScatterConfig } from './config';
 
 export interface LaunchParams {
   /** Throw speed (m/s), 1–15 in the game. */
@@ -17,6 +18,27 @@ export interface LaunchParams {
   aoaDeg?: number;
   /** Bank angle (deg), right wing down positive. */
   rollDeg?: number;
+  /**
+   * A real, imperfect throw: the seed picks how this one is off (see ScatterConfig). Without it
+   * the throw is exactly as aimed. The game gives every throw a new seed; replays keep it.
+   */
+  scatterSeed?: number;
+}
+
+/** Deterministic normal random numbers from a seed (mulberry32 + Box–Muller), cut off at ±2.5. */
+export function scatterNumbers(seed: number): () => number {
+  let s = seed >>> 0;
+  const uni = () => {
+    s = (s + 0x6d2b79f5) >>> 0;
+    let t = s;
+    t = Math.imul(t ^ (t >>> 15), t | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return (((t ^ (t >>> 14)) >>> 0) + 0.5) / 4294967296;
+  };
+  return () => {
+    const n = Math.sqrt(-2 * Math.log(uni())) * Math.cos(2 * Math.PI * uni());
+    return Math.max(-2.5, Math.min(2.5, n));
+  };
 }
 
 export const DEFAULT_LAUNCH: LaunchParams = { speed: 5, elevationDeg: 0, headingDeg: 0, heightM: 1.6, aoaDeg: 0, rollDeg: 0 };
@@ -49,16 +71,24 @@ function quatFromColumns(c0: Vec3, c1: Vec3, c2: Vec3): Quat {
 
 /**
  * Initial state: CoM at (0, height, 0), velocity along the throw direction, nose pitched up by
- * the release angle of attack, wings level (then banked by roll), no rotation.
+ * the release angle of attack, wings level (then banked by roll), no rotation. With a scatter
+ * seed (and `scatter`) the release is a little off in bank, nose direction and rotation.
  */
-export function launchState(af: Airframe, p: LaunchParams): BodyState {
+export function launchState(af: Airframe, p: LaunchParams, scatter?: ScatterConfig): BodyState {
+  const n = p.scatterSeed !== undefined && scatter ? scatterNumbers(p.scatterSeed) : () => 0;
+  const sc = scatter ?? { bankDeg: 0, yawDeg: 0, pitchDeg: 0, rollRateDeg: 0, yawRateDeg: 0, pitchRateDeg: 0, creaseDeg: 0 };
+  const dBank = n() * sc.bankDeg;
+  const dYaw = n() * sc.yawDeg;
+  const dPitch = n() * sc.pitchDeg;
+  const rates = [n() * sc.rollRateDeg, n() * sc.yawRateDeg, n() * sc.pitchRateDeg].map((x) => x * DEG);
   const el = p.elevationDeg * DEG;
   const hd = p.headingDeg * DEG;
   const dir: Vec3 = [Math.cos(el) * Math.cos(hd), Math.sin(el), Math.cos(el) * Math.sin(hd)];
-  const pitch = el + (p.aoaDeg ?? 0) * DEG;
-  let noseW: Vec3 = [Math.cos(pitch) * Math.cos(hd), Math.sin(pitch), Math.cos(pitch) * Math.sin(hd)];
+  const pitch = el + ((p.aoaDeg ?? 0) + dPitch) * DEG;
+  const hn = hd + dYaw * DEG;
+  let noseW: Vec3 = [Math.cos(pitch) * Math.cos(hn), Math.sin(pitch), Math.cos(pitch) * Math.sin(hn)];
   let upW: Vec3 = V.normalize(V.rejectFrom([0, 1, 0], noseW));
-  const roll = (p.rollDeg ?? 0) * DEG;
+  const roll = ((p.rollDeg ?? 0) + dBank) * DEG;
   if (roll !== 0) {
     const r0 = V.cross(noseW, upW);
     upW = V.normalize(V.add(V.scale(upW, Math.cos(roll)), V.scale(r0, -Math.sin(roll))));
@@ -80,5 +110,7 @@ export function launchState(af: Airframe, p: LaunchParams): BodyState {
   // body-frame velocity = Rᵀ (speed · dir) = Σ_k B_k (W_k · dir)·speed
   let vb: Vec3 = [0, 0, 0];
   for (let k = 0; k < 3; k++) vb = V.addScaled(vb, B[k], V.dot(W[k], dir) * p.speed);
-  return { x: [0, p.heightM, 0], q, v: vb, w: [0, 0, 0] };
+  // body rates: roll about the nose, yaw about up, pitch about right
+  const w = V.add(V.add(V.scale(af.nose, rates[0]), V.scale(af.up, -rates[1])), V.scale(af.right, rates[2]));
+  return { x: [0, p.heightM, 0], q, v: vb, w };
 }

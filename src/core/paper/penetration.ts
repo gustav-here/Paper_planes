@@ -110,7 +110,18 @@ export function firstContactSample(
 ): number | null {
   const stat = stationary.map((f) => makePoly(facetVertices(f), facetNormal(f)));
   const hinge = { p: hingePoint, d: hingeDir };
+  const shared = sharedHinge(stationary, moving, hingePoint, hingeDir);
+  // paper hinged on the same line: swinging past it is going through it (lying flat on it is not)
+  const side = shared.map((x) => (Math.abs(x.offset) < Math.PI / 2 && Math.abs(x.offset) > 1e-6 ? Math.sign(x.offset) : 0));
   for (let k = 1; k <= samples; k++) {
+    for (let i = 0; i < shared.length; i++) {
+      const b = wrap(shared[i].offset + (angle * k) / samples);
+      if (Math.abs(b) >= Math.PI / 2) side[i] = 0;
+      else if (Math.abs(b) > 1e-6) {
+        if (side[i] && Math.sign(b) !== side[i]) return k;
+        side[i] = Math.sign(b);
+      }
+    }
     const R = rotationAbout(hingePoint, hingeDir, (angle * k) / samples);
     for (const m of moving) {
       const mv = makePoly(
@@ -125,4 +136,36 @@ export function firstContactSample(
     }
   }
   return null;
+}
+
+const wrap = (x: number) => Math.atan2(Math.sin(x), Math.cos(x));
+
+/**
+ * Pairs of a moving and a stationary facet that both have an edge on the hinge line, overlapping
+ * along it (a flap and paper hinged on the same crease): the moving facet's angle about the hinge
+ * relative to the stationary one, at the start. They meet when it reaches 0.
+ */
+function sharedHinge(stationary: Facet[], moving: Facet[], p: Vec3, d: Vec3): { offset: number }[] {
+  const e1 = V.anyPerpendicular(d);
+  const e2 = V.cross(d, e1);
+  const onLine = (f: Facet): { lo: number; hi: number; angle: number } | null => {
+    const vs = facetVertices(f);
+    const along = vs.filter((v) => V.distToLine(v, p, d) < 1e-7).map((v) => V.dot(V.sub(v, p), d));
+    if (along.length < 2) return null;
+    const c = vs.reduce((acc, v) => V.add(acc, v), [0, 0, 0] as Vec3);
+    const arm = V.rejectFrom(V.sub(V.scale(c, 1 / vs.length), p), d);
+    if (V.length(arm) < 1e-9) return null;
+    return { lo: Math.min(...along), hi: Math.max(...along), angle: Math.atan2(V.dot(arm, e2), V.dot(arm, e1)) };
+  };
+  const st = stationary.map(onLine).filter((x): x is NonNullable<typeof x> => !!x);
+  const out: { offset: number }[] = [];
+  for (const m of moving) {
+    const a = onLine(m);
+    if (!a) continue;
+    for (const s of st) {
+      if (Math.min(a.hi, s.hi) - Math.max(a.lo, s.lo) <= 1e-6) continue;
+      out.push({ offset: wrap(a.angle - s.angle) });
+    }
+  }
+  return out;
 }

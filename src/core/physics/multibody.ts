@@ -17,7 +17,7 @@ import { computeAddedMass } from './addedMass';
 import type { PhysicsConfig } from './config';
 import { ControlTrack, DEFAULT_CONTROLS } from './controls';
 import type { ControlConfig, ControlInput } from './controls';
-import { launchState } from './launch';
+import { launchState, scatterNumbers } from './launch';
 import type { LaunchParams } from './launch';
 import { buildPanels, panelContacts } from './panels';
 import { bendField, bendingContacts, buildPanelModes, deflectionAt, limitStiffness } from './bendModes';
@@ -181,7 +181,7 @@ export class MultiBodySim implements Simulator {
     this.buildBendTables();
     this.buildContactBounds();
     this.panels = set.panels.map((p) => p.facets);
-    const s = launchState(fx.af, launch);
+    const s = launchState(fx.af, launch, cfg.scatter);
     this.x0 = s.x;
     this.q0 = s.q;
     this.u = new Array<number>(this.n).fill(0);
@@ -189,8 +189,21 @@ export class MultiBodySim implements Simulator {
     this.u[0] = v0[0];
     this.u[1] = v0[1];
     this.u[2] = v0[2];
+    // the release rotation (body frame) as world angular velocity
+    const w0 = Q.rotate(s.q, s.w);
+    this.u[3] = w0[0];
+    this.u[4] = w0[1];
+    this.u[5] = w0[2];
     this.theta = new Array<number>(this.k).fill(0);
     this.rest = new Array<number>(this.k).fill(0);
+    // nobody folds both sides exactly alike: every crease rests a little off (the paper starts there)
+    if (launch.scatterSeed !== undefined) {
+      const n = scatterNumbers(launch.scatterSeed ^ 0x5bd1e995);
+      set.hinges.forEach((hg, j) => {
+        if (hg.control >= 0) return;
+        this.rest[j] = this.theta[j] = (n() * cfg.scatter.creaseDeg) / RAD;
+      });
+    }
     this.rest0 = [...this.rest];
     this.deflection = fx.af.controls.map(() => 0);
     this.controls = new ControlTrack(inputs);

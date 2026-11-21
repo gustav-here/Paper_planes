@@ -329,7 +329,7 @@ function resolveClipUncached(model: PaperModel, clip: Clip): ResolvedClip | null
   // paper leaving the plane: what a clip must lean away from, and the seam under bridging tape
   const obstacles = !isTape || bridge ? outOfPlaneEdges(model, f, graphOf(model)) : [];
   let tiltDeg = 0;
-  if (!isTape && obstacles.length) {
+  if (!isTape && (obstacles.length || clip.tiltDeg)) {
     // a clip cannot pass through paper that leaves its plane (a wing above the keel): lean it
     // back in its plane, about the point on the edge, as little as needed
     const segs = obstacles.map((o) => projectToPlane([o.a, o.b], position, basis));
@@ -345,7 +345,8 @@ function resolveClipUncached(model: PaperModel, clip: Clip): ResolvedClip | null
         return !!r && r[1] - r[0] > 1e-9;
       });
     };
-    if (blocked(0)) {
+    if (clip.tiltDeg !== undefined) tiltDeg = clip.tiltDeg;
+    else if (blocked(0)) {
       // the chosen way first (backwards), the other way only if that never clears
       const pref = clip.lean ?? 1;
       for (const sgn of [pref, -pref]) {

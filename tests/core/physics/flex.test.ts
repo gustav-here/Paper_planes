@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { makeDart, makeGlider } from '../../../src/core/presets';
+import { makeDart, makeGlider, ELEVATOR_TRIM, NO_REFLEX } from '../../../src/core/presets';
 import { replayDesign } from '../../../src/core/paper/replay';
 import { validateDesign } from '../../../src/core/paper/ops';
 import type { DesignFile, Op } from '../../../src/core/paper/ops';
@@ -10,8 +10,14 @@ import type { PhysicsConfig } from '../../../src/core/physics/config';
 import { FlightSim } from '../../../src/core/physics/simulation';
 import { MultiBodySim, buildFlexAirframe } from '../../../src/core/physics/multibody';
 import { damageOnFolded, damageToOps } from '../../../src/core/physics/damage';
+import { findClipPlacement } from '../../../src/core/paper/clips';
 import { createSimulator, prepare } from '../../../src/core/physics/factory';
 import type { LaunchParams } from '../../../src/core/physics/launch';
+
+/** The presets as they were made before (cut elevators, no turned-up corners): what these tests are about. */
+const classicDart = () => makeDart(0.025, 80, ELEVATOR_TRIM, NO_REFLEX);
+const classicGlider = () => makeGlider(0.015, 85, ELEVATOR_TRIM, NO_REFLEX);
+
 
 const launch: LaunchParams = { speed: 5, elevationDeg: 0, headingDeg: 0, heightM: 1.6 };
 
@@ -23,7 +29,7 @@ function flex(d: DesignFile, cfg: PhysicsConfig = DEFAULT_CONFIG, l = launch) {
 
 describe('flexible paper (hinged panels)', () => {
   it('very stiff creases reproduce the rigid plane', () => {
-    for (const d of [makeDart(), makeGlider()]) {
+    for (const d of [classicDart(), classicGlider()]) {
       const cfg = makeConfig({ paper: { creaseStiffnessPerM: 0.8, bendingStiffness: 2.5e-2 } });
       const { sim, rigid } = flex(d, cfg);
       const a = sim.run(10).firstImpact!;
@@ -33,14 +39,30 @@ describe('flexible paper (hinged panels)', () => {
     }
   });
 
+  it('paper twisted open between two clips stays one piece (no chain of tiny panels)', () => {
+    const d = classicDart();
+    const m = replayDesign(d).models.at(-1)!;
+    const clip = (x: number, id: string) => {
+      const p = findClipPlacement(m, [x, 0, -0.01], 0.05)!;
+      return { type: 'clip' as const, id, at: p.at, edgeDir: p.edgeDir, massKg: 0.001, lean: -1 as const };
+    };
+    const p = prepare({ ...d, ops: [...d.ops, clip(0, 'g1'), clip(-0.08, 'g2')], flexible: true }, DEFAULT_CONFIG);
+    // the springback twist splits the paper into many strips, but they are not folds
+    expect(p.model.facets.length).toBeGreaterThan(100);
+    const plain = prepare({ ...d, flexible: true }, DEFAULT_CONFIG);
+    expect(p.flex!.set.panels.length).toBeLessThanOrEqual(plain.flex!.set.panels.length + 2);
+    const sim = createSimulator(p, DEFAULT_CONFIG, launch) as unknown as { substeps: number };
+    expect(sim.substeps).toBeLessThanOrEqual(6);
+  });
+
   it('the dart becomes keel + two wings + two elevator flaps', () => {
-    const { sim } = flex(makeDart());
+    const { sim } = flex(classicDart());
     expect(sim.panels).toHaveLength(5);
   });
 
   it('wings give way more at higher speed (air load grows with v²)', () => {
     const maxBend = (speed: number) => {
-      const { sim } = flex(makeGlider(), DEFAULT_CONFIG, { ...launch, speed, heightM: 5 });
+      const { sim } = flex(classicGlider(), DEFAULT_CONFIG, { ...launch, speed, heightM: 5 });
       let m = 0;
       while (sim.t < 0.4) {
         sim.step();
@@ -52,14 +74,14 @@ describe('flexible paper (hinged panels)', () => {
   });
 
   it('is deterministic and comes to rest on the floor', () => {
-    const run = () => flex(makeDart()).sim.run(10);
+    const run = () => flex(classicDart()).sim.run(10);
     const a = run();
     expect(a.phase).toBe('rest');
     expect(JSON.stringify(run())).toBe(JSON.stringify(a));
   });
 
   it('control flaps work in the flexible model too', () => {
-    const d: DesignFile = { ...makeGlider(), flexible: true };
+    const d: DesignFile = { ...classicGlider(), flexible: true };
     d.ops = d.ops.map((o): Op => (o.type === 'fold' && o.id.endsWith('e') ? { ...o, control: true } : o));
     const p = prepare(d, DEFAULT_CONFIG);
     expect(p.flex).not.toBeNull();
@@ -77,7 +99,7 @@ describe('damage', () => {
   const crash: LaunchParams = { speed: 13, elevationDeg: -45, headingDeg: 0, heightM: 1.2 };
 
   it('a hard nose-first crash crumples the paper; the damage is ordinary ops that replay', () => {
-    const d = makeDart();
+    const d = classicDart();
     const { sim, model } = flex(d, DEFAULT_CONFIG, crash);
     sim.run(10);
     const events = sim.damage();
@@ -92,19 +114,19 @@ describe('damage', () => {
   });
 
   it('a gentle throw leaves the plane undamaged', () => {
-    const { sim } = flex(makeGlider());
+    const { sim } = flex(classicGlider());
     sim.run(10);
     expect(sim.damage()).toHaveLength(0);
   });
 
   it('the rigid model records crumpling too', () => {
-    const { rigid } = flex(makeDart(), DEFAULT_CONFIG, crash);
+    const { rigid } = flex(classicDart(), DEFAULT_CONFIG, crash);
     rigid.run(10);
     expect(rigid.damage().some((e) => e.kind === 'crumple')).toBe(true);
   });
 
   it('a damaged plane flies differently', () => {
-    const d = makeDart();
+    const d = classicDart();
     const { sim, model } = flex(d, DEFAULT_CONFIG, crash);
     sim.run(10);
     const r = damageToOps(model, sim.damage(), d.orientation.up, DEFAULT_CONFIG.paper);
@@ -122,7 +144,7 @@ describe('springback and paper bending in flight', () => {
   const hard: LaunchParams = { speed: 13, elevationDeg: 10, headingDeg: 0, heightM: 1.6, aoaDeg: 5 };
 
   it('the air counts a gaping stack once', () => {
-    for (const d of [makeDart(), makeGlider()]) {
+    for (const d of [classicDart(), classicGlider()]) {
       const ideal = buildAirframe(replayDesign(d).models.at(-1)!, d.orientation, DEFAULT_CONFIG, d.ops);
       const area = (s: { area: number }[]) => s.reduce((a, x) => a + x.area, 0);
       const p = prepare({ ...d, flexible: true }, DEFAULT_CONFIG);
@@ -132,7 +154,7 @@ describe('springback and paper bending in flight', () => {
   });
 
   it('hard throws bend the wings much more than gentle ones, without permanent damage', () => {
-    const p = prepare({ ...makeGlider(), flexible: true }, DEFAULT_CONFIG);
+    const p = prepare({ ...classicGlider(), flexible: true }, DEFAULT_CONFIG);
     const wings = p.flex!.set.hinges.map((h, j) => (h.length > 0.4 ? j : -1)).filter((j) => j >= 0);
     expect(wings).toHaveLength(2);
     // the wings swing at their creases, and their flat paper bends (bending shapes)
@@ -157,7 +179,7 @@ describe('springback and paper bending in flight', () => {
   });
 
   it('folded layers close up to flat but never pass through each other', () => {
-    const p = prepare({ ...makeDart(), flexible: true }, DEFAULT_CONFIG);
+    const p = prepare({ ...classicDart(), flexible: true }, DEFAULT_CONFIG);
     const sim = createSimulator(p, DEFAULT_CONFIG, { ...hard, speed: 15, aoaDeg: 10 }) as MultiBodySim;
     const hs = p.flex!.set.hinges;
     let worst = -Infinity;
@@ -172,7 +194,7 @@ describe('springback and paper bending in flight', () => {
   });
 
   it('damage on the relaxed plane becomes ops on the design as folded', () => {
-    const d: DesignFile = { ...makeDart(), flexible: true };
+    const d: DesignFile = { ...classicDart(), flexible: true };
     const p = prepare(d, DEFAULT_CONFIG);
     const sim = createSimulator(p, DEFAULT_CONFIG, { speed: 13, elevationDeg: -45, headingDeg: 0, heightM: 1.2 });
     while (!sim.done) sim.step();

@@ -31,6 +31,11 @@ export interface FoldOp {
   mirror?: boolean;
   /** The paper moved by this fold is a movable control flap in flight (stage 5). */
   control?: boolean;
+  /**
+   * The fold went all the way over by pushing the paper through a seam (see canPushThrough):
+   * paper was in the way on the swing, not where it ended up.
+   */
+  through?: boolean;
 }
 
 export interface CutOp {
@@ -109,6 +114,7 @@ function checkOp(o: unknown, i: number): Op {
       if (!['all', 'top', 'bottom', 'flap'].includes(op.scope as string)) fail(`ops[${i}].scope invalid`);
       if (op.scope === 'flap' && !isVec(op.pick, 3)) fail(`ops[${i}].pick required for scope flap`);
       if (op.control !== undefined && typeof op.control !== 'boolean') fail(`ops[${i}].control must be boolean`);
+      if (op.through !== undefined && typeof op.through !== 'boolean') fail(`ops[${i}].through must be boolean`);
       return op as unknown as FoldOp;
     }
     case 'cut': {

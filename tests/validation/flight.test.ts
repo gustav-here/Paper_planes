@@ -3,14 +3,18 @@
  * Nothing here (or in the physics) knows which design is which.
  */
 import { describe, expect, it } from 'vitest';
-import { flatSheet, makeDart, makeGlider } from '../../src/core/presets';
+import { NO_REFLEX, flatSheet, makeDart, makeGlider } from '../../src/core/presets';
+import { createSimulator, prepare } from '../../src/core/physics/factory';
+import type { FoldOp } from '../../src/core/paper/ops';
+import * as V from '../../src/core/math/vec3';
+import * as Q from '../../src/core/math/quat';
 import { airframeFromDesign, buildAirframe } from '../../src/core/physics/airframe';
 import type { Airframe } from '../../src/core/physics/airframe';
 import { DEFAULT_CONFIG } from '../../src/core/physics/config';
 import { FlightSim } from '../../src/core/physics/simulation';
 import { bestStableGlide, glideWindows, isStableGlide } from '../../src/core/physics/analysis';
 import type { GlideWindow } from '../../src/core/physics/analysis';
-import { stability } from '../../src/core/physics/windTunnel';
+import { stability, tunnelPoint } from '../../src/core/physics/windTunnel';
 import { replayDesign, applyOp } from '../../src/core/paper/replay';
 import { findClipPlacement } from '../../src/core/paper/clips';
 import type { Vec3 } from '../../src/core/math/vec3';
@@ -95,5 +99,112 @@ describe('validation', { timeout: 240_000 }, () => {
     const gN = settledGlide(nose);
     expect(gN.speed).toBeGreaterThan(g0.speed);
     expect(gN.glideRatio).toBeLessThan(g0.glideRatio);
+  });
+
+  /*
+   * Folding the wings out of plane trades lift for stability. Lateral stability in the wind
+   * tunnel at α = 6°: Clβ (roll from sideslip, negative = rights itself) and Cnβ (yaw from
+   * sideslip, positive = turns into the wind), and the lift at the same α and speed.
+   */
+  describe('wing shapes: stability against lift', () => {
+    const keel = 0.025;
+    const span = 0.105 - keel;
+    const th = (deg: number) => (deg * Math.PI) / 180;
+    /** A fold along the right wing (mirrored) s out from its root, turning the outer part up (+) or down. */
+    const wingFold = (wingAngleDeg: number, s: number, upDeg: number): FoldOp => {
+      const t = th(wingAngleDeg);
+      const w: Vec3 = [0, Math.sin(t), Math.cos(t)];
+      const on = (x: number): Vec3 => [x, s * w[1], keel + s * w[2]];
+      return { type: 'fold', id: 'w', line: { p0: on(-0.2), p1: on(0.2) }, planeNormal: [0, -Math.cos(t), Math.sin(t)], movingSide: w, kind: upDeg > 0 ? 'valley' : 'mountain', angleDeg: Math.abs(upDeg), scope: 'all', mirror: true };
+    };
+    const shape = (wingAngleDeg: number, extra?: FoldOp) => {
+      const d = makeDart(keel, wingAngleDeg, undefined, NO_REFLEX);
+      return extra ? { ...d, ops: [...d.ops, extra] } : d;
+    };
+    const measure = (d: ReturnType<typeof makeDart>) => {
+      const af = airframeFromDesign(d, cfg);
+      const q = 0.5 * cfg.rho * 25;
+      const k = q * af.refArea * af.refSpan;
+      const Cl = (b: number) => V.dot(tunnelPoint(af, cfg, 5, 6, b).torque, af.nose) / k;
+      const Cn = (b: number) => -V.dot(tunnelPoint(af, cfg, 5, 6, b).torque, af.up) / k;
+      const dB = th(8);
+      return { lift: tunnelPoint(af, cfg, 5, 6).CL * q * af.refArea, Clb: (Cl(4) - Cl(-4)) / dB, Cnb: (Cn(4) - Cn(-4)) / dB };
+    };
+    const flat = measure(shape(90));
+    const variants = {
+      dihedral: measure(shape(70)),
+      anhedral: measure(shape(110)),
+      tipsUp: measure(shape(90, wingFold(90, span - 0.02, 80))),
+      tipsDown: measure(shape(90, wingFold(90, span - 0.02, -80))),
+      deepW: measure(shape(110, wingFold(110, span * 0.45, 40))),
+      shallowW: measure(shape(97, wingFold(97, span * 0.45, 14))),
+    };
+
+    it('every shape out of the plane lifts less than flat wings', () => {
+      for (const [name, v] of Object.entries(variants)) expect(v.lift, name).toBeLessThan(flat.lift);
+    });
+
+    it('dihedral and a deep W right themselves in roll and weathervane better than flat wings', () => {
+      for (const v of [variants.dihedral, variants.deepW]) {
+        expect(v.Clb).toBeLessThan(flat.Clb);
+        expect(v.Cnb).toBeGreaterThan(flat.Cnb);
+      }
+    });
+
+    it('wing tips folded up or down act as fins: the plane turns into the wind', () => {
+      expect(flat.Cnb).toBeLessThan(0);
+      expect(variants.tipsUp.Cnb).toBeGreaterThan(0);
+      expect(variants.tipsDown.Cnb).toBeGreaterThan(0);
+    });
+
+    it('anhedral weathervanes better but rolls the wrong way (it can tip over)', () => {
+      expect(variants.anhedral.Cnb).toBeGreaterThan(flat.Cnb);
+      expect(variants.anhedral.Clb).toBeGreaterThan(0);
+    });
+
+    it('a shallow W changes little, a deep W much more (in lift and stability)', () => {
+      const d = (v: typeof flat) => Math.abs(v.lift - flat.lift) / flat.lift;
+      expect(d(variants.shallowW)).toBeLessThan(d(variants.deepW) / 3);
+      expect(Math.abs(variants.shallowW.Clb - flat.Clb)).toBeLessThan(Math.abs(variants.deepW.Clb - flat.Clb));
+    });
+  });
+
+  it('real throws are a little off: no two alike, and the same seed gives the same flight', () => {
+    const p = prepare(makeDart(), cfg);
+    const fly = (seed: number) => {
+      const s = createSimulator(p, cfg, { speed: 6, elevationDeg: 0, headingDeg: 0, heightM: 1.6, scatterSeed: seed });
+      while (!s.done && !s.log.firstImpact) s.step();
+      return s.log.firstImpact!.pos;
+    };
+    expect(fly(7)).toEqual(fly(7));
+    const sideways = [1, 2, 3, 4, 5, 6].map((s) => fly(s)[2]);
+    expect(new Set(sideways.map((z) => z.toFixed(3))).size).toBe(6);
+    expect(Math.max(...sideways.map(Math.abs))).toBeGreaterThan(0.1);
+  });
+
+  it('the harder the throw, the likelier the plane climbs and stalls, but not every time', () => {
+    const p = prepare(makeDart(), cfg);
+    const af = p.af;
+    const stalls = (speed: number) => {
+      let n = 0;
+      for (let seed = 1; seed <= 8; seed++) {
+        const s = createSimulator(p, cfg, { speed, elevationDeg: 0, headingDeg: 0, heightM: 1.6, scatterSeed: seed * 104729 });
+        let stalled = false;
+        while (!s.done && !s.log.firstImpact) {
+          s.step();
+          const q = s.panelPoses()[0].q;
+          const v = V.normalize(s.worldVelocity());
+          const alpha = Math.atan2(-V.dot(v, Q.rotate(q, af.up)), V.dot(v, Q.rotate(q, af.nose)));
+          if (alpha > (25 * Math.PI) / 180 && s.speed() < 0.6 * speed) stalled = true;
+        }
+        if (stalled) n++;
+      }
+      return n;
+    };
+    const gentle = stalls(5);
+    const hard = stalls(13);
+    expect(gentle).toBe(0);
+    expect(hard).toBeGreaterThan(0);
+    expect(hard).toBeLessThan(8);
   });
 });

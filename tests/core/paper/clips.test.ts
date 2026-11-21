@@ -8,6 +8,8 @@ import { facetContains, facetVertices } from '../../../src/core/paper/model';
 import * as P from '../../../src/core/math/polygon2d';
 import * as V from '../../../src/core/math/vec3';
 import { validateDesign } from '../../../src/core/paper/ops';
+import { relaxCreases } from '../../../src/core/paper/springback';
+import { DEFAULT_CONFIG } from '../../../src/core/physics/config';
 
 /*
  * The dart (nose +x, up +z): the keel hangs below the wing roots at z = 25 mm from the tail to
@@ -37,6 +39,19 @@ describe('clips', () => {
     // as little as needed: a little less and its upper corner would reach above the wing root
     const a = ((Math.abs(rc.tiltDeg) - 2) * Math.PI) / 180;
     expect(CLIP_SPEC.lengthM * Math.cos(a) + (CLIP_SPEC.widthM / 2) * Math.sin(a)).toBeGreaterThan(0.025);
+  });
+
+  it('the lean stays when the paper springs open (one clip or several)', () => {
+    const c1 = clipAt([0, 0, -0.01], 'g1');
+    const c2 = clipAt([-0.07, 0, -0.01], 'g2');
+    const ops = [...dart.ops, { type: 'clip' as const, ...c1 }, { type: 'clip' as const, ...c2 }];
+    const folded = replayDesign({ ...dart, ops }).models.at(-1)!;
+    const relaxed = relaxCreases(folded, ops, DEFAULT_CONFIG.paper.creaseSpringback);
+    for (const c of relaxed.clips) {
+      const rc = resolveClip(relaxed, c)!;
+      expect(Math.abs(rc.tiltDeg)).toBeGreaterThan(10);
+      expect(V.dot(rc.inward, dart.orientation.nose)).toBeLessThan(0);
+    }
   });
 
   it('where there is no wing above (the nose), a clip stays upright', () => {

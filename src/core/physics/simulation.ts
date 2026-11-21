@@ -96,7 +96,7 @@ export class FlightSim implements Simulator {
     /** All facet ids of the model (for render panels). */
     facetIds: number[] = [],
   ) {
-    this.state = launchState(af, launch);
+    this.state = launchState(af, launch, cfg.scatter);
     this.cache = createAeroCache(af);
     this.controls = new ControlTrack(inputs);
     this.deflection = af.controls.map(() => 0);

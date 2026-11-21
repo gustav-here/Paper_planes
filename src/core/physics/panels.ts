@@ -151,7 +151,7 @@ export function buildPanels(model: PaperModel, af: Airframe, paper: PaperConfig)
     if (tabs.some((t) => onTab(l.seg, t))) {
       slitLinks.add(l);
       hingeLinks.push(l);
-    } else if (sameControl && (coplanar(fa, fb) || flatContinuation(fa, fb, l.seg))) uf.union(l.a, l.b);
+    } else if (sameControl && (coplanar(fa, fb) || flatContinuation(fa, fb, l.seg) || unfolded(fa, fb))) uf.union(l.a, l.b);
     else hingeLinks.push(l);
   }
   // layers lying flat on each other move together (pressed stacks)
@@ -359,6 +359,15 @@ export function buildPanels(model: PaperModel, af: Airframe, paper: PaperConfig)
     }
   }
   return { panels, hinges, panelOf, root: rootPanel };
+}
+
+/**
+ * Two pieces with the same fold history were never folded against each other: the line between
+ * them is no crease. They are one piece of paper split only to show an elastic twist (springback
+ * between clips), however much it twists.
+ */
+function unfolded(fa: Facet, fb: Facet): boolean {
+  return fa.foldPath.length === fb.foldPath.length && fa.foldPath.every((id, i) => fb.foldPath[i] === id);
 }
 
 const FLAT_COS = Math.cos((3 * Math.PI) / 180);

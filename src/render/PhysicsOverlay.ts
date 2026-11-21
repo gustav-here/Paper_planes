@@ -1,12 +1,14 @@
 import * as THREE from 'three';
 import * as V from '../core/math/vec3';
 import type { Airframe } from '../core/physics/airframe';
+import type { Vec3 } from '../core/math/vec3';
 
-/** Debug view of an airframe in model coordinates: centre of mass, body axes and aero elements. */
+/** Debug view of an airframe in model coordinates: centre of mass, nose, centre of lift and aero elements. */
 export class PhysicsOverlay {
   readonly group = new THREE.Group();
 
-  update(af: Airframe | null) {
+  /** `centerOfLift`: where the lift acts (neutral point, model space), if there is one. */
+  update(af: Airframe | null, centerOfLift: Vec3 | null = null) {
     for (const c of [...this.group.children]) {
       this.group.remove(c);
       c.traverse((o) => {
@@ -47,7 +49,19 @@ export class PhysicsOverlay {
       this.group.add(a);
     };
     axis(af.nose, '#ffb020');
-    axis(af.up, '#4fd1ff');
+    // centre of lift: a blue arrow pointing up from where the lift acts
+    if (centerOfLift) {
+      const a = new THREE.ArrowHelper(new THREE.Vector3(...af.up).normalize(), new THREE.Vector3(...centerOfLift), 0.05, '#4fd1ff', 0.012, 0.007);
+      a.traverse((o) => {
+        const m = o as THREE.Mesh;
+        if (m.material) (m.material as THREE.Material).depthTest = false;
+        o.renderOrder = 30;
+      });
+      const dot = new THREE.Mesh(new THREE.SphereGeometry(0.0028, 12, 8), new THREE.MeshBasicMaterial({ color: '#4fd1ff', depthTest: false }));
+      dot.position.set(...centerOfLift);
+      dot.renderOrder = 31;
+      this.group.add(a, dot);
+    }
 
     // aero elements, coloured per surface
     const pos: number[] = [];

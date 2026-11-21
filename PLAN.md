@@ -972,3 +972,52 @@ Resultat med standardkonfigurationen (släpp från 10 m, olika kastfarter):
     kast: tre plan, 4–14 m/s, 0–45°, stelt och flexibelt.
 - **Spara som:** i Chrome och Edge öppnas webbläsarens eget Spara som-fönster med namn och mapp.
   Andra webbläsare frågar efter ett namn och laddar ner filen. Modellen får filens namn.
+
+## 29. Ojämna kast, vingformer, fena i kölen och rättningar
+- **Gem behåller lutningen:** lutningen räknades om på den återfjädrade modellen. Där har ryggen
+  öppnats lite, så vingens veck låg inte längre i kölens plan, och gemmet blev rakt. Nu räknas
+  lutningen när gemmet sätts på det vikta planet och sparas på gemmet (`Clip.tiltDeg`).
+- **Det långsamma läget:** med två gem delade återfjädringen kölens inre lager i ett 30-tal remsor.
+  Varje remsa blev en egen panel (0,009 g) med gångjärn, vilket gav 41 frihetsgrader, 24 delsteg och
+  23 ms per steg. Remsor med samma vikhistorik har aldrig vikts mot varandra och hör nu alltid till
+  samma panel. Det blev 11 frihetsgrader och 0,9 ms per steg.
+- **Förinställningarna utan snitt:** Dart och Glidplan har inga klippta klaffar längre. De trimmas
+  i stället av att vingens bakre yttre hörn viks upp (4 cm och 3 cm, 30°, `reflexOps`). Det ger
+  ungefär samma trim som de gamla klaffarna. Klaffar finns kvar för tester (`ELEVATOR_TRIM`).
+- **Lyftcentrum:** den blå pilen i fysikvyn var kroppens uppåtaxel. Nu visar den lyftcentrum
+  (neutralpunkten, `centerOfLift`): x_np = x_cm + (Cmα/CLα)·c̄ vid trimvinkeln. Bakom
+  tyngdpunkten betyder stabilt i tippled.
+- **Ojämna kast** (`LaunchParams.scatterSeed`, `PhysicsConfig.scatter`): spelet ger varje kast ett
+  nytt slumpfrö, och uppspelningar behåller det. Ingen kastar exakt rakt eller viker exakt
+  symmetriskt.
+  - Avvikelserna är normalfördelade och kapas vid 2,5σ. Standardavvikelserna är: lutning åt sidan
+    4°, nosen snett 3° åt sidan och 2° i höjd, rotation vid släppet 40/20/25 °/s (roll, gir,
+    tipp), och i flexibelt papper varje vecks vila 1,5°, olika på vänster och höger sida.
+  - Platta vingar blir då tydligt ostadiga: kursen ändras 55–76° från 3 m höjd. Hårda kast stiger
+    och överstegrar ofta men inte alltid: darten vid 13 m/s i hälften av kasten, aldrig vid 5 m/s.
+- **Vingformer** (vindtunnel vid α = 6°, valideringstester): allt som viks ur planet lyfter mindre
+  än platta vingar men är stabilare. Clβ < 0 betyder att planet rätar upp sig i roll, och Cnβ > 0
+  att det vrider nosen mot vinden.
+
+  | Form | Lyft | Clβ | Cnβ |
+  |---|---|---|---|
+  | Platta vingar | 52 mN | −0,028 | −0,037 (instabil i gir) |
+  | Dihedral 20° | −18 % | −0,088 | −0,018 |
+  | Anhedral 20° | −18 % | +0,069 (kan tippa runt) | −0,021 |
+  | Spetsar upp/ner 2 cm | −38 % | −0,033/−0,012 | +0,018/+0,013 (fenor) |
+  | Djupt W | −18 % | −0,039 | −0,027 |
+  | Grunt W | −2 % | nästan som platta vingar | nästan som platta vingar |
+
+  - Spetsarna tar mer lyft än sin yta, eftersom lyftet för korta, breda vingar växer ungefär med
+    spännvidden i kvadrat.
+- **Fena av en flik i kölen** (`canPushThrough`, `FoldOp.through`): fliken mellan två snitt i kölen
+  viks åt sidan och stoppas mot vingens undersida. Drar man 20° förbi stoppet hoppar den över
+  till 180° och pekar rakt upp mellan vingarna.
+  - Det tillåts bara om fliken inte går igenom något papper där den hamnar, och om den passerar
+    en skarv där två fasta bitar i olika plan har en kant längs samma linje, som vingrötterna.
+    Riktigt papper glider isär där ett ögonblick och sluter sig igen.
+  - **Kollisionskontrollen:** papper som svänger förbi annat papper som sitter i samma
+    gångjärnslinje räknas nu som papper genom papper. Tidigare passerade en flik som var klippt
+    ända upp till vingroten rakt genom vingen.
+  - Fenan har samma yta som fliken hade nedåt och därmed samma luftmotstånd. Den gav något rakare
+    flygning i provkasten.

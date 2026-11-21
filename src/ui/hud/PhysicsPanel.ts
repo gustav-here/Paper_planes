@@ -5,7 +5,7 @@ import type { PaperModel } from '../../core/paper/model';
 import { buildAirframe } from '../../core/physics/airframe';
 import type { Airframe } from '../../core/physics/airframe';
 import { DEFAULT_CONFIG } from '../../core/physics/config';
-import { stability } from '../../core/physics/windTunnel';
+import { centerOfLift, stability } from '../../core/physics/windTunnel';
 import { computeAddedMass } from '../../core/physics/addedMass';
 
 const AXES: Record<string, Vec3> = {
@@ -71,8 +71,12 @@ export class PhysicsPanel {
     this.upSel.value = axisName(o.up);
   }
 
+  /** Where the lift acts (neutral point, model space), from the last update. */
+  centerOfLift: Vec3 | null = null;
+
   /** Rebuild the airframe and readout for a model. Returns the airframe for the 3D overlay. */
   update(model: PaperModel): Airframe | null {
+    this.centerOfLift = null;
     this.syncSelects();
     if (!this.visible) return null;
     const cfg = DEFAULT_CONFIG;
@@ -89,6 +93,8 @@ export class PhysicsPanel {
     const comBehindNose = (noseTip - V.dot(af.com, af.nose)) * 1000;
     const length = (noseTip - Math.min(...vs.map((v) => V.dot(v, af.nose)))) * 1000;
     const st = stability(af, cfg);
+    const col = centerOfLift(af, cfg);
+    this.centerOfLift = col?.point ?? null;
     const am = computeAddedMass(af.mesh, cfg.rho, cfg.addedMassScale, cfg.aero.elementSizeM);
     const addedTotal = am.perSurface.reduce((a, b) => a + b, 0);
     const fmt = (x: number, d = 1) => x.toFixed(d).replace('.', ',');
@@ -99,6 +105,7 @@ export class PhysicsPanel {
       ['Vingyta (projicerad)', `${fmt(af.refArea * 1e4, 0)} cm², spännvidd ${fmt(af.refSpan * 1000, 0)} mm`],
       ['Medflyttad luft', `${fmt(addedTotal * 1000, 1)} g (normalriktning, summa ytor)`],
     ];
+    if (col) rows.push(['Lyftcentrum', `${fmt(Math.abs(col.behindCom) * 1000, 0)} mm ${col.behindCom >= 0 ? 'bakom' : 'framför'} tyngdpunkten (${col.behindCom > 0 ? 'stabil' : 'instabil'} i tippled)`]);
     if (st.trimAlphaDeg !== null) {
       rows.push(
         ['Trimvinkel α', `${fmt(st.trimAlphaDeg)}°`],
@@ -110,7 +117,7 @@ export class PhysicsPanel {
     }
     this.body.innerHTML =
       `<table>${rows.map(([k, v]) => `<tr><th>${k}</th><td>${v}</td></tr>`).join('')}</table>` +
-      `<p class="note">Vindtunnel vid 5 m/s. Gul kula = tyngdpunkt, orange pil = nos, blå pil = upp, prickar = ytelement.</p>`;
+      `<p class="note">Vindtunnel vid 5 m/s. Gul kula = tyngdpunkt, orange pil = nos, blå pil = lyftcentrum (där lyftkraften angriper när anfallsvinkeln ändras), prickar = ytelement.</p>`;
     return af;
   }
 }

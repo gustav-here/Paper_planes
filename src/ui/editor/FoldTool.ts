@@ -1,7 +1,7 @@
 import * as V from '../../core/math/vec3';
 import type { Vec3 } from '../../core/math/vec3';
 import { applyAffine, applyAffineLinear } from '../../core/math/transform';
-import { applyOp, foldAngleLimit } from '../../core/paper/replay';
+import { applyOp, canPushThrough, foldAngleLimit } from '../../core/paper/replay';
 import { facetContains } from '../../core/paper/model';
 import { PaperError } from '../../core/paper/errors';
 import type { FoldKind, FoldOp } from '../../core/paper/ops';
@@ -35,12 +35,20 @@ type State =
       limit: Record<FoldKind, number>;
       blocked: Record<FoldKind, string | null>;
       stopped: boolean;
+      /**
+       * Per direction: stopped on the way, but it may go all the way over by pushing the paper
+       * through a seam (a keel tab up between the wings): dragging on past the stop does that.
+       */
+      through: Record<FoldKind, boolean>;
+      pushed: boolean;
     };
 
 /** Mouse travel per degree: 180° in about 110 px, so the drag stays well inside the window. */
 const PX_PER_DEG = 0.6;
 const SNAP_ANGLES = [45, 90, 135, 180];
 const BLOCKED = 'Fliken kan inte vikas åt det hållet: annat papper är i vägen.';
+/** Drag this far (deg) past the stop to push the paper through a seam. */
+const PUSH_THROUGH_DEG = 20;
 
 const SCOPE_NAMES: Record<FoldOp['scope'], string> = { top: 'Översta flik', all: 'Alla lager', bottom: 'Understa flik', flap: 'Klickad flik' };
 
@@ -133,16 +141,19 @@ export class FoldTool implements Tool {
       const pick = hit?.point ?? q;
       const limit: Record<FoldKind, number> = { valley: 180, mountain: 180 };
       const blocked: Record<FoldKind, string | null> = { valley: null, mountain: null };
+      const through: Record<FoldKind, boolean> = { valley: false, mountain: false };
       let fatal: string | null = null;
       try {
         for (const kind of ['valley', 'mountain'] as const) {
-          limit[kind] = foldAngleLimit(this.ctx.model(), this.makeOp({ ...s, side, pick }, kind, 180, 'limit'));
-          if (limit[kind] < 5) blocked[kind] = BLOCKED;
+          const op = this.makeOp({ ...s, side, pick }, kind, 180, 'limit');
+          limit[kind] = foldAngleLimit(this.ctx.model(), op);
+          if (limit[kind] < 175) through[kind] = canPushThrough(this.ctx.model(), op);
+          if (limit[kind] < 5 && !through[kind]) blocked[kind] = BLOCKED;
         }
       } catch (err) {
         fatal = err instanceof PaperError ? ERROR_TEXT[err.code] : String(err);
       }
-      this.s = { k: 'angling', p0: s.p0, p1: s.p1, N: s.N, side, pick, startY: e.clientY, signed: 0, fatal, limit, blocked, stopped: false };
+      this.s = { k: 'angling', p0: s.p0, p1: s.p1, N: s.N, side, pick, startY: e.clientY, signed: 0, fatal, limit, blocked, stopped: false, through, pushed: false };
       this.ctx.hint(
         fatal ?? 'Dra uppåt för dalveck (mot dig), nedåt för bergsveck (bort från dig). Släpp för att vika. Esc avbryter.',
       );
@@ -190,9 +201,11 @@ export class FoldTool implements Tool {
       const kind = kindOf(raw);
       let a = Math.abs(raw);
       if (!e.shiftKey) for (const t of SNAP_ANGLES) if (Math.abs(a - t) < 6) a = t;
-      // paper stops where it would run into other paper
-      s.stopped = a > s.limit[kind];
-      a = Math.min(a, s.limit[kind]);
+      // paper stops where it would run into other paper; dragging well past the stop pushes it
+      // through a seam where that is possible (it pops over to the other side)
+      s.pushed = s.through[kind] && a > s.limit[kind] + PUSH_THROUGH_DEG;
+      s.stopped = !s.pushed && a > s.limit[kind];
+      a = s.pushed ? 180 : Math.min(a, s.limit[kind]);
       s.signed = kind === 'valley' ? a : -a;
       this.preview(e);
     }
@@ -216,7 +229,7 @@ export class FoldTool implements Tool {
       const error = s.fatal ?? (angle >= 0.5 || s.stopped ? s.blocked[kind] : null);
       if (error) this.ctx.toast(error, 'error');
       if (angle >= 5 && !error) {
-        const op = this.makeOp(s, kind, Math.round(angle * 10) / 10, this.ctx.nextId('v'));
+        const op: FoldOp = { ...this.makeOp(s, kind, Math.round(angle * 10) / 10, this.ctx.nextId('v')), ...(s.pushed ? { through: true } : {}) };
         if (this.ctx.commit(op)) {
           this.reset();
           return;
@@ -338,7 +351,9 @@ export class FoldTool implements Tool {
       this.ctx.angleLabel(s.stopped && s.blocked[kind] ? s.blocked[kind] : '0° – dra upp för dal, ned för berg', this.ctx.mouse(e));
       this.ctx.setPreview(null);
     } else {
-      const label = `${kind === 'valley' ? 'Dal' : 'Berg'} ${Math.round(angle)}°${s.stopped ? ' · stopp: papper i vägen' : ''}`;
+      const label = s.pushed
+        ? `${kind === 'valley' ? 'Dal' : 'Berg'} 180° · intryckt genom skarven`
+        : `${kind === 'valley' ? 'Dal' : 'Berg'} ${Math.round(angle)}°${s.stopped ? (s.through[kind] ? ' · dra vidare för att trycka igenom' : ' · stopp: papper i vägen') : ''}`;
       this.ctx.angleLabel(label, this.ctx.mouse(e));
       try {
         const r = applyOp(this.ctx.model(), this.makeOp(s, kind, angle, 'preview'), { penetration: 'none' });

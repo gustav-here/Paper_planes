@@ -490,7 +490,7 @@ export class EditorApp implements ToolContext {
 
   private refreshPhysics() {
     const af = this.physics.update(this.history.current);
-    this.physicsOverlay.update(this.physics.visible ? af : null);
+    this.physicsOverlay.update(this.physics.visible ? af : null, this.physics.centerOfLift);
     $('btn-physics').classList.toggle('on', this.physics.visible);
   }
 

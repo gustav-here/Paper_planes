@@ -1,12 +1,17 @@
 import { describe, expect, it } from 'vitest';
 import * as Q from '../../../src/core/math/quat';
-import { makeDart, makeGlider } from '../../../src/core/presets';
+import { makeDart, makeGlider, ELEVATOR_TRIM, NO_REFLEX } from '../../../src/core/presets';
 import { airframeFromDesign } from '../../../src/core/physics/airframe';
 import { DEFAULT_CONFIG } from '../../../src/core/physics/config';
 import { FlightSim } from '../../../src/core/physics/simulation';
 import { createSimulator, prepare } from '../../../src/core/physics/factory';
 import type { DesignFile, Op } from '../../../src/core/paper/ops';
 import type { ControlInput } from '../../../src/core/physics/controls';
+
+/** The presets as they were made before (cut elevators, no turned-up corners): what these tests are about. */
+const classicDart = () => makeDart(0.025, 80, ELEVATOR_TRIM, NO_REFLEX);
+const classicGlider = () => makeGlider(0.015, 85, ELEVATOR_TRIM, NO_REFLEX);
+
 
 /** The presets' elevator fold (mirrored pair), marked as a control flap. */
 function withControls(d: DesignFile): DesignFile {
@@ -24,7 +29,7 @@ function fly(d: DesignFile, inputs: ControlInput[], seconds: number) {
 
 describe('control flaps', () => {
   it('the mirrored elevator becomes two flaps: behind the CoM, one per wing', () => {
-    const af = airframeFromDesign(withControls(makeDart()), DEFAULT_CONFIG);
+    const af = airframeFromDesign(withControls(classicDart()), DEFAULT_CONFIG);
     expect(af.controls).toHaveLength(2);
     for (const g of af.controls) {
       expect(g.pitchSign).toBe(1);
@@ -34,13 +39,13 @@ describe('control flaps', () => {
   });
 
   it('without input the flight is identical to a plane without control flaps', () => {
-    const a = fly(makeGlider(), [], 1).sim.log.samples.at(-1)!;
-    const b = fly(withControls(makeGlider()), [], 1).sim.log.samples.at(-1)!;
+    const a = fly(classicGlider(), [], 1).sim.log.samples.at(-1)!;
+    const b = fly(withControls(classicGlider()), [], 1).sim.log.samples.at(-1)!;
     for (let k = 0; k < 3; k++) expect(b.pos[k]).toBeCloseTo(a.pos[k], 9);
   });
 
   it('stick back (pitch +1) raises the nose; stick forward lowers it', () => {
-    const d = withControls(makeGlider());
+    const d = withControls(classicGlider());
     const base = fly(d, [], 0.5).sim.log.samples.at(-1)!.pitchDeg;
     const up = fly(d, [{ step: 0, pitch: 1, roll: 0 }], 0.5).sim.log.samples.at(-1)!.pitchDeg;
     const down = fly(d, [{ step: 0, pitch: -1, roll: 0 }], 0.5).sim.log.samples.at(-1)!.pitchDeg;
@@ -49,15 +54,15 @@ describe('control flaps', () => {
   });
 
   it('roll right (+1) banks the plane to the right', () => {
-    const { sim, af } = fly(withControls(makeGlider()), [{ step: 0, pitch: 0, roll: 1 }], 0.6);
+    const { sim, af } = fly(withControls(classicGlider()), [{ step: 0, pitch: 0, roll: 1 }], 0.6);
     const rightWing = Q.rotate(Q.normalize(sim.state.q), af.right);
     expect(rightWing[1]).toBeLessThan(-0.05); // right wing tip went down
-    const { sim: s2 } = fly(withControls(makeGlider()), [{ step: 0, pitch: 0, roll: -1 }], 0.6);
+    const { sim: s2 } = fly(withControls(classicGlider()), [{ step: 0, pitch: 0, roll: -1 }], 0.6);
     expect(Q.rotate(Q.normalize(s2.state.q), af.right)[1]).toBeGreaterThan(0.05);
   });
 
   it('flaps move no faster than the rate limit and stop at ±25°', () => {
-    const af = airframeFromDesign(withControls(makeGlider()), DEFAULT_CONFIG);
+    const af = airframeFromDesign(withControls(classicGlider()), DEFAULT_CONFIG);
     const sim = new FlightSim(af, DEFAULT_CONFIG, launch, [{ step: 0, pitch: 1, roll: 0 }]);
     sim.step();
     expect(sim.deflectionsDeg()[0]).toBeCloseTo(125 / 240, 9);
@@ -66,7 +71,7 @@ describe('control flaps', () => {
   });
 
   it('every flap is an elevon: pitch and roll mix, clipped to the travel', () => {
-    const af = airframeFromDesign(withControls(makeGlider()), DEFAULT_CONFIG);
+    const af = airframeFromDesign(withControls(classicGlider()), DEFAULT_CONFIG);
     const sim = new FlightSim(af, DEFAULT_CONFIG, launch, [{ step: 0, pitch: 1, roll: 1 }]);
     for (let i = 0; i < 240; i++) sim.step();
     // stick back and right: the right flap goes fully up (both inputs agree), the left cancels out
@@ -77,14 +82,14 @@ describe('control flaps', () => {
 
   it('a flap level with the centre of mass still works as an elevator', () => {
     // a single flap folded up at the trailing edge right under the CoM: no longer ignored for pitch
-    const af = airframeFromDesign(withControls(makeGlider()), DEFAULT_CONFIG);
+    const af = airframeFromDesign(withControls(classicGlider()), DEFAULT_CONFIG);
     for (const g of af.controls) expect(g.pitchSign).not.toBe(0);
   });
 });
 
 describe('flap size', () => {
   /** Glider with control elevators of the given depth (m), the same everywhere else. */
-  const glider = (chord: number) => withControls(makeGlider(0.015, 85, { elevatorDeg: 10, elevatorChord: chord }));
+  const glider = (chord: number) => withControls(makeGlider(0.015, 85, { elevatorDeg: 10, elevatorChord: chord }, NO_REFLEX));
   const CHORDS = [0.01, 0.02, 0.03];
 
   it('bigger flaps have more area', () => {
@@ -127,6 +132,6 @@ describe('flap size', () => {
 describe('servo-driven flaps in flexible paper', () => {
   it('do not make the simulation take more sub-steps (their stiff spring is implicit)', () => {
     const substeps = (d: DesignFile) => (createSimulator(prepare({ ...d, flexible: true }, DEFAULT_CONFIG), DEFAULT_CONFIG, launch) as unknown as { substeps: number }).substeps;
-    for (const d of [makeDart(), makeGlider()]) expect(substeps(withControls(d))).toBeLessThanOrEqual(substeps(d));
+    for (const d of [classicDart(), classicGlider()]) expect(substeps(withControls(d))).toBeLessThanOrEqual(substeps(d));
   });
 });

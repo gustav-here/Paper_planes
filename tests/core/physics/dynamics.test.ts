@@ -2,11 +2,11 @@ import { describe, expect, it } from 'vitest';
 import * as V from '../../../src/core/math/vec3';
 import * as Q from '../../../src/core/math/quat';
 import * as M3 from '../../../src/core/math/mat3';
-import { flatSheet, makeDart } from '../../../src/core/presets';
+import { flatSheet, makeDart, makeGlider } from '../../../src/core/presets';
 import { airframeFromDesign } from '../../../src/core/physics/airframe';
 import { makeConfig, DEFAULT_CONFIG } from '../../../src/core/physics/config';
 import { FlightSim } from '../../../src/core/physics/simulation';
-import { tunnelPoint } from '../../../src/core/physics/windTunnel';
+import { centerOfLift, stability, tunnelPoint } from '../../../src/core/physics/windTunnel';
 import { computeAddedMass } from '../../../src/core/physics/addedMass';
 import { attachedWeight } from '../../../src/core/physics/aeroModel';
 
@@ -130,5 +130,20 @@ describe('ground contact', () => {
       return log.rest!.distance - log.firstImpact!.distance;
     };
     expect(slide(0.8)).toBeLessThan(slide(0.2));
+  });
+});
+
+describe('centre of lift', () => {
+  it('lies behind the centre of mass of a plane that glides stably, ahead of it for a flat sheet', () => {
+    for (const d of [makeDart(), makeGlider()]) {
+      const af = airframeFromDesign(d, DEFAULT_CONFIG);
+      const col = centerOfLift(af, DEFAULT_CONFIG)!;
+      expect(col.behindCom).toBeGreaterThan(0);
+      expect(stability(af, DEFAULT_CONFIG).cmAlpha!).toBeLessThan(0);
+      // on the line through the centre of mass along the nose
+      expect(V.length(V.rejectFrom(V.sub(col.point, af.com), af.nose))).toBeLessThan(1e-9);
+    }
+    const flat = centerOfLift(airframeFromDesign(flatSheet, DEFAULT_CONFIG), DEFAULT_CONFIG)!;
+    expect(flat.behindCom).toBeLessThan(0);
   });
 });

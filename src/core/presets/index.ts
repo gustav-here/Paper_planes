@@ -97,11 +97,62 @@ function elevatorOps(prefix: string, keel: number, wingAngleDeg: number, trim: T
   ];
 }
 
-export const DART_TRIM: TrimOptions = { elevatorDeg: 10, elevatorChord: 0.02 };
-export const GLIDER_TRIM: TrimOptions = { elevatorDeg: 10, elevatorChord: 0.02 };
+/** The presets have no cut flaps at the trailing edge (the player can add elevators). */
+/**
+ * Trim without cutting: the outer trailing corner of each wing folded up (reflex), mirrored. The
+ * fold runs from the trailing edge `size` in from the wing tip to the tip edge `size` forward of
+ * the trailing edge. 0 = none.
+ */
+export interface ReflexOptions {
+  size: number;
+  angleDeg: number;
+}
 
-/** Classic dart: corners to centre twice, fold in half (flaps outside), wings with 10° dihedral, small elevators. */
-export function makeDart(keel = 0.025, wingAngleDeg = 80, trim: TrimOptions = DART_TRIM): DesignFile {
+export function reflexOps(prefix: string, keel: number, wingAngleDeg: number, r: ReflexOptions): Op[] {
+  if (r.size <= 0 || r.angleDeg <= 0) return [];
+  const th = wingAngleDeg * DEG;
+  const TE = -a;
+  const span = b - keel;
+  const wingR: Vec3 = [0, Math.sin(th), Math.cos(th)];
+  const nR: Vec3 = [0, -Math.cos(th), Math.sin(th)];
+  const onWing = (x: number, s: number): Vec3 => [x, s * wingR[1], keel + s * wingR[2]];
+  const p0 = onWing(TE, span - r.size);
+  const p1 = onWing(TE + r.size, span);
+  // the corner side of the line
+  const corner = onWing(TE, span);
+  const mid = V3mid(p0, p1);
+  const away: Vec3 = [corner[0] - mid[0], corner[1] - mid[1], corner[2] - mid[2]];
+  return [
+    {
+      type: 'fold',
+      id: `${prefix}r`,
+      line: { p0, p1 },
+      planeNormal: nR,
+      movingSide: away,
+      kind: 'valley',
+      angleDeg: r.angleDeg,
+      scope: 'all',
+      mirror: true,
+    },
+  ];
+}
+
+const V3mid = (p: Vec3, q: Vec3): Vec3 => [(p[0] + q[0]) / 2, (p[1] + q[1]) / 2, (p[2] + q[2]) / 2];
+
+export const DART_TRIM: TrimOptions = { elevatorDeg: 0, elevatorChord: 0.02 };
+export const GLIDER_TRIM: TrimOptions = { elevatorDeg: 0, elevatorChord: 0.02 };
+/** Small elevators as a person would make them (tests of flaps and controls use these). */
+export const ELEVATOR_TRIM: TrimOptions = { elevatorDeg: 10, elevatorChord: 0.02 };
+/** Trim without cuts: the wings' outer trailing corners folded up (chosen so both glide steadily). */
+export const DART_REFLEX: ReflexOptions = { size: 0.04, angleDeg: 30 };
+export const GLIDER_REFLEX: ReflexOptions = { size: 0.03, angleDeg: 30 };
+export const NO_REFLEX: ReflexOptions = { size: 0, angleDeg: 0 };
+
+/**
+ * Classic dart: corners to centre twice, fold in half (flaps outside), wings with 10° dihedral, the
+ * outer trailing corners turned up a little to trim it.
+ */
+export function makeDart(keel = 0.025, wingAngleDeg = 80, trim: TrimOptions = DART_TRIM, reflex: ReflexOptions = DART_REFLEX): DesignFile {
   const t = Math.tan(22.5 * DEG);
   return {
     format: 'paperplane-design',
@@ -115,12 +166,16 @@ export function makeDart(keel = 0.025, wingAngleDeg = 80, trim: TrimOptions = DA
       fold('d3', LONG_CENTRE[0], LONG_CENTRE[1], [0, 0, -1], { kind: 'mountain' }),
       fold('d4', [-0.2, 0, keel], [0.2, 0, keel], [0, 0, 1], { scope: 'top', angleDeg: wingAngleDeg, mirror: true }),
       ...elevatorOps('d', keel, wingAngleDeg, trim),
+      ...reflexOps('d', keel, wingAngleDeg, reflex),
     ],
   };
 }
 
-/** Wide-wing glider: corners in, nose triangle folded back (heavy blunt nose), corners in again, short keel, elevators. */
-export function makeGlider(keel = 0.015, wingAngleDeg = 85, trim: TrimOptions = GLIDER_TRIM): DesignFile {
+/**
+ * Wide-wing glider: corners in, nose triangle folded back (heavy blunt nose), corners in again,
+ * short keel, the outer trailing corners turned up a little to trim it.
+ */
+export function makeGlider(keel = 0.015, wingAngleDeg = 85, trim: TrimOptions = GLIDER_TRIM, reflex: ReflexOptions = GLIDER_REFLEX): DesignFile {
   const x1 = a - b; // base of the first nose triangle
   return {
     format: 'paperplane-design',
@@ -135,6 +190,7 @@ export function makeGlider(keel = 0.015, wingAngleDeg = 85, trim: TrimOptions = 
       fold('g4', LONG_CENTRE[0], LONG_CENTRE[1], [0, 0, -1], { kind: 'mountain' }),
       fold('g5', [-0.2, 0, keel], [0.2, 0, keel], [0, 0, 1], { scope: 'top', angleDeg: wingAngleDeg, mirror: true }),
       ...elevatorOps('g', keel, wingAngleDeg, trim),
+      ...reflexOps('g', keel, wingAngleDeg, reflex),
     ],
   };
 }

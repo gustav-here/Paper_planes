@@ -1,12 +1,17 @@
 import { describe, expect, it } from 'vitest';
 import * as V from '../../../src/core/math/vec3';
-import { makeDart, makeGlider } from '../../../src/core/presets';
+import { makeDart, makeGlider, ELEVATOR_TRIM, NO_REFLEX } from '../../../src/core/presets';
 import { replayDesign, applyOp } from '../../../src/core/paper/replay';
 import { relaxCreases } from '../../../src/core/paper/springback';
 import { CLIP_SPEC, findClipPlacement, TAPE_SPEC } from '../../../src/core/paper/clips';
 import { facetCentroid, facetNormal, totalArea } from '../../../src/core/paper/model';
 import type { PaperModel } from '../../../src/core/paper/model';
 import { computeMassProperties } from '../../../src/core/physics/massProperties';
+
+/** The presets as they were made before (cut elevators, no turned-up corners): what these tests are about. */
+const classicDart = () => makeDart(0.025, 80, ELEVATOR_TRIM, NO_REFLEX);
+const classicGlider = () => makeGlider(0.015, 85, ELEVATOR_TRIM, NO_REFLEX);
+
 
 const DEG = 180 / Math.PI;
 
@@ -20,7 +25,7 @@ function keelGap(m: PaperModel): number {
 }
 
 describe('crease springback', () => {
-  const dart = makeDart();
+  const dart = classicDart();
   const folded = replayDesign(dart).models.at(-1)!;
 
   it('a firmly pressed 180° centre fold gapes a few degrees, symmetrically', () => {
@@ -40,7 +45,7 @@ describe('crease springback', () => {
   });
 
   it('keeps paper, mass and centre of mass (it only bends)', () => {
-    for (const d of [makeDart(), makeGlider()]) {
+    for (const d of [classicDart(), classicGlider()]) {
       const m = replayDesign(d).models.at(-1)!;
       const r = relaxCreases(m, d.ops, 0.05);
       expect(totalArea(r)).toBeCloseTo(totalArea(m), 12);
