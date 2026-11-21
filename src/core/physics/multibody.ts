@@ -7,6 +7,7 @@ import type { Mat3 } from '../math/mat3';
 import { invert } from '../math/linalg';
 import { applyRigid, composeRigid, rigidIdentity, rotationAbout } from '../math/transform';
 import type { RigidTransform } from '../math/transform';
+import { facetVertices } from '../paper/model';
 import type { PaperModel } from '../paper/model';
 import type { Airframe } from './airframe';
 import { buildAeroMesh } from './aeroMesh';
@@ -686,6 +687,11 @@ export class MultiBodySim implements Simulator {
     const MrInv = invert(Mr, nr);
     const Minv = { at: (a: number, b: number) => MrInv[a * nr + b] };
     const stiff = this.stiffness();
+    // a servo-driven flap is held at its commanded angle by a stiff spring that is integrated
+    // implicitly; how it rings at that stiffness does not matter, so it sets no sub-steps
+    this.fx.set.hinges.forEach((hg, j) => {
+      if (hg.control >= 0) for (let b = 0; b < this.k + this.nm; b++) stiff[j * (this.k + this.nm) + b] = stiff[b * (this.k + this.nm) + j] = 0;
+    });
     // power iteration on Minv_dd·K_dd for the highest elastic frequency
     let x = new Array<number>(nd).fill(1);
     let lambda = 0;
@@ -798,6 +804,7 @@ export class MultiBodySim implements Simulator {
     }
     this.Dcache = D;
     this.fillDeform(u0);
+    const saved = { x0: this.x0, q0: this.q0, u: [...this.u], theta: [...this.theta], qm: [...this.qm], rest: [...this.rest] };
     const h = this.cfg.dt / this.substeps;
     for (let s = 0; s < this.substeps; s++) {
       const K = this.kin(this.x0, this.q0, this.theta, this.u);
@@ -847,6 +854,13 @@ export class MultiBodySim implements Simulator {
       for (let j = 0; j < this.k; j++) this.theta[j] += h * this.u[6 + j];
       for (let j = 0; j < this.nm; j++) this.qm[j] += h * this.u[6 + this.k + j];
       this.plasticity();
+    }
+    // a step the integrator could not take (it should not happen): keep the last good state and
+    // end the flight there, rather than going on with numbers that mean nothing
+    if (![...this.x0, ...this.u, ...this.qm].every(Number.isFinite)) {
+      Object.assign(this, { x0: saved.x0, q0: saved.q0, u: saved.u, theta: saved.theta, qm: saved.qm, rest: saved.rest });
+      this.phase = 'timeout';
+      return;
     }
     this.stepIndex++;
     this.t += this.cfg.dt;
@@ -1002,6 +1016,11 @@ export class MultiBodySim implements Simulator {
         if (V.length(delta) > 0) apply(ci, delta);
       }
     }
+    // loose ground closes round the paper and takes up its spin
+    if (gcfg.spinDampingPerS > 0) {
+      const f = Math.exp(-gcfg.spinDampingPerS * dt);
+      for (let k = 3; k < 6; k++) this.u[k] *= f;
+    }
     gcfg.planes.forEach((pl, k) => {
       if (minGap[k] < -0.001) this.x0 = V.addScaled(this.x0, pl.n, -minGap[k] - 0.001);
     });
@@ -1042,7 +1061,9 @@ export class MultiBodySim implements Simulator {
     const P = this.cfg.paper;
     this.fx.set.hinges.forEach((hg, j) => {
       if (!hg.cutEnds.length || this.tornHinges.has(j)) return;
-      const moment = Math.abs(hg.stiffness * (this.theta[j] - this.rest[j])) / Math.max(hg.length, 1e-3);
+      // the paper's own moment: a flap's servo spring stands in for the player's hand, not paper
+      const k = hg.control >= 0 ? hg.stiffness / this.cfg.paper.servoStiffnessFactor : hg.stiffness;
+      const moment = Math.abs(k * (this.theta[j] - this.rest[j])) / Math.max(hg.length, 1e-3);
       if (moment <= P.tearMomentPerM) return;
       this.tornHinges.add(j);
       const length = Math.min(P.tearMaxLength, P.tearLengthGain * (moment / P.tearMomentPerM - 1) + 0.002);
@@ -1083,10 +1104,84 @@ export class MultiBodySim implements Simulator {
     return V.length(this.worldVelocity());
   }
 
-  /** How each panel's paper is bent right now, or null for a panel without bending shapes. */
+  /** How each panel's paper is bent right now, or null for paper that is not bent at all. */
   panelBending(): (PanelBend | null)[] {
     const q = [...this.qm];
-    return this.modesOf.map((pm) => (pm ? bendField(pm, q) : null));
+    const { set } = this.fx;
+    const K = this.kin(this.x0, this.q0, this.theta, this.u);
+    const flat = (_x: number, _y: number, _z: number, out: Float64Array) => out.fill(0);
+    return set.panels.map((p, i) => {
+      const pm = this.modesOf[i];
+      const own = pm ? bendField(pm, q) : null;
+      const seam = p.parent >= 0 && this.modesOf[p.parent] ? this.seamFix(K, i, q) : null;
+      if (!seam) return own;
+      return {
+        normal: own?.normal ?? [0, 1, 0],
+        at: own?.at ?? (() => ({ w: 0, grad: [0, 0, 0] as Vec3 })),
+        evalInto: own?.evalInto ?? flat,
+        seamInto: seam,
+      };
+    });
+  }
+
+  /** Where each panel meets its parent along the crease: the span (m along the axis) and its depth. */
+  private creaseSpans: ({ s0: number; s1: number; depth: number } | null)[] | null = null;
+
+  private creaseSpan(i: number) {
+    if (!this.creaseSpans) {
+      const { set, model } = this.fx;
+      const byId = new Map(model.facets.map((f) => [f.id, f]));
+      this.creaseSpans = set.panels.map((p) => {
+        if (p.parent < 0) return null;
+        const hg = set.hinges[p.hinge];
+        const vs = p.facets.flatMap((id) => (byId.get(id) ? facetVertices(byId.get(id)!) : []));
+        const off = (v: Vec3) => V.length(V.rejectFrom(V.sub(v, hg.point), hg.axis));
+        const on = vs.filter((v) => off(v) < 1e-3).map((v) => V.dot(V.sub(v, hg.point), hg.axis));
+        if (on.length < 2) return null;
+        return { s0: Math.min(...on), s1: Math.max(...on), depth: Math.max(1e-3, ...vs.map(off)) };
+      });
+    }
+    return this.creaseSpans[i];
+  }
+
+  /**
+   * Drawing: the gap between a stiff panel's crease and its bending parent's bent crease (child
+   * model space), sampled at both ends and the middle of the crease and interpolated along it,
+   * fading out quadratically across the panel.
+   */
+  private seamFix(K: Kin, i: number, q: number[]): ((x: number, y: number, z: number, out: Float64Array) => void) | null {
+    const { set } = this.fx;
+    const span = this.creaseSpan(i);
+    const pp = set.panels[i].parent;
+    const pm = this.modesOf[pp];
+    if (!span || !pm) return null;
+    const hg = set.hinges[set.panels[i].hinge];
+    const field = bendField(pm, q);
+    const w = new Float64Array(4);
+    const ss = [span.s0, (span.s0 + span.s1) / 2, span.s1];
+    const toChild = Q.conjugate(Q.normalize(K.M[i].q));
+    const gaps = ss.map((s) => {
+      const P = V.addScaled(hg.point, hg.axis, s);
+      field.evalInto(P[0], P[1], P[2], w);
+      const parent = applyRigid(K.M[pp], V.addScaled(P, pm.normal, w[0]));
+      const child = applyRigid(K.M[i], P);
+      return Q.rotate(toChild, V.sub(parent, child));
+    });
+    const [a, m, b] = ss;
+    const { point, axis } = hg;
+    const D = span.depth;
+    return (x, y, z, out) => {
+      const r: Vec3 = [x - point[0], y - point[1], z - point[2]];
+      const s = r[0] * axis[0] + r[1] * axis[1] + r[2] * axis[2];
+      const d = Math.hypot(r[0] - s * axis[0], r[1] - s * axis[1], r[2] - s * axis[2]);
+      const fade = Math.max(0, 1 - d / D) ** 2;
+      if (fade === 0 || b - a < 1e-9) return out.fill(0, 0, 3);
+      // quadratic through the three samples
+      const la = ((s - m) * (s - b)) / ((a - m) * (a - b));
+      const lm = ((s - a) * (s - b)) / ((m - a) * (m - b));
+      const lb = ((s - a) * (s - m)) / ((b - a) * (b - m));
+      for (let k = 0; k < 3; k++) out[k] = fade * (la * gaps[0][k] + lm * gaps[1][k] + lb * gaps[2][k]);
+    };
   }
 
   /** Largest bending deflection of any panel right now (m), for display and tests. */

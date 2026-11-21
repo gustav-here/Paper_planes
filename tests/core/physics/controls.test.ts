@@ -4,6 +4,7 @@ import { makeDart, makeGlider } from '../../../src/core/presets';
 import { airframeFromDesign } from '../../../src/core/physics/airframe';
 import { DEFAULT_CONFIG } from '../../../src/core/physics/config';
 import { FlightSim } from '../../../src/core/physics/simulation';
+import { createSimulator, prepare } from '../../../src/core/physics/factory';
 import type { DesignFile, Op } from '../../../src/core/paper/ops';
 import type { ControlInput } from '../../../src/core/physics/controls';
 
@@ -120,5 +121,12 @@ describe('flap size', () => {
     const p = CHORDS.map(dPitch);
     expect(p[1]).toBeGreaterThan(p[0] + 2);
     expect(p[2]).toBeGreaterThan(p[1] + 1);
+  });
+});
+
+describe('servo-driven flaps in flexible paper', () => {
+  it('do not make the simulation take more sub-steps (their stiff spring is implicit)', () => {
+    const substeps = (d: DesignFile) => (createSimulator(prepare({ ...d, flexible: true }, DEFAULT_CONFIG), DEFAULT_CONFIG, launch) as unknown as { substeps: number }).substeps;
+    for (const d of [makeDart(), makeGlider()]) expect(substeps(withControls(d))).toBeLessThanOrEqual(substeps(d));
   });
 });

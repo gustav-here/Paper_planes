@@ -141,6 +141,49 @@ export class EditorApp implements ToolContext {
     return this.history.current;
   }
 
+  /**
+   * Save the design as a file. The player chooses its name and where it goes: the browser's own
+   * save dialog where there is one (Chrome, Edge), otherwise a question for the name and a
+   * download (the browser decides the folder, or asks if it is set to). The model takes the
+   * file's name.
+   */
+  private async save() {
+    const safe = (n: string) => n.replace(/[^\wåäöÅÄÖ\- ]+/g, '').trim();
+    const suggested = `${safe(this.history.meta.name) || 'modell'}.json`;
+    const contents = (name: string) => {
+      this.history.meta = { ...this.history.meta, name };
+      return JSON.stringify(this.history.toDesign(), null, 2);
+    };
+    type SaveHandle = { name: string; createWritable(): Promise<{ write(d: string): Promise<void>; close(): Promise<void> }> };
+    const picker = (window as unknown as { showSaveFilePicker?: (o: unknown) => Promise<SaveHandle> }).showSaveFilePicker;
+    if (picker) {
+      try {
+        const handle = await picker({
+          suggestedName: suggested,
+          types: [{ description: 'Pappersflygplan', accept: { 'application/json': ['.json'] } }],
+        });
+        const name = handle.name.replace(/\.json$/i, '');
+        const w = await handle.createWritable();
+        await w.write(contents(name));
+        await w.close();
+        this.toast(`Sparade ${handle.name}.`, 'ok');
+      } catch (e) {
+        // the player closed the dialog: nothing to do
+        if ((e as { name?: string }).name !== 'AbortError') this.toast(`Kunde inte spara: ${String(e)}`, 'error');
+      }
+      return;
+    }
+    const answer = prompt('Spara modellen som:', suggested.replace(/\.json$/, ''));
+    if (answer === null) return;
+    const name = safe(answer) || 'modell';
+    const blob = new Blob([contents(name)], { type: 'application/json' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = `${name}.json`;
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+  }
+
   nose(): Vec3 {
     return this.history.meta.orientation.nose;
   }
@@ -817,15 +860,7 @@ export class EditorApp implements ToolContext {
       this.viewTarget.identity();
       this.syncView();
     };
-    $('btn-save').onclick = () => {
-      const d = this.history.toDesign();
-      const blob = new Blob([JSON.stringify(d, null, 2)], { type: 'application/json' });
-      const a = document.createElement('a');
-      a.href = URL.createObjectURL(blob);
-      a.download = `${d.name.replace(/[^\wåäöÅÄÖ\- ]+/g, '').trim() || 'modell'}.json`;
-      a.click();
-      setTimeout(() => URL.revokeObjectURL(a.href), 1000);
-    };
+    $('btn-save').onclick = () => void this.save();
     const file = $<HTMLInputElement>('file-input');
     $('btn-load').onclick = () => file.click();
     file.onchange = async () => {

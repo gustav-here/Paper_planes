@@ -59,6 +59,24 @@ describe('venues', () => {
     expect(VENUES.sun.burnAfterS).toBe(0);
   });
 
+  it('on the Moon a steep, hard landing does not tumble over the nose: it slides a few centimetres', () => {
+    const cfg = venueConfig('moon', DEFAULT_CONFIG);
+    for (const d of [makeDart(), makeGlider()])
+      for (const flexible of [false, true]) {
+        const s = createSimulator(prepare({ ...d, flexible }, cfg), cfg, { speed: 14, elevationDeg: 45, headingDeg: 0, heightM: 1.6 });
+        let top = 0;
+        while (!s.done) {
+          s.step();
+          if (s.log.firstImpact) top = Math.max(top, s.position()[1]);
+        }
+        const a = s.log.firstImpact!;
+        const r = s.log.rest!;
+        // no hop: the centre of mass stays about as high as the plane is tall
+        expect(top).toBeLessThan(0.2);
+        expect(Math.hypot(r.pos[0] - a.pos[0], r.pos[2] - a.pos[2])).toBeLessThan(0.25);
+      }
+  });
+
   it('on the Moon the paper stops where it lands: it ploughs into the loose dust', () => {
     // a flat, fast landing: friction alone (μ·g in the weak gravity) would let it slide on
     const launch: LaunchParams = { speed: 9, elevationDeg: 0, headingDeg: 0, heightM: 1.6 };

@@ -28,4 +28,21 @@ describe('FixedStepper', () => {
     for (let i = 0; i < 60; i++) s.advance(1 / 60, () => n++);
     expect(n).toBe(60);
   });
+
+  it('heavy physics: stops at the time budget and drops the rest instead of stalling', () => {
+    let clock = 0;
+    // every step costs 3 ms of computing
+    const s = new FixedStepper(1 / 240, 32, 12, () => clock);
+    let n = 0;
+    const step = () => {
+      clock += 3;
+      n++;
+    };
+    s.advance(1 / 30, step); // 8 steps due
+    expect(n).toBe(5); // 15 ms > 12 ms after the fifth
+    n = 0;
+    // the backlog is gone: the next frame does not try to catch up
+    s.advance(1 / 60, step);
+    expect(n).toBeLessThanOrEqual(5);
+  });
 });

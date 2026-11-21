@@ -99,6 +99,8 @@ export function resolveGround(s: BodyState, af: Airframe, cfg: GroundConfig, dt:
       applyImpulse(c.r, delta);
     }
   }
+  // loose ground closes round the paper and takes up its spin
+  if (cfg.spinDampingPerS > 0) s.w = V.scale(s.w, Math.exp(-cfg.spinDampingPerS * dt));
   // safety net for deep penetration only (hard impacts): never more than 1 mm into a surface
   cfg.planes.forEach((pl, k) => {
     if (minGap[k] < -0.001) s.x = V.addScaled(s.x, pl.n, -minGap[k] - 0.001);

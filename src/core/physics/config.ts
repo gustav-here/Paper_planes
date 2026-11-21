@@ -51,6 +51,12 @@ export interface GroundConfig {
    * ploughs through). It does not depend on gravity. 0 for a hard floor.
    */
   ploughKgPerM: number;
+  /**
+   * Loose ground also takes up the paper's spin while it touches it (1/s): the paper sinks into
+   * the soft dust, which closes round it. Without it a plane landing nose-first on the Moon's
+   * weak gravity pole-vaults over its nose. 0 for a hard floor.
+   */
+  spinDampingPerS: number;
   /** Rest detection: |v| below this (m/s) … */
   restSpeed: number;
   /** … and |ω| below this (rad/s) … */
@@ -116,7 +122,13 @@ export interface PaperConfig {
   crumpleFolds: number;
   /** A cut end within this distance of a crumpling impact tears further (m). */
   tearImpactRadius: number;
-  /** Crease moment per metre of crease above which a cut end on it tears (N·m/m). */
+  /**
+   * Crease moment per metre of crease (per layer) above which a cut end on it tears (N·m/m).
+   * Bending a crease cannot do it: fully folded over (π rad) a crease carries at most
+   * creaseStiffnessPerM · π ≈ 0.25 N·m/m, and the air at 15 m/s loads a flap far less (a 3 × 1 cm
+   * flap: ≈ 140 Pa · 3 cm² ≈ 0.04 N on a 5 mm arm ⇒ 0.007 N·m/m). Paper flaps and centre folds
+   * flex without tearing; cut ends tear on hard impacts (tearImpactRadius).
+   */
   tearMomentPerM: number;
   /** Tear length per unit excess (m per relative excess), and its maximum (m). */
   tearLengthGain: number;
@@ -180,6 +192,7 @@ export const DEFAULT_CONFIG: PhysicsConfig = {
     restitutionThreshold: 0.3,
     friction: 0.4,
     ploughKgPerM: 0,
+    spinDampingPerS: 0,
     restSpeed: 0.02,
     restSpin: 0.1,
     restTime: 0.5,
@@ -204,7 +217,7 @@ export const DEFAULT_CONFIG: PhysicsConfig = {
     crumpleZoneFactor: 1.6,
     crumpleFolds: 3,
     tearImpactRadius: 0.015,
-    tearMomentPerM: 0.02,
+    tearMomentPerM: 0.5,
     tearLengthGain: 0.01,
     tearMaxLength: 0.015,
     damage: true,

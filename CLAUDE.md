@@ -66,6 +66,13 @@ Webbläsarspel: vik ett pappersflygplan av ett A4 och kasta det. Flygbeteendet s
   `Prepared.folded` är exakt vikt). Validering och editor använder den vikta geometrin.
 - Flexibelt papper är standard i spelet. Gångjärnen har plan pappersböjning i serie med vecket och
   ett kontaktstopp vid 180°.
+- Böjformer ges inte till en rot som bär andra paneler, eller till paneler som ligger an mot en
+  annan panel (kölhalvor). En stel panel på en böjande panel ritas med en söm (`seamInto`) som
+  följer den böjda kanten.
+- Snittändar rivs inte av böjning eller luft (`tearMomentPerM` ligger över vad ett helt vikt veck
+  bär), bara av hårda nedslag. Servofjädern räknas aldrig som moment i pappret.
+- Spelloopen räknar fysik i högst 12 ms per bildruta och släpper resten (långsammare spel i
+  stället för låg bildfrekvens).
 - Böjformer (`physics/bendModes.ts`): stora plana paneler böjer sig själva med några släta former
   (extra frihetsgrader). Luften verkar på den böjda ytan, och kastläget ritar den böjd. Bortom
   35° lutning styvnar formerna, eftersom papper inte kan töjas. Se PLAN.md §26.
@@ -75,7 +82,8 @@ Webbläsarspel: vik ett pappersflygplan av ett A4 och kasta det. Flygbeteendet s
 - Platser (`core/game/venues.ts`: gymnastiksal, Månen, Solen) sätter g, ρ och kontaktytor via
   `venueConfig`. Gymnastiksalen är standard. Inget i fysiken får bero på vilken plats det är,
   utöver de parametrarna. Det gäller också markens friktion, studs och plogning
-  (`ploughKgPerM`: lös regolit på Månen bromsar med ρ·A·v_t², oberoende av g).
+  (`ploughKgPerM`: lös regolit på Månen bromsar med ρ·A·v_t², oberoende av g) och dammets
+  dämpning av rotationen (`spinDampingPerS`: inga kullerbyttor på Månen, enligt användarens val).
 - Procedurtexturer i `render/venues` ritas på 2D-canvas utan `filter` (det kraschade
   grafikprocessen).
 - Gem lutar bakåt (`Clip.lean`) så lite som behövs för att inte gå genom papper som lämnar dess plan.

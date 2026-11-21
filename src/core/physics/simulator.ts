@@ -20,6 +20,12 @@ export interface PanelBend {
   at(p: Vec3): { w: number; grad: Vec3 };
   /** Fast form for many points: writes [w, ∇w x, y, z] at (x, y, z) into `out`. */
   evalInto(x: number, y: number, z: number, out: Float64Array): void;
+  /**
+   * Drawing only: extra displacement (model space, written to out[0..2]) that carries the paper
+   * next to the crease along with a bending parent. A stiff panel hanging on a bending one meets
+   * the parent's bent crease exactly at the crease, fading out across the panel.
+   */
+  seamInto?(x: number, y: number, z: number, out: Float64Array): void;
 }
 
 /** Something that happened to the paper during a flight and leaves permanent damage. */

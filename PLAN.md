@@ -940,3 +940,35 @@ Resultat med standardkonfigurationen (släpp från 10 m, olika kastfarter):
     trycker fast tejpen viks den fria halvan över till andra sidan.
   - **Det som sticker ut** utanför pappret, till exempel framför nosen, klipps bort automatiskt
     (`tapeShape`: tejpen skärs med pappret under den).
+
+## 28. Tunga modeller, rivning, kullerbyttor på Månen och Spara som
+- **Varför vissa plan var tunga** (en egen modell med två klaffar mellan snitt):
+  - Kölens två halvor böjde sig var för sig. Den ena var rotpanel med fria former, den andra var
+    fastspänd vid ryggen. Halvorna ligger nästan an mot varandra, men böjde sig igenom varandra.
+    Det gjorde planet osymmetriskt, kortade flygningen (3 m i stället för 7,4 m) och fick
+    simuleringen att explodera vid 15 m/s.
+  - Böjformer ges nu bara till ett ensamt ark som rot, och till paneler som inte ligger an mot
+    en annan panel (gångjärn inom 25° från stängt). En rot som bär andra paneler böjer sig inte
+    själv.
+  - Styrklaffarnas servofjäder (20 × vecket, 0,04 g klaff) krävde 15 delsteg. Den löses implicit
+    och styr inte längre antalet delsteg. Det blev 5 delsteg, och flygningarna är desamma.
+  - Om ett steg ändå ger ogiltiga tal behålls det senaste giltiga läget och flygningen avslutas.
+  - **Spelloopen** (`app/GameLoop.ts`) räknar fysik i högst 12 ms per bildruta. Det som inte
+    hinns med släpps: spelet går långsammare i stället för att bildfrekvensen rasar.
+    Tidigare kunde 32 tunga steg per bildruta ge en ond cirkel.
+- **Rivning:** rivkriteriet räknade med servofjädern, så en klaff som trycktes mot golvet rev
+  vidare från snittändarna. Nu används papprets eget veckmoment, och gränsen är 0,5 N·m/m per lager.
+  - Böjning kan inte nå gränsen: ett helt vikt veck bär högst ungefär 0,25 N·m/m, och luften
+    vid 15 m/s ger ungefär 0,007 N·m/m på en klaff. Snittändar rivs bara av hårda nedslag.
+- **Sömmar vid böjliga vingar:** en stel klaff på en böjande vinge kan bara följa vingens lutning
+  i en punkt. Längs resten av vecket blev det en glipa på upp till 1 cm vid 15 m/s, som såg ut
+  som en rivning.
+  - I ritningen flyttas klaffens papper närmast vecket till vingens böjda kant (`seamInto`).
+    Flytten avtar kvadratiskt över klaffen, och glipan blir under 0,01 mm.
+- **Månen utan kullerbyttor:** dammet tar upp papprets rotation medan det rör marken
+  (`GroundConfig.spinDampingPerS` = 150 1/s). Användaren valde det framför realistiska
+  kullerbyttor.
+  - Planet glider högst ungefär 16 cm, i snitt 6 cm, och hoppar inte. Det gäller i alla prövade
+    kast: tre plan, 4–14 m/s, 0–45°, stelt och flexibelt.
+- **Spara som:** i Chrome och Edge öppnas webbläsarens eget Spara som-fönster med namn och mapp.
+  Andra webbläsare frågar efter ett namn och laddar ner filen. Modellen får filens namn.

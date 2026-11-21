@@ -1,7 +1,10 @@
 /**
  * Fixed-timestep loop: physics always advances in steps of `dt` regardless of frame rate,
- * rendering interpolates with alpha = leftover / dt. Max steps per frame avoids a spiral of
- * death after a stall (e.g. the tab was hidden).
+ * rendering interpolates with alpha = leftover / dt. Two limits keep the frame rate up when the
+ * physics is heavier than real time (a complicated plane, a slow computer): at most
+ * `maxStepsPerFrame` steps, and no more steps once `budgetMs` of computing has been spent in this
+ * frame. The time left over is then dropped: the game runs slower instead of stalling (the
+ * flight itself is the same, it is stepped with the same fixed dt).
  */
 export class FixedStepper {
   private acc = 0;
@@ -10,18 +13,22 @@ export class FixedStepper {
   constructor(
     readonly dt = 1 / 240,
     readonly maxStepsPerFrame = 32,
+    readonly budgetMs = 12,
+    private readonly now: () => number = () => performance.now(),
   ) {}
 
   /** Advance by a frame of `frameDt` seconds; calls step(dt) zero or more times. Returns alpha. */
   advance(frameDt: number, step: (dt: number) => void): number {
     this.acc += Math.max(0, frameDt) * this.timeScale;
+    const start = this.now();
     let n = 0;
     while (this.acc >= this.dt && n < this.maxStepsPerFrame) {
       step(this.dt);
       this.acc -= this.dt;
       n++;
+      if (this.now() - start > this.budgetMs) break;
     }
-    if (n === this.maxStepsPerFrame) this.acc = Math.min(this.acc, this.dt);
+    if (this.acc >= this.dt) this.acc = Math.min(this.acc, this.dt);
     return this.acc / this.dt;
   }
 

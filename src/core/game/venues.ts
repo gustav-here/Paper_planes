@@ -17,7 +17,7 @@ export interface Venue {
   /** Solid surfaces (free space where n·x ≥ d). */
   planes: ContactPlane[];
   /** How the ground takes a landing paper, where it differs from the hall floor. */
-  ground?: Partial<Pick<GroundConfig, 'friction' | 'restitution' | 'ploughKgPerM'>>;
+  ground?: Partial<Pick<GroundConfig, 'friction' | 'restitution' | 'ploughKgPerM' | 'spinDampingPerS'>>;
   /** Simulated time limit (s). */
   maxTime: number;
   /** The paper burns up this long after the throw (s), or never. */
@@ -63,7 +63,9 @@ export const VENUES: Record<VenueId, Venue> = {
     // over ≈ 1 cm, ploughing 1500 · 3·10⁻⁵ ≈ 0.05 kg/m ahead of it. That stops a landing paper
     // within centimetres, where friction alone (μ·g in the weak gravity) would let it slide on
     // for tens of metres. The sharp grains grip the fibres (μ ≈ 1) and the dust takes up the bounce.
-    ground: { friction: 1, restitution: 0, ploughKgPerM: 0.05 },
+    // The dust also closes round the paper and takes up its spin, so a plane landing nose
+    // first does not pole-vault over its nose in the weak gravity; it slides a few centimetres.
+    ground: { friction: 1, restitution: 0, ploughKgPerM: 0.05, spinDampingPerS: 150 },
     // a hard throw stays up for over ten seconds
     maxTime: 90,
     burnAfterS: null,

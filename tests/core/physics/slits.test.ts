@@ -110,6 +110,15 @@ describe('slit tabs in flexible paper', () => {
     expect(fast).toBeGreaterThan(slow * 2);
   });
 
+  it('the air does not tear the cut ends, even in a hard throw', () => {
+    for (const d of [withOps(plainDart(), wingSlits()), withOps(plainDart(), keelSlits())]) {
+      const p = prepare(d, DEFAULT_CONFIG);
+      const sim = createSimulator(p, DEFAULT_CONFIG, { speed: 15, elevationDeg: 5, headingDeg: 0, heightM: 1.6 });
+      while (!sim.done && !sim.log.firstImpact) sim.step();
+      expect(sim.damage().filter((e) => e.kind === 'tear')).toHaveLength(0);
+    }
+  });
+
   it('rigid paper ignores slit tabs', () => {
     const p = prepare(withOps(plainDart(), wingSlits(), false), DEFAULT_CONFIG);
     expect(p.flex).toBeNull();

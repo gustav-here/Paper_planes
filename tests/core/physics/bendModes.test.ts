@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { flatSheet, makeDart } from '../../../src/core/presets';
+import { flatSheet, makeDart, makeGlider } from '../../../src/core/presets';
+import type { DesignFile } from '../../../src/core/paper/ops';
 import { DEFAULT_CONFIG } from '../../../src/core/physics/config';
 import type { PhysicsConfig } from '../../../src/core/physics/config';
 import { createSimulator, prepare } from '../../../src/core/physics/factory';
@@ -106,6 +107,77 @@ describe('bending shapes', () => {
         lowest = Math.min(lowest, w[1]);
       }
     expect(lowest).toBeGreaterThan(-0.001);
+  });
+
+  it('the root does not bend on its own when paper hangs on it', () => {
+    for (const d of [makeDart(), makeGlider()]) {
+      const p = prepare({ ...d, flexible: true }, DEFAULT_CONFIG);
+      const set = p.flex!.set;
+      const root = set.panels.findIndex((q) => q.parent < 0);
+      expect(p.flex!.modes.some((m) => m.panel === root)).toBe(false);
+      expect(p.flex!.modes.length).toBeGreaterThan(0);
+    }
+  });
+
+  it('two halves of a sheet folded onto each other do not bend through each other', () => {
+    const halves: DesignFile = {
+      ...flatSheet,
+      flexible: true,
+      ops: [
+        {
+          type: 'fold',
+          id: 'v1',
+          line: { p0: [0.1485, 0, 0], p1: [-0.1485, 0, 0] },
+          planeNormal: [0, 1, 0],
+          movingSide: [0, 0, -1],
+          kind: 'valley',
+          angleDeg: 180,
+          scope: 'top',
+          mirror: false,
+        },
+      ],
+    };
+    const p = prepare(halves, DEFAULT_CONFIG);
+    expect(p.flex!.set.panels.length).toBe(2);
+    expect(p.flex!.modes).toHaveLength(0);
+  });
+
+  it('drawn, a stiff flap meets the bent crease of the wing it hangs on', () => {
+    for (const d of [makeDart(), makeGlider()]) {
+      const p = prepare({ ...d, flexible: true }, DEFAULT_CONFIG);
+      const set = p.flex!.set;
+      const sim = createSimulator(p, DEFAULT_CONFIG, { speed: 15, elevationDeg: 5, headingDeg: 0, heightM: 1.6 }) as MultiBodySim;
+      for (let i = 0; i < 120; i++) sim.step();
+      const poses = sim.panelPoses();
+      const bends = sim.panelBending();
+      const out = new Float64Array(4);
+      const place = (i: number, pm: V.Vec3) => {
+        const b = bends[i];
+        let q = b ? V.addScaled(pm, b.normal, b.at(pm).w) : pm;
+        if (b?.seamInto) {
+          b.seamInto(pm[0], pm[1], pm[2], out);
+          q = V.add(q, [out[0], out[1], out[2]]);
+        }
+        return V.add(Q.rotate(poses[i].q, q), poses[i].t);
+      };
+      let checked = 0;
+      for (const h of set.hinges) {
+        if (!p.flex!.modes.some((m) => m.panel === h.parent)) continue;
+        // along the crease where the flap's paper is
+        const ids = new Set(set.panels[h.child].facets);
+        const ss = p.model.facets
+          .filter((f) => ids.has(f.id))
+          .flatMap((f) => facetVertices(f))
+          .filter((v) => V.length(V.rejectFrom(V.sub(v, h.point), h.axis)) < 1e-3)
+          .map((v) => V.dot(V.sub(v, h.point), h.axis));
+        for (const t of [0, 0.3, 0.5, 0.8, 1]) {
+          const pm = V.addScaled(h.point, h.axis, Math.min(...ss) + t * (Math.max(...ss) - Math.min(...ss)));
+          expect(V.dist(place(h.parent, pm), place(h.child, pm))).toBeLessThan(2e-4);
+          checked++;
+        }
+      }
+      expect(checked).toBeGreaterThan(0);
+    }
   });
 
   it('stiffens beyond the linear range', () => {

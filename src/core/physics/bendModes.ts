@@ -88,6 +88,8 @@ export interface PanelModes {
 const MIN_AREA = 0.0025; // 25 cm²: smaller pieces (elevators, tabs) are stiff enough
 const FLAT_COS = Math.cos((12 * Math.PI) / 180);
 const POISSON = 0.3;
+/** Panels within this angle of closing onto each other lie face to face (as in panels.ts). */
+const FACE_TO_FACE_RAD = (25 * Math.PI) / 180;
 /** Spacing of the integration points (m): the shapes are low-order polynomials, so this is plenty. */
 const SAMPLE_SPACING = 0.012;
 /** Shapes stiffer than this (natural frequency, Hz) count as rigid. */
@@ -207,8 +209,24 @@ export function buildPanelModes(
   const byId = new Map(model.facets.map((f) => [f.id, f]));
   const out: PanelModes[] = [];
   let first = 0;
+  /*
+   * Panels that cannot bend on their own:
+   *  - the root, when paper hangs on it: it carries the whole plane and its bending would be
+   *    shared with everything attached (only a lone sheet bends freely);
+   *  - panels lying face to face with another one (the two halves of a keel): the layers press
+   *    on each other and bend together, not through each other.
+   */
+  const faceToFace = new Set<number>();
+  for (const h of set.hinges) {
+    if (Math.abs(h.closeAt) < FACE_TO_FACE_RAD) {
+      faceToFace.add(h.parent);
+      faceToFace.add(h.child);
+    }
+  }
   set.panels.forEach((panel, pi) => {
     const facets = panel.facets.map((id) => byId.get(id)!).filter(Boolean);
+    if (panel.parent < 0 && set.panels.some((q) => q.parent === pi)) return;
+    if (faceToFace.has(pi)) return;
     if (!isBendingPanel(facets, controlPanels.has(pi))) return;
     // plane frame
     let n: Vec3 = [0, 0, 0];

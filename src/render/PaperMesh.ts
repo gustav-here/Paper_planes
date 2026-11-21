@@ -240,13 +240,21 @@ export class PaperView {
         const nu = it.uniq.length / 3;
         const W = new Float32Array(nu);
         const G = new Float32Array(nu * 3);
+        const S = new Float32Array(nu * 3);
         const out = new Float64Array(4);
         for (let k = 0; k < nu; k++) {
-          b.evalInto(it.uniq[3 * k], it.uniq[3 * k + 1], it.uniq[3 * k + 2], out);
+          const [x, y, z] = [it.uniq[3 * k], it.uniq[3 * k + 1], it.uniq[3 * k + 2]];
+          b.evalInto(x, y, z, out);
           W[k] = out[0];
           G[3 * k] = out[1];
           G[3 * k + 1] = out[2];
           G[3 * k + 2] = out[3];
+          if (b.seamInto) {
+            b.seamInto(x, y, z, out);
+            S[3 * k] = out[0];
+            S[3 * k + 1] = out[1];
+            S[3 * k + 2] = out[2];
+          }
         }
         for (let i = 0; i < arr.length; i += 3) {
           const k = it.map[i / 3];
@@ -254,9 +262,9 @@ export class PaperView {
           const gx = G[3 * k];
           const gy = G[3 * k + 1];
           const gz = G[3 * k + 2];
-          arr[i] = it.base[i] + bn[0] * w;
-          arr[i + 1] = it.base[i + 1] + bn[1] * w;
-          arr[i + 2] = it.base[i + 2] + bn[2] * w;
+          arr[i] = it.base[i] + bn[0] * w + S[3 * k];
+          arr[i + 1] = it.base[i + 1] + bn[1] * w + S[3 * k + 1];
+          arr[i + 2] = it.base[i + 2] + bn[2] * w + S[3 * k + 2];
           if (nor && it.baseNormal) {
             // surface z = w(x, y) over the panel plane: normal ∝ n − (n·n_b)∇w
             const n0x = it.baseNormal[i];
