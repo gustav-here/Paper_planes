@@ -8,7 +8,7 @@ import { makeConfig, DEFAULT_CONFIG } from '../../../src/core/physics/config';
 import { FlightSim } from '../../../src/core/physics/simulation';
 import { centerOfLift, stability, tunnelPoint } from '../../../src/core/physics/windTunnel';
 import { computeAddedMass } from '../../../src/core/physics/addedMass';
-import { attachedWeight } from '../../../src/core/physics/aeroModel';
+import { attachedWeight, createAeroCache, evaluateAero } from '../../../src/core/physics/aeroModel';
 import { replayDesign } from '../../../src/core/paper/replay';
 import { findClipPlacement } from '../../../src/core/paper/clips';
 
@@ -177,5 +177,60 @@ describe('skin friction', () => {
     const nu = DEFAULT_CONFIG.aero.airViscosity / DEFAULT_CONFIG.rho;
     for (const [af, c] of [[along, 0.297], [across, 0.21]] as const)
       expect(cd(af)).toBeCloseTo(DEFAULT_CONFIG.aero.CDedge + (2 * 1.328) / Math.sqrt((5 * c) / nu), 3);
+  });
+});
+
+describe('swept wings', () => {
+  it('in sideslip the wing turned into the wind lifts more (it is swept less against the flow)', () => {
+    const af = airframeFromDesign(makeDart(), DEFAULT_CONFIG); // flat, strongly swept wings
+    const b = (8 * Math.PI) / 180;
+    const a = (6 * Math.PI) / 180;
+    // moving right through the air: the wind comes from the right
+    const v = V.add(V.add(V.scale(af.nose, 5 * Math.cos(a) * Math.cos(b)), V.scale(af.up, -5 * Math.sin(a))), V.scale(af.right, 5 * Math.cos(a) * Math.sin(b)));
+    const forces = new Float64Array(af.mesh.elements.length * 3);
+    evaluateAero(af, v, [0, 0, 0], DEFAULT_CONFIG.aero, DEFAULT_CONFIG.rho, createAeroCache(af), { elementForces: forces });
+    let windward = 0;
+    let leeward = 0;
+    af.mesh.elements.forEach((e, i) => {
+      const side = V.dot(e.center, af.right);
+      if (Math.abs(side) < 0.03) return; // the wings, not the keel
+      const up = V.dot([forces[3 * i], forces[3 * i + 1], forces[3 * i + 2]], af.up);
+      if (side > 0) windward += up;
+      else leeward += up;
+    });
+    expect(windward).toBeGreaterThan(leeward * 1.05);
+  });
+});
+
+describe('wings on a keel', () => {
+  it('act as if they had some dihedral, more the deeper the keel is against the span', () => {
+    const af = airframeFromDesign(makeDart(), DEFAULT_CONFIG); // 25 mm keel, flat wings
+    const wings = af.mesh.surfaces.filter((s) => s.keel);
+    expect(wings.length).toBeGreaterThan(0);
+    const { perDepth, maxDeg } = DEFAULT_CONFIG.aero.keelDihedral;
+    const expected = Math.min(maxDeg, (perDepth * 0.025) / (af.refSpan / 2));
+    for (const w of wings) expect((w.keel!.dihedral * 180) / Math.PI).toBeCloseTo(expected, 0);
+    // a flat sheet has no keel
+    expect(airframeFromDesign(flatSheet, DEFAULT_CONFIG).mesh.surfaces.some((s) => s.keel)).toBe(false);
+  });
+
+  it('so in sideslip the plane rolls away from the wind more than without the keel effect', () => {
+    const rollPerSideslip = (perDepth: number) => {
+      const cfg = { ...DEFAULT_CONFIG, aero: { ...DEFAULT_CONFIG.aero, keelDihedral: { perDepth, maxDeg: 10 } } };
+      const af = airframeFromDesign(makeDart(), cfg);
+      const roll = (b: number) => V.dot(tunnelPoint(af, cfg, 5, 6, b).torque, af.nose);
+      return roll(4) - roll(-4);
+    };
+    expect(rollPerSideslip(25)).toBeLessThan(rollPerSideslip(0) * 1.5);
+    expect(rollPerSideslip(0)).toBeLessThan(0);
+  });
+
+  it("the wing on top spreads the keel's side force along it: the dart no longer turns away from the wind", () => {
+    const af = airframeFromDesign(makeDart(), DEFAULT_CONFIG);
+    expect(af.mesh.surfaces.some((s) => s.underWing)).toBe(true);
+    const k = 0.5 * DEFAULT_CONFIG.rho * 25 * af.refArea * af.refSpan;
+    const yaw = (b: number) => -V.dot(tunnelPoint(af, DEFAULT_CONFIG, 5, 6, b).torque, af.up) / k;
+    // nose-right moment grows with sideslip to the right: it turns into the wind (or is neutral)
+    expect((yaw(4) - yaw(-4)) / ((8 * Math.PI) / 180)).toBeGreaterThan(-0.005);
   });
 });

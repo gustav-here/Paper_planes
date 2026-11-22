@@ -57,12 +57,21 @@ interface SurfaceCache {
    * flow: the mean of 1/√x over the element, for laminar skin friction.
    */
   friction: Float64Array;
+  /**
+   * Per element, tan² of the sweep of its strip's mid-chord line against the flow (from the
+   * leading and trailing edges the strip runs between). A swept wing lifts less per α; in
+   * sideslip the wing turned into the wind is swept less and lifts more.
+   */
+  sweepTan2: Float64Array;
   aspect: number;
 }
 
 export interface AeroCache {
   surfaces: SurfaceCache[];
 }
+
+/** Sweep is counted up to 80° (an edge almost along the flow is a side edge, not a swept one). */
+const MAX_SWEEP_TAN = Math.tan((80 * Math.PI) / 180);
 
 /** Friction factor for an element before the flow direction is known: as for a 10 cm plate. */
 const DEFAULT_FRICTION = 1 / Math.sqrt(0.1);
@@ -74,6 +83,7 @@ export function createAeroCache(af: Airframe): AeroCache {
       gAtt: new Float64Array(s.elementCount).fill(1),
       xiMid: new Float64Array(s.elementCount).fill(0.5),
       friction: new Float64Array(s.elementCount).fill(DEFAULT_FRICTION),
+      sweepTan2: new Float64Array(s.elementCount),
       K: 0,
       aspect: 1,
     })),
@@ -149,6 +159,8 @@ function updateSurfaceCache(af: Airframe, sid: number, w2: Vec2, w3: Vec3, c: Su
     // chord through the element centre along the flow: nearest outline crossings up/downstream
     let tLo = -Infinity;
     let tHi = Infinity;
+    let eLo: [Vec2, Vec2] | null = null;
+    let eHi: [Vec2, Vec2] | null = null;
     for (const [a, b] of s.edges) {
       const ex = b[0] - a[0];
       const ey = b[1] - a[1];
@@ -159,8 +171,28 @@ function updateSurfaceCache(af: Airframe, sid: number, w2: Vec2, w3: Vec3, c: Su
       const t = (ax * ey - ay * ex) / den;
       const u = (ax * w2[1] - ay * w2[0]) / den;
       if (u < 0 || u > 1) continue;
-      if (t <= 0 && t > tLo) tLo = t;
-      if (t >= 0 && t < tHi) tHi = t;
+      if (t <= 0 && t > tLo) {
+        tLo = t;
+        eLo = [a, b];
+      }
+      if (t >= 0 && t < tHi) {
+        tHi = t;
+        eHi = [a, b];
+      }
+    }
+    // sweep of the mid-chord line: the mean of the two edges' slopes back along the flow per
+    // unit across it (signs kept, so a straight trailing edge halves a swept leading edge)
+    c.sweepTan2[k] = 0;
+    if (eLo && eHi) {
+      const slope = ([a, b]: [Vec2, Vec2]) => {
+        const ex = b[0] - a[0];
+        const ey = b[1] - a[1];
+        const along = ex * w2[0] + ey * w2[1];
+        const across = -ex * w2[1] + ey * w2[0];
+        return Math.abs(across) < 1e-12 ? 0 : along / across;
+      };
+      const t = Math.max(-MAX_SWEEP_TAN, Math.min(MAX_SWEEP_TAN, (slope(eLo) + slope(eHi)) / 2));
+      c.sweepTan2[k] = t * t;
     }
     let x1 = 0;
     let x2 = 1;
@@ -175,7 +207,8 @@ function updateSurfaceCache(af: Airframe, sid: number, w2: Vec2, w3: Vec3, c: Su
       const b = Math.max(a + 1e-6, smax - le);
       c.friction[k] = (Math.sqrt(b) - Math.sqrt(a)) / (b - a);
     }
-    const g = attachedWeight(x1, x2);
+    // a keel under a wing: its side force is spread along it (see AeroSurface.underWing)
+    const g = s.underWing ? 1 : attachedWeight(x1, x2);
     c.gAtt[k] = g;
     const xm = Math.min(1, Math.max(0, (x1 + x2) / 2));
     c.xiMid[k] = xm;
@@ -275,6 +308,12 @@ export function evaluateAero(
         center = place(e.center);
         u = velAt(center);
       }
+      // a wing on top of a keel: in sideslip the wing turned into the wind gets an upwash
+      if (s.keel) {
+        const side = Math.sign(V.dot(V.sub(e.center, s.keel.point), s.keel.normal));
+        const w = s.keel.dihedral * V.dot(u, s.keel.normal) * side;
+        if (w !== 0) u = V.addScaled(u, V.dot(nSurf, af.up) >= 0 ? nSurf : V.negate(nSurf), -w);
+      }
       if (debug?.pos) debug.pos[idx] = center;
       const speed = V.length(u);
       if (speed < 1e-6) {
@@ -295,7 +334,10 @@ export function evaluateAero(
       const sig = 1 / (1 + Math.exp(-cfg.stallBlendM * (alpha - alphaS)));
       const sa = Math.sin(alpha);
       const ca = Math.cos(alpha);
-      const clAtt = a * sa;
+      // lift slope with the local sweep (DATCOM form of Helmbold: A² → A²(1 + tan²Λ))
+      const tan2 = uniform ? 0 : c.sweepTan2[i];
+      const aSw = tan2 > 0 ? (cfg.a0 * AR) / (2 + Math.sqrt(AR * AR * (1 + tan2) + 4)) : a;
+      const clAtt = aSw * sa;
       const cdAtt = CD0 + (clAtt * clAtt) / (Math.PI * cfg.oswaldE * AR);
       const clSep = cfg.CN90 * sa * ca;
       const cdSep = CD0 + cfg.CN90 * sa * sa;

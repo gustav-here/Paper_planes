@@ -5,6 +5,7 @@ import {
   isRoundOver,
   makeTarget,
   newRound,
+  rankThrows,
   recordScore,
   scoreFlight,
 } from '../../../src/core/game/competition';
@@ -16,14 +17,23 @@ import { FlightSim } from '../../../src/core/physics/simulation';
 import { makeGlider } from '../../../src/core/presets';
 
 describe('competition rules', () => {
-  it('targets are deterministic per seed and 3–10 m out', () => {
-    expect(makeTarget(42)).toEqual(makeTarget(42));
-    for (let s = 0; s < 50; s++) {
-      const t = makeTarget(s);
-      const d = Math.hypot(t.x, t.z);
-      expect(d).toBeGreaterThanOrEqual(2.99);
-      expect(d).toBeLessThanOrEqual(10.01);
-    }
+  it('the precision target is a 10 cm white dot 10 m straight ahead, every round', () => {
+    for (const seed of [0, 1, 42]) expect(makeTarget(seed)).toEqual({ x: 10, z: 0, rings: [0.1] });
+    expect(newRound('precision', 7).target).toEqual({ x: 10, z: 0, rings: [0.1] });
+    expect(newRound('distance', 7).target).toBeNull();
+  });
+
+  it('the results list the three throws best first', () => {
+    let d = newRound('distance', 1);
+    d = recordScore(recordScore(recordScore(d, 4), null), 6.5);
+    expect(rankThrows(d)).toEqual([
+      { throw: 3, score: 6.5 },
+      { throw: 1, score: 4 },
+      { throw: 2, score: null },
+    ]);
+    let p = newRound('precision', 1);
+    p = recordScore(recordScore(recordScore(p, 80), 12), 30);
+    expect(rankThrows(p).map((t) => t.throw)).toEqual([2, 3, 1]);
   });
 
   it('rounds keep the best of three; precision prefers the smallest miss', () => {

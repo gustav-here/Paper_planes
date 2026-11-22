@@ -96,6 +96,11 @@ select option {
   margin-right: 6px;
 }
 
+/* competition mode at the right end of the folding table's bar */
+.topbar .competition {
+  margin-left: auto;
+}
+
 .topbar .brand span {
   color: var(--muted);
   font-weight: 400;

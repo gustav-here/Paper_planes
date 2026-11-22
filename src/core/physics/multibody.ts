@@ -10,7 +10,7 @@ import type { RigidTransform } from '../math/transform';
 import { facetVertices } from '../paper/model';
 import type { PaperModel } from '../paper/model';
 import type { Airframe } from './airframe';
-import { buildAeroMesh } from './aeroMesh';
+import { buildAeroMesh, markKeelJunctions } from './aeroMesh';
 import { createAeroCache, evaluateAero } from './aeroModel';
 import type { AeroCache, AeroDebug, ElementDeform, SurfacePose } from './aeroModel';
 import { computeAddedMass } from './addedMass';
@@ -57,6 +57,7 @@ export interface FlexAirframe {
 export function buildFlexAirframe(model: PaperModel, rigid: Airframe, cfg: PhysicsConfig): FlexAirframe {
   const set = buildPanels(model, rigid, cfg.paper);
   const mesh = buildAeroMesh(model, rigid.com, cfg.aero.elementSizeM, cfg.aero.liftingSystemAngleDeg, set.panelOf);
+  markKeelJunctions(mesh, model, rigid.com, rigid.up, rigid.right, rigid.refSpan / 2, cfg.aero.keelDihedral, set.panelOf);
   const af: Airframe = { ...rigid, mesh };
   // control surfaces of the rigid airframe refer to its own mesh; remap by facet tags
   af.controls = rigid.controls.map((g) => ({ ...g, surfaces: mesh.surfaces.filter((s) => g.facets.includes(firstFacetOf(model, set, s.tag))).map((s) => s.id) }));
@@ -82,6 +83,11 @@ function firstFacetOf(_m: PaperModel, set: PanelSet, panel: number): number {
 const RAD = 180 / Math.PI;
 /** Steps between refreshes of the aerodynamic damping matrix (1/40 s; flights change < 0.5 % against 1/80 s). */
 const D_REFRESH = 6;
+/**
+ * No throw or fall in the game comes near this speed (m/s): 15 m/s from the hand, a few m/s more
+ * falling from the ceiling. Faster means the step failed; the flight ends there.
+ */
+const MAX_PLAUSIBLE_SPEED = 60;
 /** Spacing of the floor-contact points over a bending panel (m). */
 const BEND_CONTACT_SPACING = 0.04;
 const skew = (a: Vec3): Mat3 => [0, -a[2], a[1], a[2], 0, -a[0], -a[1], a[0], 0];
@@ -870,7 +876,7 @@ export class MultiBodySim implements Simulator {
     }
     // a step the integrator could not take (it should not happen): keep the last good state and
     // end the flight there, rather than going on with numbers that mean nothing
-    if (![...this.x0, ...this.u, ...this.qm].every(Number.isFinite)) {
+    if (![...this.x0, ...this.u, ...this.qm].every(Number.isFinite) || Math.hypot(this.u[0], this.u[1], this.u[2]) > MAX_PLAUSIBLE_SPEED) {
       Object.assign(this, { x0: saved.x0, q0: saved.q0, u: saved.u, theta: saved.theta, qm: saved.qm, rest: saved.rest });
       this.phase = 'timeout';
       return;

@@ -3,7 +3,8 @@ import type { MultiPolygon, Polygon, Ring } from 'polygon-clipping';
 import * as V from '../math/vec3';
 import type { Vec2 } from '../math/vec2';
 import type { Vec3 } from '../math/vec3';
-import { canonicalNormal, facetNormal, facetVertices, parallelNormals } from '../paper/model';
+import { canonicalNormal, facetNormal, facetVertices, parallelNormals, toModel } from '../paper/model';
+import { computeEdges } from '../paper/edges';
 import type { Facet, PaperModel } from '../paper/model';
 
 /**
@@ -31,6 +32,19 @@ export interface AeroSurface {
   partners: number[];
   /** Grouping tag of its facets (control flap / panel index), −1 if untagged. */
   tag: number;
+  /**
+   * A wing sitting on top of a keel (see markKeelJunctions): the keel's plane normal and a point
+   * on the junction (body frame), and the equivalent dihedral (rad) the keel gives this wing.
+   */
+  keel?: { normal: Vec3; point: Vec3; dihedral: number };
+  /**
+   * A keel with a wing on top. Slender-body theory: a body's side force arises where the lateral
+   * apparent mass of its cross-section grows along it. A bare keel's grows only at the nose (where
+   * it deepens), so its side force acts far forward and turns the plane away from the wind. The
+   * wing on top is an end plate that widens all the way back, so the keel's apparent mass, and
+   * its side force, grow along its whole length: the attached-flow load is spread evenly over it.
+   */
+  underWing?: boolean;
 }
 
 export interface AeroElement {
@@ -298,4 +312,67 @@ export function buildAeroMesh(
     s.partners = surfaces.filter((o) => Math.abs(V.dot(o.normal, s.normal)) >= cosLim).map((o) => o.id);
   }
   return { surfaces, elements };
+}
+
+/**
+ * Wings on top of a keel. In sideslip the keel blocks the air crossing under the wing roots, and
+ * the wing turned into the wind is lifted more, as if the wings had some dihedral: the "high
+ * wing" effect, worth a few degrees of dihedral on aircraft (DATCOM wing–body term), more the
+ * deeper the body is compared with the span. A paper keel is a thin plate, not a body, so this is
+ * a semi-empirical equivalent dihedral: perDepth × keel depth / semi-span, at most maxDeg.
+ * A wing is a surface within 45° of level, a keel one within 45° of upright, joined by a crease
+ * with the keel hanging below the joint.
+ */
+export function markKeelJunctions(
+  mesh: AeroMesh,
+  model: PaperModel,
+  com: Vec3,
+  up: Vec3,
+  right: Vec3,
+  semiSpan: number,
+  keelCfg: { perDepth: number; maxDeg: number },
+  tags?: Map<number, number>,
+): void {
+  const cos45 = Math.SQRT1_2;
+  const byId = new Map(model.facets.map((f) => [f.id, f]));
+  const surfaceOf = (f: Facet): AeroSurface | undefined => {
+    const n = canonicalNormal(facetNormal(f));
+    const p = V.sub(facetVertices(f)[0], com);
+    const tag = tags?.get(f.id) ?? -1;
+    return mesh.surfaces.find((s) => s.tag === tag && Math.abs(V.dot(s.normal, n)) > 0.999 && Math.abs(V.dot(s.normal, V.sub(p, s.origin))) < 1e-6);
+  };
+  for (const l of computeEdges(model).links) {
+    if (l.kind !== 'crease') continue;
+    for (const [w, k] of [
+      [l.a, l.b],
+      [l.b, l.a],
+    ]) {
+      const fw = byId.get(w)!;
+      const fk = byId.get(k)!;
+      const nw = facetNormal(fw);
+      const nk = facetNormal(fk);
+      if (Math.abs(V.dot(nw, up)) < cos45 || Math.abs(V.dot(nk, right)) < cos45) continue;
+      const wing = surfaceOf(fw);
+      const keel = surfaceOf(fk);
+      if (!wing || !keel) continue;
+      const point = V.sub(toModel(fw, l.seg[0]), com);
+      // the keel hangs below the joint: its depth under it
+      const depth = Math.max(0, ...keel.outline3.map((v) => V.dot(V.sub(point, v), up)));
+      if (depth < 1e-3) continue;
+      const deg = Math.min(keelCfg.maxDeg, (keelCfg.perDepth * depth) / Math.max(semiSpan, 1e-3));
+      const dihedral = (deg * Math.PI) / 180;
+      if (!wing.keel || dihedral > wing.keel.dihedral) wing.keel = { normal: canonicalNormal(nk), point, dihedral };
+      keel.underWing = true;
+    }
+  }
+  // the effect is on the wing's lift as a whole: the parts of a folded wing (a W, turned-up tips)
+  // that share its lifting system feel it too
+  for (const s of mesh.surfaces) {
+    if (!s.keel) continue;
+    for (const pid of s.partners) {
+      const o = mesh.surfaces[pid];
+      if (o.keel || Math.abs(V.dot(o.normal, up)) < cos45) continue;
+      o.keel = { ...s.keel };
+    }
+  }
 }

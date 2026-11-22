@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { flatSheet, makeDart, makeGlider } from '../../../src/core/presets';
+import { flatSheet, makeDart, makeGlider, trimmedDart } from '../../../src/core/presets';
 import type { DesignFile } from '../../../src/core/paper/ops';
 import { DEFAULT_CONFIG } from '../../../src/core/physics/config';
 import type { PhysicsConfig } from '../../../src/core/physics/config';
@@ -143,7 +143,7 @@ describe('bending shapes', () => {
   });
 
   it('drawn, a stiff flap meets the bent crease of the wing it hangs on', () => {
-    for (const d of [makeDart(), makeGlider()]) {
+    for (const d of [trimmedDart(), makeGlider()]) {
       const p = prepare({ ...d, flexible: true }, DEFAULT_CONFIG);
       const set = p.flex!.set;
       const sim = createSimulator(p, DEFAULT_CONFIG, { speed: 15, elevationDeg: 5, headingDeg: 0, heightM: 1.6 }) as MultiBodySim;

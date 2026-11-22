@@ -25,6 +25,14 @@ export interface AeroConfig {
   CDedge: number;
   /** Dynamic viscosity of air (Pa·s), 20 °C. */
   airViscosity: number;
+  /**
+   * Wings on top of a keel act as if they had some dihedral (see markKeelJunctions): degrees per
+   * unit (keel depth / semi-span), at most maxDeg. The "high wing" effect is worth a few degrees
+   * on aircraft and grows with how deep the body is compared with the span; a paper keel is a
+   * thin plate, so this is semi-empirical (chosen with the player: a dart with a little anhedral
+   * should rarely roll over, a lot of anhedral can).
+   */
+  keelDihedral: { perDepth: number; maxDeg: number };
   /** Oswald span efficiency for induced drag. */
   oswaldE: number;
   /** Centre-of-pressure shift for separated flow: x_cp = 0.5 − Δ·cos α
@@ -211,6 +219,7 @@ export const DEFAULT_CONFIG: PhysicsConfig = {
     CN90: 1.2,
     CDedge: 0.005,
     airViscosity: 1.8e-5,
+    keelDihedral: { perDepth: 25, maxDeg: 10 },
     oswaldE: 0.8,
     sepCopShift: 0.16,
     elementSizeM: 0.01,

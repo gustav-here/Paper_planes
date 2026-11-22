@@ -138,6 +138,43 @@ export function applyFold(model: PaperModel, op: FoldOp, opts: FoldOptions = {})
       }
     };
     grow(seeds.map((f) => f.id));
+    // A cut that ends on the fold line splits the paper on the moving side into pieces: only the
+    // piece the player took hold of folds (a tab cut in the keel, even if the line was drawn a
+    // little past the cut).
+    if (op.pick && op.scope !== 'flap') {
+      const pick = op.pick;
+      const under = positive.filter((f) => facetContains(f, pick, -1e-7, 1e-4));
+      if (under.length) {
+        const sign = op.scope === 'bottom' ? -1 : 1;
+        const grabbed = under.reduce((b, f) => (sign * heightAlong(f, N) > sign * heightAlong(b, N) ? f : b));
+        const piece = (start: number) => {
+          const out = new Set([start]);
+          const stack = [start];
+          while (stack.length) {
+            const id = stack.pop()!;
+            for (const { other, hinge } of adj.get(id) ?? []) {
+              if (hinge || out.has(other)) continue;
+              out.add(other);
+              stack.push(other);
+            }
+          }
+          return out;
+        };
+        const mine = piece(grabbed.id);
+        const across = new Set<number>();
+        for (const l of graph.links) {
+          if (l.kind !== 'cut') continue;
+          const f = byId.get(l.a)!;
+          if (!l.seg.some((s) => V.distToLine(toModel(f, s), p0, d) < 1e-6)) continue;
+          if (mine.has(l.a) && !mine.has(l.b)) across.add(l.b);
+          if (mine.has(l.b) && !mine.has(l.a)) across.add(l.a);
+        }
+        if (across.size) {
+          for (const id of across) if (moving.has(id)) for (const x of piece(id)) moving.delete(x);
+          for (const x of mine) moving.add(x);
+        }
+      }
+    }
     // Loose flaps sandwiched between moving layers come along (you cannot fold around them).
     for (;;) {
       const mov = positive.filter((f) => moving.has(f.id));

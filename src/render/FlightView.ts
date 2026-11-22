@@ -84,6 +84,8 @@ export class FlightView {
   private papers: PaperView[] = [];
   private gridOn = false;
   private targetGroup = new THREE.Group();
+  /** Flags where the earlier throws of a competition round landed. */
+  private roundFlags = new THREE.Group();
   private debug = new THREE.Group();
   private lift = new SegmentSet('#3ddc84', 4000);
   private drag = new SegmentSet('#ff5a5f', 4000);
@@ -101,7 +103,7 @@ export class FlightView {
     // the paper is drawn a hair above where the simulation has it (paper thickness and the
     // contact's tolerance), so paper lying on the floor is never hidden in it
     this.plane.position.y = PAPER_LIFT;
-    scene.add(this.plane, this.air.line, this.ground.line, this.markers, this.debug, this.targetGroup);
+    scene.add(this.plane, this.air.line, this.ground.line, this.markers, this.debug, this.targetGroup, this.roundFlags);
     this.vel = new THREE.ArrowHelper(new THREE.Vector3(1, 0, 0), new THREE.Vector3(), 0.5, 0xffd34d, 0.06, 0.035);
     this.vel.traverse((o) => {
       const m = o as THREE.Mesh;
@@ -167,25 +169,23 @@ export class FlightView {
   }
 
   /** Precision target: rings on the floor and a flag. */
+  /** Precision target: a white dot on the floor (with a dark rim to show on a light floor) and a flag. */
   setTarget(t: Target | null) {
     for (const c of [...this.targetGroup.children]) {
       this.targetGroup.remove(c);
       c.traverse((o) => (o as THREE.Mesh).geometry?.dispose());
     }
     if (!t) return;
-    const colors = ['#e0645a', '#ffffff', '#e0645a'];
-    t.rings.forEach((r, i) => {
-      const inner = i === 0 ? 0 : t.rings[i - 1];
-      const m = new THREE.Mesh(
-        new THREE.RingGeometry(inner, r, 64),
-        new THREE.MeshBasicMaterial({ color: colors[i % colors.length], transparent: true, opacity: 0.85, side: THREE.DoubleSide }),
-      );
+    const r = t.rings[0];
+    const flat = (geo: THREE.BufferGeometry, color: string, y: number) => {
+      const m = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({ color, side: THREE.DoubleSide }));
       m.rotation.x = -Math.PI / 2;
-      m.position.set(t.x, 0.004 + i * 0.0005, t.z);
-      this.targetGroup.add(m);
-    });
-    const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.01, 0.01, 1.2, 8), new THREE.MeshBasicMaterial({ color: '#ffffff' }));
-    pole.position.set(t.x, 0.6, t.z);
+      m.position.set(t.x, y, t.z);
+      return m;
+    };
+    this.targetGroup.add(flat(new THREE.CircleGeometry(r, 48), '#ffffff', 0.0005), flat(new THREE.RingGeometry(r, r * 1.12, 48), '#20242c', 0.0004));
+    const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.004, 0.004, 0.6, 8), new THREE.MeshBasicMaterial({ color: '#ffffff' }));
+    pole.position.set(t.x, 0.3, t.z);
     const label = createTextSprite(`Mål ${Math.hypot(t.x, t.z).toFixed(1).replace('.', ',')} m`, {
       height: 0.05,
       color: '#ffffff',
@@ -193,8 +193,32 @@ export class FlightView {
       screenSpace: true,
     });
     label.center.set(0.5, 0);
-    label.position.set(t.x, 1.25, t.z);
+    label.position.set(t.x, 0.62, t.z);
     this.targetGroup.add(pole, label);
+  }
+
+  /** A flag where an earlier throw of the round landed (stays until the round is over). */
+  addRoundFlag(p: Vec3, text: string) {
+    const color = '#ffd34d';
+    const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.003, 0.003, 0.35, 8), new THREE.MeshBasicMaterial({ color: '#f2f2f2' }));
+    pole.position.set(p[0], 0.175, p[2]);
+    const cloth = new THREE.Mesh(new THREE.PlaneGeometry(0.09, 0.055), new THREE.MeshBasicMaterial({ color, side: THREE.DoubleSide }));
+    cloth.position.set(p[0] + 0.045, 0.32, p[2]);
+    const foot = new THREE.Mesh(new THREE.RingGeometry(0.02, 0.03, 24), new THREE.MeshBasicMaterial({ color, side: THREE.DoubleSide }));
+    foot.rotation.x = -Math.PI / 2;
+    foot.position.set(p[0], 0.002, p[2]);
+    const label = createTextSprite(text, { height: 0.045, color: '#20242c', background: 'rgba(255,211,77,0.92)', screenSpace: true });
+    label.center.set(0.5, 0);
+    label.position.set(p[0], 0.38, p[2]);
+    this.roundFlags.add(pole, cloth, foot, label);
+  }
+
+  clearRoundFlags() {
+    for (const c of [...this.roundFlags.children]) {
+      this.roundFlags.remove(c);
+      c.traverse((o) => (o as THREE.Mesh).geometry?.dispose());
+      if ((c as THREE.Sprite).isSprite) disposeSprite(c as THREE.Sprite);
+    }
   }
 
   setDebugVisible(on: boolean) {

@@ -331,7 +331,9 @@ export class FoldTool implements Tool {
       kind,
       angleDeg,
       scope: o.foldScope,
-      pick: o.foldScope === 'flap' ? s.pick : undefined,
+      // where the player took hold: the tab for 'flap', and the piece to fold when a cut ending on
+      // the line splits the paper there (any scope)
+      pick: s.pick,
       mirror: o.foldMirror,
     };
   }

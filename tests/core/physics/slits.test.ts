@@ -153,6 +153,24 @@ describe('slit tabs in flexible paper', () => {
       });
     }
 
+    it('one cut up to the wing makes the tail of the keel a tab: only it folds, however far the line is drawn', () => {
+      const dart = makeDart(); // flat wings
+      const xc = -0.08;
+      const cut: CutOp = { type: 'cut', id: 'k', path: [[xc, 0, -0.01], [xc, 0, KEEL]], planeNormal: [0, 1, 0], depth: 'all' };
+      const tabArea = 2 * (a + xc) * KEEL;
+      for (const [p0x, p1x] of [[xc, -0.2], [0.2, -0.2]])
+        for (const scope of ['top', 'all', 'bottom'] as const) {
+          const fold: FoldOp = {
+            type: 'fold', id: 'tab', line: { p0: [p0x, 0, KEEL], p1: [p1x, 0, KEEL] }, planeNormal: [0, 1, 0],
+            movingSide: [0, 0, -1], kind: 'valley', angleDeg: 90, scope, pick: [-0.11, 0, 0.012],
+          };
+          expect(movedArea(withOps(dart, [cut, fold], false), 'tab'), `${scope} ${p0x}`).toBeCloseTo(tabArea, 8);
+          // and it can be pushed up between the flat wings
+          const m = replayDesign(withOps(dart, [cut], false)).models.at(-1)!;
+          expect(canPushThrough(m, { ...fold, angleDeg: 180 })).toBe(true);
+        }
+    });
+
     it('a tab with nothing in its way is just folded, not pushed through', () => {
       const m = replayDesign(withOps(plainDart(), wingSlits(), false)).models.at(-1)!;
       const tab: FoldOp = {

@@ -145,14 +145,17 @@ export const GLIDER_TRIM: TrimOptions = { elevatorDeg: 0, elevatorChord: 0.02 };
 export const ELEVATOR_TRIM: TrimOptions = { elevatorDeg: 10, elevatorChord: 0.02 };
 /** Trim without cuts: the wings' outer trailing corners folded up (chosen so both glide steadily). */
 export const DART_REFLEX: ReflexOptions = { size: 0.04, angleDeg: 30 };
+/** A dart that glides steadily: 10° dihedral and turned-up corners (the validation tests use it). */
+export const trimmedDart = () => makeDart(0.025, 80, DART_TRIM, DART_REFLEX);
 export const GLIDER_REFLEX: ReflexOptions = { size: 0.03, angleDeg: 30 };
 export const NO_REFLEX: ReflexOptions = { size: 0, angleDeg: 0 };
 
 /**
- * Classic dart: corners to centre twice, fold in half (flaps outside), wings with 10° dihedral, the
- * outer trailing corners turned up a little to trim it.
+ * Classic dart: corners to centre twice, fold in half (flaps outside), flat wings and nothing else
+ * (the player trims it). Untrimmed it flies fast and nose-down. The arguments make variants: wing
+ * angle (90° = flat, less = dihedral), elevators and turned-up corners.
  */
-export function makeDart(keel = 0.025, wingAngleDeg = 80, trim: TrimOptions = DART_TRIM, reflex: ReflexOptions = DART_REFLEX): DesignFile {
+export function makeDart(keel = 0.025, wingAngleDeg = 90, trim: TrimOptions = DART_TRIM, reflex: ReflexOptions = NO_REFLEX): DesignFile {
   const t = Math.tan(22.5 * DEG);
   return {
     format: 'paperplane-design',

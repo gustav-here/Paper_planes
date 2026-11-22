@@ -125,6 +125,29 @@ describe('damage', () => {
     expect(rigid.damage().some((e) => e.kind === 'crumple')).toBe(true);
   });
 
+  it('a crumpled plane thrown again stays in one piece: it never gains energy', () => {
+    for (const d0 of [makeDart(), makeGlider()]) {
+      let d: DesignFile = { ...d0, flexible: true };
+      for (const [speed, el] of [[13, -45], [12, -30]] as const) {
+        const p = prepare(d, DEFAULT_CONFIG);
+        const c = createSimulator(p, DEFAULT_CONFIG, { speed, elevationDeg: el, headingDeg: 0, heightM: 1.2 });
+        while (!c.done) c.step();
+        d = { ...d, ops: [...d.ops, ...damageToOps(p.folded, damageOnFolded(p.model, p.folded, c.damage()), d.orientation.up, DEFAULT_CONFIG.paper).ops] };
+      }
+      expect(d.ops.some((o) => o.id.startsWith('dmg-crumple'))).toBe(true);
+      const p = prepare(d, DEFAULT_CONFIG);
+      for (let seed = 1; seed <= 4; seed++) {
+        const s = createSimulator(p, DEFAULT_CONFIG, { speed: 6, elevationDeg: 5, headingDeg: 0, heightM: 1.6, scatterSeed: seed * 7919 });
+        const E0 = 0.5 * 36 + 9.81 * 1.6;
+        while (!s.done) {
+          s.step();
+          expect(0.5 * s.speed() ** 2 + 9.81 * s.position()[1]).toBeLessThan(E0 + 1);
+        }
+        expect(s.phase).toBe('rest');
+      }
+    }
+  });
+
   it('a damaged plane flies differently', () => {
     const d = classicDart();
     const { sim, model } = flex(d, DEFAULT_CONFIG, crash);

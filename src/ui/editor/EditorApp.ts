@@ -654,7 +654,7 @@ export class EditorApp implements ToolContext {
   }
 
   /** Hand the committed model over to the throw mode. */
-  private fly() {
+  fly() {
     this.cancelTool();
     // the plane is thrown with its centre fold down (unless the player set nose/up by hand)
     this.autoOrient(true);

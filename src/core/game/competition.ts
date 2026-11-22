@@ -23,9 +23,15 @@ export interface ModeInfo {
 
 export const MODES: Record<GameMode, ModeInfo> = {
   free: { name: 'Fritt kast', attempts: 0, unit: 'm', better: 'higher', description: 'Kasta hur du vill. Distansen loggas.' },
-  time: { name: 'Längst flygtid', attempts: 3, unit: 's', better: 'higher', description: 'Tre kast. Längsta tiden till första nedslaget räknas.' },
-  distance: { name: 'Längst distans', attempts: 3, unit: 'm', better: 'higher', description: 'Tre kast. Längsta distansen till första nedslaget räknas.' },
-  precision: { name: 'Precision', attempts: 3, unit: 'cm', better: 'lower', description: 'Tre kast mot målet på golvet. Närmaste nedslaget räknas.' },
+  time: { name: 'Tid', attempts: 3, unit: 's', better: 'higher', description: 'Tre kast. Tiden till första nedslaget räknas.' },
+  distance: { name: 'Längd', attempts: 3, unit: 'm', better: 'higher', description: 'Tre kast. Distansen till första nedslaget räknas.' },
+  precision: {
+    name: 'Precision',
+    attempts: 3,
+    unit: 'cm',
+    better: 'lower',
+    description: 'Tre kast mot den vita pricken 10 m rakt fram. Avståndet från första nedslaget räknas.',
+  },
 };
 
 export interface Target {
@@ -56,12 +62,12 @@ export function rng(seed: number): () => number {
   };
 }
 
-/** A precision target 3–10 m out, within ±15° of straight ahead (+X). */
-export function makeTarget(seed: number): Target {
-  const r = rng(seed);
-  const dist = 3 + 7 * r();
-  const ang = ((r() * 2 - 1) * 15 * Math.PI) / 180;
-  return { x: Math.round(dist * Math.cos(ang) * 100) / 100, z: Math.round(dist * Math.sin(ang) * 100) / 100, rings: [0.25, 0.5, 1] };
+/** The precision target: a white dot, 10 cm in radius, on the floor 10 m straight ahead (+X). */
+export const PRECISION_TARGET: Target = { x: 10, z: 0, rings: [0.1] };
+
+/** The precision target (the same every round; the seed is kept for older rounds and replays). */
+export function makeTarget(_seed: number): Target {
+  return { ...PRECISION_TARGET, rings: [...PRECISION_TARGET.rings] };
 }
 
 export function newRound(mode: GameMode, seed: number): Round {
@@ -92,6 +98,16 @@ export const isRoundOver = (r: Round): boolean => MODES[r.mode].attempts > 0 && 
 
 export function isBetter(mode: GameMode, a: number, b: number): boolean {
   return MODES[mode].better === 'higher' ? a > b : a < b;
+}
+
+/** The throws of a round, best first (throws without a landing last, in throwing order). */
+export function rankThrows(r: Round): { throw: number; score: number | null }[] {
+  return r.scores
+    .map((score, i) => ({ throw: i + 1, score }))
+    .sort((a, b) => {
+      if (a.score === null || b.score === null) return a.score === null ? (b.score === null ? a.throw - b.throw : 1) : -1;
+      return isBetter(r.mode, a.score, b.score) ? -1 : isBetter(r.mode, b.score, a.score) ? 1 : a.throw - b.throw;
+    });
 }
 
 export function bestScore(r: Round): number | null {

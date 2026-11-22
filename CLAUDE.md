@@ -92,8 +92,18 @@ Webbläsarspel: vik ett pappersflygplan av ett A4 och kasta det. Flygbeteendet s
 - Gem lutar bakåt (`Clip.lean`) så lite som behövs för att inte gå genom papper som lämnar dess plan.
   Tejp är alltid 2 cm. Den läggs platt över skarven mellan vinghalvorna (`bridge`) eller viks över
   en kant, och det som sticker ut utanför pappret klipps bort. Se PLAN.md §27.
-- Förinställningarna har inga snitt. Dart och Glidplan trimmas av uppvikta bakre vinghörn
-  (`reflexOps`). Tester av klaffar använder `ELEVATOR_TRIM` och `NO_REFLEX` (de gamla modellerna).
+- Förinställningarna har inga snitt. Darten har platta vingar och inga andra veck (otrimmad).
+  Glidplanet trimmas av uppvikta bakre vinghörn (`reflexOps`). Valideringen använder `trimmedDart`.
+  Tester av klaffar använder `ELEVATOR_TRIM` och `NO_REFLEX` (de gamla modellerna).
+- Lyftlutningen per element tar med strimlans pilvinkel mot flödet (DATCOM-form av Helmbold).
+- Vingar ovanpå en köl får en ekvivalent dihedral i sidglidning (`aero.keelDihedral`,
+  `markKeelJunctions`). Den är halvempirisk och vald med användaren.
+- En köl under en vinge får sin sidokraft jämnt fördelad längs sig (slank kroppsteori: vingen är en
+  ändplatta som breddas bakåt), inte samlad vid nosen (`AeroSurface.underWing`).
+- Papper på var sin sida om ett skrynkelveck (`dmg-crumple`) är en stel bit, inte ett gångjärn.
+- Ett snitt som slutar på vecklinjen begränsar vikningen till biten man tog tag i (`FoldOp.pick`).
+- Tävlingsläget väljs i vikningens topprad (`comp-mode`). En omgång är tre kast och fortsätter över
+  besök i vikningen ("Ändra vikning", sedan "Fortsätt").
 - Varje kast i spelet har ett slumpfrö (`LaunchParams.scatterSeed`) för små avvikelser i kast och
   veck (`PhysicsConfig.scatter`). Utan frö är kastet exakt, och testerna och vindtunneln är exakta.
 - Remsor med samma vikhistorik hör alltid till samma panel. Ett veck kan tryckas igenom en skarv

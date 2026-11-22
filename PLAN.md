@@ -1034,3 +1034,66 @@ Resultat med standardkonfigurationen (släpp från 10 m, olika kastfarter):
   - Uppåt får fenan en egen framkant och ger ungefär 4 % mer nollyftmotstånd för hela darten.
   - Totalt blev friktionen ungefär 12 % lägre än med det gamla fasta värdet (CD0 = 0,02), eftersom
     papperet längre bak på långa ytor har tunnare friktion. Dartens glidtal gick från 3,2 till 3,6.
+
+## 30. Platt dart, pilvinkel, skadade plan, springor, kölflik och tävlingsläge
+- **Darten utan extra veck:** standardmodellen har platta vingar och inga uppvikta hörn. Otrimmad
+  trimmar den till ungefär 0° anfallsvinkel och flyger snabbt nosen nedåt, som en riktig otrimmad
+  dart. Valideringen jämför med en trimmad dart (`trimmedDart`: 10° dihedral och uppvikta hörn).
+- **Pilvinkel i lyftet:** lyftlutningen räknas per element med strimlans pilvinkel mot flödet, i
+  DATCOM-formen av Helmbold: a = a₀A/(2 + √(A²(1 + tan²Λ) + 4)). Λ är mitt-kordans pilvinkel,
+  medelvärdet av fram- och bakkantens lutning.
+  - I sidglidning blir den vindvända vingen mindre pilad och lyfter mer, så planet rätar upp sig i
+    roll. Clβ för platta vingar gick från −0,028 till −0,040, och anhedral 5° blev ungefär neutral.
+  - Effekten är svag för korta, breda vingar: anhedral 10° tippar fortfarande runt nästan alltid
+    i provkasten, eftersom modellen ger den en rollderivata åt fel håll (Clβ +0,017).
+- **Skadade plan som exploderade:** skrynkelvecken från en krasch blev små egna paneler (2–12 mg),
+  och en av dem kunde bli rotpanel med flera gram papper hängande på sig. Det gav 24 delsteg och
+  ett nästan singulärt system, och fart på tusentals m/s vid nästa nedslag.
+  - Papper på var sin sida om ett `dmg-crumple`-veck är nu en stel bit, eftersom ihopskrynklat
+    papper är en tät klump.
+  - Dessutom avslutas en flygning om farten överstiger 60 m/s (`MAX_PLAUSIBLE_SPEED`), som extra
+    skydd. Det behövdes inte i något av proven.
+- **Springor i vikläget:** lagren ritas lite isär längs sina normaler. Där två bitar möts i ett
+  veck hamnade deras gemensamma kant på två ställen, med en springa emellan. En smal remsa längs
+  varje sådant veck fyller nu ut den.
+- **Kölflik med ett snitt:** när ett snitt slutar på vecklinjen och delar pappret under den, viks
+  bara biten man tog tag i (`FoldOp.pick`, alla lagerval). Det gäller även om linjen ritas förbi
+  snittet. Två platta vinghalvor som möts kant mot kant räknas nu som en skarv att trycka igenom.
+- **Tävlingsläge:** en rullgardin längst till höger i vikningens topprad, med valen Längd, Tid och
+  Precision. En tävling har tre kast.
+  - Mellan kasten kan man reparera, ändra kastet eller trycka "Ändra vikning". Då kommer man till
+    vikningen, där "Fortsätt" uppe till höger går vidare till nästa kast. Tävlingen fortsätter med
+    det omvikta planet.
+  - Varje nedslag får en gul flagga som står kvar under resten av tävlingen.
+  - Precision: en vit prick med 10 cm radie, 10 m rakt fram. Avståndet från första nedslaget räknas.
+  - Efter tre kast visar rutan "Resultat" kasten från bäst till sämst (`rankThrows`). Det bästa kastet
+    sparas på topplistan, med den vikning det kastades med.
+- **Köleffekt** (användarens val, `markKeelJunctions`, `aero.keelDihedral`): vingar som sitter
+  ovanpå en köl beter sig som om de hade lite dihedral. I sidglidning får den vindvända vingen en
+  uppvind som motsvarar dihedralvinkeln, och planet rollar bort från vinden.
+  - Dihedralvinkeln är perDepth × kölens djup / halva spännvidden: 25 × djup/halvspann, högst 10°.
+    Darten får 8,3°. Hela lyftsystemet får effekten, även ett W:s yttre partier.
+  - Modellen är halvempirisk: tabellernas effekt för en vinge högt på en kropp, anpassad efter
+    användarens observationer.
+  - Utfall i 32 kast med spridning (flexibel, trimmad dart):
+
+    | | Platta vingar | Anhedral 5° | Anhedral 10° | Anhedral 20° |
+    |---|---|---|---|---|
+    | Utan köleffekt | 8 tippar | 10 | 29 | 32 |
+    | Med köleffekt | 15 tippar | 15 | 6 | 32 |
+
+  - Utan rättningen nedan tippade platta vingar oftare med köleffekten, eftersom darten var
+    riktningsinstabil: en sidglidning bestod och blev till en roll.
+- **Riktningsstabilitet: kölen under vingen** (`AeroSurface.underWing`): modellens dart var
+  riktningsinstabil (Cnβ ≈ −0,037). Kölens sidokraft angrep ungefär 38 mm framför tyngdpunkten,
+  vid framkanten, som på en låg platta.
+  - Slank kroppsteori: en kropps sidokraft uppstår där tvärsnittets medföljande luftmassa i sidled
+    växer längs kroppen. För en ensam köl sker det bara vid nosen. Vingen ovanpå är en ändplatta som
+    blir bredare hela vägen bakåt, så kölens medföljande massa, och därmed sidokraften, växer längs
+    hela kölen.
+  - En köl under en vinge får därför sin lastfördelning jämnt utspridd i fäst flöde.
+  - Cnβ: platt dart +0,002, trimmad dart +0,033, glidplan +0,007.
+  - Tippar runt i 32 kast med spridning: platta vingar 0, anhedral 5° och 10° 0, anhedral 20° 12.
+  - Platta vingar vinglar lite, ungefär en rollväxling per kast, och kursen ändras i snitt 4°.
+  - Hårda kast stiger och överstegrar: darten aldrig vid 5–9 m/s, i 4 av 16 kast vid 11 m/s och
+    i alla från 13 m/s.

@@ -1,6 +1,6 @@
 import * as V from '../math/vec3';
 import * as P from '../math/polygon2d';
-import { coplanar, createSheet, facetVertices, toSheet3 } from './model';
+import { coplanar, createSheet, facetVertices, facetsOverlap, toSheet3 } from './model';
 import type { Facet } from './model';
 import * as V2 from '../math/vec2';
 import { firstContactSample } from './penetration';
@@ -141,7 +141,8 @@ export function canPushThrough(model: PaperModel, op: FoldOp): boolean {
         for (let j = i + 1; j < cands.length; j++) {
           const c1 = cands[i];
           const c2 = cands[j];
-          if (c1.f.id === c2.f.id || coplanar(c1.f, c2.f)) continue;
+          // two pieces meeting at an angle, or edge to edge in one plane (flat wing halves)
+          if (c1.f.id === c2.f.id || (coplanar(c1.f, c2.f) && facetsOverlap(c1.f, c2.f))) continue;
           // on one line, overlapping
           const u = V2.normalize(V2.sub(c1.b, c1.a));
           if (Math.abs(V2.cross(u, V2.sub(c2.a, c1.a))) > 1e-6 || Math.abs(V2.cross(u, V2.sub(c2.b, c1.a))) > 1e-6) continue;

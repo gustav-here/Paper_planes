@@ -20,6 +20,7 @@ import {
   formatScore,
   isRoundOver,
   newRound,
+  rankThrows,
   recordScore,
   scoreFlight,
 } from '../../core/game/competition';
@@ -77,6 +78,8 @@ export class FlightMode {
   onRepair: (() => void) | null = null;
   /** Called when the plane burns up (on the Sun). */
   onBurn: (() => void) | null = null;
+  /** "Ändra vikning" in a competition round: back to the folding table, the round goes on. */
+  onRefold: (() => void) | null = null;
   /** Where the plane is thrown, and the physics there. Always the gym when the game starts. */
   private venue: VenueId = DEFAULT_VENUE;
   private cfg = venueConfig(DEFAULT_VENUE, BASE);
@@ -169,8 +172,18 @@ export class FlightMode {
       return;
     }
     this.use(this.mine);
-    this.startRound();
+    // a competition round goes on across visits to the folding table ("Ändra vikning")
+    if (!this.roundInProgress() || this.round?.mode !== this.mode) this.startRound();
+    else {
+      this.fv.setTarget(this.round?.target ?? null);
+      this.updateModeInfo();
+    }
     this.toAim(true);
+  }
+
+  /** A competition round has begun and is not over yet. */
+  roundInProgress(): boolean {
+    return !!this.round && !isRoundOver(this.round);
   }
 
   exit() {
@@ -218,7 +231,17 @@ export class FlightMode {
   private startRound() {
     this.round = this.mode === 'free' ? null : newRound(this.mode, (Date.now() ^ (Math.random() * 1e9)) >>> 0);
     this.fv.setTarget(this.round?.target ?? null);
+    this.fv.clearRoundFlags();
+    this.bestLaunch = null;
+    this.bestInputs = null;
+    this.bestDesign = null;
     this.updateModeInfo();
+    this.updateRefold();
+  }
+
+  /** "Ändra vikning" between the throws of a competition round. */
+  private updateRefold() {
+    $<HTMLButtonElement>('fl-refold').hidden = !this.roundInProgress() || this.phase === 'flying' || !!this.replaying;
   }
 
   /** Switch to the damaged plane once the flight that damaged it is over. */
@@ -250,6 +273,7 @@ export class FlightMode {
     if (resetCamera) this.aimCamera();
     this.updateStats();
     this.updateRepair();
+    this.updateRefold();
     this.updateAimInfo();
   }
 
@@ -297,6 +321,7 @@ export class FlightMode {
     }
     this.lastTarget.copy(start);
     this.updateRepair();
+    this.updateRefold();
   }
 
   /** Replay a stored throw exactly (verifies its score). */
@@ -614,6 +639,8 @@ export class FlightMode {
     if (this.round) {
       const score = scoreFlight(this.round.mode, log, this.round.target);
       this.round = recordScore(this.round, score);
+      // a flag where it landed, seen on the next throws of the round
+      if (imp) this.fv.addRoundFlag(imp.pos, `Kast ${this.round.scores.length}: ${formatScore(this.round.mode, score)}`);
       const m = MODES[this.round.mode];
       const best = bestScore(this.round);
       let rankHtml = '';
@@ -626,7 +653,8 @@ export class FlightMode {
             score: best,
             designName: name,
             date: new Date().toISOString(),
-            design: this.mine.design,
+            // the plane may have been refolded between throws: store the one that threw best
+            design: bestIdx === this.round.scores.length - 1 ? this.mine.design : this.bestDesign ?? this.mine.design,
             // only the best throw of the round is stored for replay
             launch: bestIdx === this.round.scores.length - 1 ? { ...log.launch } : this.bestLaunch ?? { ...log.launch },
             inputs: bestIdx === this.round.scores.length - 1 ? [...sim.controls.inputs] : this.bestInputs ?? [],
@@ -643,30 +671,40 @@ export class FlightMode {
       if (score !== null && score === best) {
         this.bestLaunch = { ...log.launch };
         this.bestInputs = [...sim.controls.inputs];
+        this.bestDesign = this.mine?.design ?? null;
       }
-      modeHtml = `<div class="mode-info"><b>${m.name}</b> · kast ${this.round.scores.length} av ${m.attempts}<br>Detta kast: <b>${formatScore(this.round.mode, score)}</b> · bästa: <b>${formatScore(this.round.mode, best)}</b>${isRoundOver(this.round) ? `<br>Rundan klar!${rankHtml}` : ''}</div>`;
+      const ranked = isRoundOver(this.round)
+        ? `<ol class="board">${rankThrows(this.round)
+            .map((t) => `<li>Kast ${t.throw} · <b>${formatScore(this.round!.mode, t.score)}</b></li>`)
+            .join('')}</ol>`
+        : '';
+      modeHtml = `<div class="mode-info"><b>${m.name}</b> · kast ${this.round.scores.length} av ${m.attempts}<br>Detta kast: <b>${formatScore(this.round.mode, score)}</b> · bästa: <b>${formatScore(this.round.mode, best)}</b>${isRoundOver(this.round) ? `<br>Tävlingen klar!${rankHtml}` : ''}</div>${ranked}`;
       if (isRoundOver(this.round)) {
         this.bestLaunch = null;
         this.bestInputs = null;
+        this.bestDesign = null;
       }
     }
     const boardMode: GameMode | null = this.round?.mode ?? null;
     const board = boardMode ? this.boardHtml(boardMode) : this.recentHtml(flights);
+    const between = this.roundInProgress();
     this.renderCard(`
-      <h3>Resultat</h3>
+      <h3>${this.round && isRoundOver(this.round) ? 'Resultat' : 'Kastet'}</h3>
       ${modeHtml}
       <table>${rows.join('')}</table>
       ${damageNote}
       <div class="actions">
         <button id="res-again" class="primary">${again}</button>
         <button id="res-aim">Ändra kast</button>
-        <button id="res-back">Tillbaka till vikning</button>
+        ${between ? '<button id="res-refold">✎ Ändra vikning</button>' : '<button id="res-back">Tillbaka till vikning</button>'}
       </div>
       ${board}`);
+    this.updateRefold();
   }
 
   private bestLaunch: LaunchParams | null = null;
   private bestInputs: LeaderEntry['inputs'] | null = null;
+  private bestDesign: DesignFile | null = null;
 
   private recentHtml(flights: StoredFlight[]): string {
     const recent = flights
@@ -700,6 +738,8 @@ export class FlightMode {
     if (repair) repair.onclick = () => this.repair();
     const back = card.querySelector('#res-back') as HTMLButtonElement | null;
     if (back) back.onclick = () => this.onExit();
+    const refold = card.querySelector('#res-refold') as HTMLButtonElement | null;
+    if (refold) refold.onclick = () => this.onRefold?.();
     const mode = this.round?.mode ?? this.replaying?.mode ?? null;
     card.querySelectorAll<HTMLButtonElement>('[data-replay]').forEach((b) => {
       b.onclick = () => {
@@ -791,11 +831,20 @@ export class FlightMode {
     ($('fl-cam') as HTMLSelectElement).value = c;
   }
 
-  private setMode(m: GameMode) {
+  /** Competition mode, chosen on the folding table: a new round starts with the next throw. */
+  setMode(m: GameMode) {
     this.mode = m;
-    ($('fl-mode') as HTMLSelectElement).value = m;
-    this.startRound();
-    if (this.phase !== 'flying') this.toAim(false);
+    this.round = null;
+    this.fv.clearRoundFlags();
+    this.fv.setTarget(null);
+    if (this.active) {
+      this.startRound();
+      if (this.phase !== 'flying') this.toAim(false);
+    }
+  }
+
+  get gameMode(): GameMode {
+    return this.mode;
   }
 
   private restoreAim() {
@@ -846,11 +895,7 @@ export class FlightMode {
       this.setCam(cam.value as CamMode);
       cam.blur();
     };
-    const mode = $<HTMLSelectElement>('fl-mode');
-    mode.onchange = () => {
-      this.setMode(mode.value as GameMode);
-      mode.blur();
-    };
+    $('fl-refold').onclick = () => this.onRefold?.();
     $('fl-debug').onclick = () => this.setDebug(!this.debug);
     const venue = $<HTMLSelectElement>('fl-venue');
     venue.onchange = () => {

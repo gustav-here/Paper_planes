@@ -3,6 +3,7 @@ import { EditorApp } from './ui/editor/EditorApp';
 import { FlightMode } from './ui/flight/FlightMode';
 import { GameLoop } from './app/GameLoop';
 import { DEFAULT_CONFIG } from './core/physics/config';
+import type { GameMode } from './core/game/competition';
 
 const canvas = document.getElementById('viewport') as HTMLCanvasElement;
 
@@ -36,24 +37,40 @@ const loop = new GameLoop(
   DEFAULT_CONFIG.dt,
 );
 
-const flight: FlightMode = new FlightMode(stage, loop.stepper, () => {
-  // back to the folding table
+const continueBtn = document.getElementById('btn-continue') as HTMLButtonElement;
+const compMode = document.getElementById('comp-mode') as HTMLSelectElement;
+
+const toFoldingTable = () => {
   flight.exit();
   stage.setView(null);
   document.body.classList.remove('mode-flight');
   editor.active = true;
-});
+  // in the middle of a competition: "Fortsätt" takes the plane back for the next throw
+  continueBtn.hidden = !flight.roundInProgress();
+};
+
+const flight: FlightMode = new FlightMode(stage, loop.stepper, toFoldingTable);
 
 flight.onDamage = (ops) => editor.addDamage(ops);
 flight.onRepair = () => editor.repairDamage();
 flight.onBurn = () => editor.setBurned(true);
+flight.onRefold = toFoldingTable;
 
 editor.onFly = (design, gridPaper) => {
   editor.active = false;
+  continueBtn.hidden = true;
   document.body.classList.add('mode-flight');
   stage.setView(flight.view);
   flight.enter(design, gridPaper, editor.burned);
 };
+
+// competition mode: three throws, ranked best to worst afterwards
+compMode.onchange = () => {
+  flight.setMode(compMode.value as GameMode);
+  continueBtn.hidden = true;
+  compMode.blur();
+};
+continueBtn.onclick = () => editor.fly();
 
 loop.start();
 

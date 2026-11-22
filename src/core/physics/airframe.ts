@@ -9,7 +9,7 @@ import type { DesignFile } from '../paper/ops';
 import { replayDesign } from '../paper/replay';
 import { computeMassProperties } from './massProperties';
 import type { MassProperties } from './massProperties';
-import { buildAeroMesh } from './aeroMesh';
+import { buildAeroMesh, markKeelJunctions } from './aeroMesh';
 import type { AeroMesh } from './aeroMesh';
 import { computeAddedMass } from './addedMass';
 import { buildControlGroups, controlFacetTags } from './controlGroups';
@@ -108,6 +108,7 @@ export function buildAirframe(
     hi = Math.max(hi, y);
   }
   const refSpan = Math.max(hi - lo, 1e-3);
+  markKeelJunctions(mesh, model, com, up, right, refSpan / 2, cfg.aero.keelDihedral, valid);
   return {
     massProps: mp,
     mass: mp.mass,

@@ -168,6 +168,49 @@ export class PaperView {
         }
       }
     }
+    // Layers are drawn a hair apart along their normals (VIS_LAYER) to show their order. Where two
+    // pieces meet at a crease their shared edge is therefore drawn in two places a fraction of a
+    // millimetre apart, a slit you can see through: close it with a thin strip.
+    {
+      const graph = edgesOf(model);
+      for (const l of graph.links) {
+        if (l.kind === 'cut') continue;
+        const fa = this.facets.get(l.a);
+        const fb = this.facets.get(l.b);
+        if (!fa || !fb) continue;
+        const oa = this.offsetVec(fa, levels.get(fa.id) ?? 0);
+        const ob = this.offsetVec(fb, levels.get(fb.id) ?? 0);
+        if (V.dist(oa, ob) < 1e-9) continue;
+        const A = toModel(fa, l.seg[0]);
+        const B = toModel(fa, l.seg[1]);
+        const n = V.normalize(V.add(facetNormal(fa), facetNormal(fb)));
+        const nn = V.length(n) > 1e-6 ? n : facetNormal(fa);
+        const k = this.pieces(A, B);
+        for (let j = 0; j < k; j++) {
+          const p = V.lerp(A, B, j / k);
+          const q = V.lerp(A, B, (j + 1) / k);
+          const quad: [Vec3, Vec3, Vec3, Vec3] = [V.add(p, oa), V.add(q, oa), V.add(q, ob), V.add(p, ob)];
+          for (const [x, y, z] of [
+            [quad[0], quad[1], quad[2]],
+            [quad[0], quad[2], quad[3]],
+          ]) {
+            // both faces, so it closes the slit from either side
+            pos.push(...x, ...y, ...z);
+            for (let m = 0; m < 3; m++) {
+              nor.push(...nn);
+              col.push(FRONT.r, FRONT.g, FRONT.b);
+            }
+            this.triFacet.push(fa.id);
+            pos.push(...x, ...z, ...y);
+            for (let m = 0; m < 3; m++) {
+              nor.push(-nn[0], -nn[1], -nn[2]);
+              col.push(BACK.r, BACK.g, BACK.b);
+            }
+            this.triFacet.push(fa.id);
+          }
+        }
+      }
+    }
     const geo = new THREE.BufferGeometry();
     geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
     geo.setAttribute('normal', new THREE.Float32BufferAttribute(nor, 3));
