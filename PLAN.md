@@ -1293,7 +1293,7 @@ Resultat med standardkonfigurationen (släpp från 10 m, olika kastfarter):
   högre lokal lyftkoefficient och överstegras först) ändrade nästan ingenting. Planen glider vid
   6–8° anfallsvinkel och minst 4–5 m/s, så spetsarna når aldrig överstegring.
 
-## 35. Månlandningar (inte rättat än)
+## 35. Månlandningar (inte rättat än; testet är överhoppat tills vidare)
 - **Läget:** testet med ett perfekt symmetriskt kast (14 m/s, 45°) klarade sig på tur. Med spelets
   spridning hoppar planen upp till 2–5 m och glider upp till 20–33 m efter nedslaget, både före
   och efter §33–34. Det strider mot användarens val för Månen: dammet ska stoppa papperet, och
