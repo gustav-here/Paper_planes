@@ -3,6 +3,7 @@ import { FoldTool } from '../../src/ui/editor/FoldTool';
 import type { ToolContext } from '../../src/ui/editor/toolContext';
 import { makeDart } from '../../src/core/presets';
 import { applyOp, replayDesign } from '../../src/core/paper/replay';
+import { reachEdges } from '../../src/core/paper/cut';
 import type { CutOp, FoldOp } from '../../src/core/paper/ops';
 import type { PaperModel } from '../../src/core/paper/model';
 import { facetVertices } from '../../src/core/paper/model';
@@ -19,12 +20,12 @@ const camera: Vec3 = [-0.1, 0.6, -0.05]; // beside the plane, a little below
 
 type FakeEvent = { clientX: number; clientY: number; shiftKey: boolean; hit?: { point: Vec3; normal: Vec3 } };
 
-function harness(model: PaperModel) {
+function harness(model: PaperModel, foldScope = 'top') {
   const committed: FoldOp[] = [];
   const noop = () => undefined;
   const ctx = new Proxy(
     {
-      options: { foldScope: 'top', foldMirror: false, pointToPoint: false, cutDepth: 'all', cutMirror: false },
+      options: { foldScope, foldMirror: false, pointToPoint: false, cutDepth: 'all', cutMirror: false },
       model: () => model,
       commit: (op: FoldOp) => {
         committed.push(op);
@@ -45,10 +46,14 @@ function harness(model: PaperModel) {
 
 const cut = (x: number, id: string): CutOp => ({ type: 'cut', id, path: [[x, 0, -0.01], [x, 0, KEEL]], planeNormal: [0, 1, 0], depth: 'all' });
 
-/** Line along the wing root drawn on the wing (its plane z = KEEL), from x0 to x1; then grab and drag. */
-function foldUp(model: PaperModel, x0: number, x1: number, grab: Vec3) {
-  const { tool, committed } = harness(model);
-  (tool as unknown as { toReady(p0: Vec3, p1: Vec3, N: Vec3): void }).toReady([x0, 0, KEEL], [x1, 0, KEEL], [0, 0, -1]);
+/**
+ * Line along the wing root drawn on the wing (its plane z = KEEL), from x0 to x1, or another line
+ * (`line`, drawn in plane `N`); then grab and drag.
+ */
+function foldUp(model: PaperModel, x0: number, x1: number, grab: Vec3, scope = 'top', line?: { p0: Vec3; p1: Vec3; N: Vec3 }) {
+  const { tool, committed } = harness(model, scope);
+  const l = line ?? { p0: [x0, 0, KEEL] as Vec3, p1: [x1, 0, KEEL] as Vec3, N: [0, 0, -1] as Vec3 };
+  (tool as unknown as { toReady(p0: Vec3, p1: Vec3, N: Vec3): void }).toReady(l.p0, l.p1, l.N);
   const on: FakeEvent['hit'] = { point: grab, normal: [0, 1, 0] };
   tool.move({ clientX: 0, clientY: 500, shiftKey: false, hit: on } as unknown as PointerEvent);
   tool.down({ clientX: 0, clientY: 500, shiftKey: false, hit: on } as unknown as PointerEvent);
@@ -94,5 +99,19 @@ describe('fold tool: a keel tab folded up between the wings', () => {
     expect(Math.min(...tab.map((v) => v[0]))).toBeLessThan(-0.14);
     expect(Math.max(...tab.map((v) => v[0]))).toBeLessThan(-0.08 + 1e-6);
     expect(Math.max(...tab.map((v) => v[2]))).toBeGreaterThan(KEEL + 0.02);
+  });
+
+  it('a cut drawn to just short of both edges, folded with all layers along a line on the keel: the keel in front stays', () => {
+    // as drawn by a player: from the keel's fold to the wing root, each end half a millimetre short
+    const path = reachEdges(replayDesign(dart).models.at(-1)!, [[-0.08, 0, 0.0005], [-0.08, 0, KEEL - 0.0005]], [0, 1, 0], 0.002);
+    const k: CutOp = { type: 'cut', id: 'k1', path, planeNormal: [0, 1, 0], depth: 'all' };
+    const model = replayDesign({ ...dart, ops: [...dart.ops, k] }).models.at(-1)!;
+    // the fold line on the keel a few mm below the root, from the cut backwards
+    const op = foldUp(model, 0, 0, [-0.12, 0, 0.01], 'all', { p0: [-0.08, 0, KEEL - 0.004], p1: [-0.15, 0, KEEL - 0.002], N: [0, 1, 0] });
+    expect(op).toBeDefined();
+    const tab = piece(applyOp(model, op).model, op.id);
+    expect(tab.length).toBeGreaterThan(0);
+    // only the tab behind the cut folds (the slanted line moves it a little forward, < 2 mm)
+    expect(Math.max(...tab.map((v) => v[0]))).toBeLessThan(-0.08 + 0.002);
   });
 });

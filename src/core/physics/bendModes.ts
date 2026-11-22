@@ -1,6 +1,6 @@
 import * as V from '../math/vec3';
 import type { Vec3 } from '../math/vec3';
-import { canonicalNormal, facetArea, facetNormal, facetVertices } from '../paper/model';
+import { canonicalNormal, facetArea, facetContains, facetNormal, facetVertices } from '../paper/model';
 import type { Facet, PaperModel } from '../paper/model';
 import type { AeroMesh } from './aeroMesh';
 import type { PaperConfig } from './config';
@@ -92,6 +92,18 @@ const POISSON = 0.3;
 const FACE_TO_FACE_RAD = (25 * Math.PI) / 180;
 /** Spacing of the integration points (m): the shapes are low-order polynomials, so this is plenty. */
 const SAMPLE_SPACING = 0.012;
+/** Layers within this distance of each other (along the normal) count as one pressed stack (m). */
+const STACK_GAP_M = 0.002;
+/**
+ * Extra clamped shapes (powers of d̃ and s̃: d̃³, d̃³s̃, d̃²s̃³, d̃³s̃²) for a panel that carries
+ * creases, which stay straight (see keepCreasesStraight).
+ */
+const EXTRA_CLAMPED: [number, number][] = [
+  [3, 0],
+  [3, 1],
+  [2, 3],
+  [3, 2],
+];
 /** Shapes stiffer than this (natural frequency, Hz) count as rigid. */
 const MAX_FREQ_HZ = 120;
 
@@ -186,6 +198,90 @@ function elementAddedMass(mesh: AeroMesh, rho: number, scale: number, strip: num
     }
   }
   return ma;
+}
+
+/**
+ * The creases panel `pi` carries other panels on, as segments (model space): the hinge line
+ * over the extent of the child's paper that lies on it.
+ */
+function creaseLines(set: PanelSet, pi: number, byId: Map<number, Facet>): [Vec3, Vec3][] {
+  const out: [Vec3, Vec3][] = [];
+  for (const hg of set.hinges) {
+    if (hg.parent !== pi) continue;
+    let lo = Infinity;
+    let hi = -Infinity;
+    for (const id of set.panels[hg.child].facets) {
+      const f = byId.get(id);
+      if (!f) continue;
+      for (const x of facetVertices(f)) {
+        if (V.distToLine(x, hg.point, hg.axis) > 1e-4) continue;
+        const s = V.dot(V.sub(x, hg.point), hg.axis);
+        lo = Math.min(lo, s);
+        hi = Math.max(hi, s);
+      }
+    }
+    if (hi - lo > 1e-3) out.push([V.addScaled(hg.point, hg.axis, lo), V.addScaled(hg.point, hg.axis, hi)]);
+  }
+  return out;
+}
+
+/**
+ * A crease the panel carries another panel on stays straight: the shapes are restricted to the
+ * combinations whose deflection varies linearly along every such crease.
+ *
+ * A folded crease is an angle section, far stiffer along its length than flat paper (that is why
+ * corrugated paper is stiff), and the paper hanging on it is a rigid panel (or bends from it as
+ * from a straight clamped edge). Without this the panel could curve along the crease while the
+ * flap on it stayed straight: a wing tip twisted and cambered around a turned-up corner as if the
+ * corner were not there. The shapes are polynomials of low degree, so second differences at five
+ * points along each crease capture its curvature exactly.
+ */
+function keepCreasesStraight(
+  shapes: Poly[],
+  lines: [Vec3, Vec3][],
+  local: (p: Vec3) => readonly [number, number],
+  samplesUV: (readonly [number, number])[],
+): Poly[] {
+  const m = shapes.length;
+  if (!lines.length || !m) return shapes;
+  const rows: number[][] = [];
+  for (const [a, b] of lines) {
+    const w = [0, 0.25, 0.5, 0.75, 1].map((t) => {
+      const [u, v] = local(V.lerp(a, b, t));
+      return shapes.map((P) => P.w(u, v));
+    });
+    for (let i = 1; i + 1 < w.length; i++) rows.push(shapes.map((_, k) => w[i - 1][k] - 2 * w[i][k] + w[i + 1][k]));
+  }
+  // orthonormal basis of the constraint rows, then the shape combinations orthogonal to it
+  const dot = (x: number[], y: number[]) => x.reduce((s, xi, i) => s + xi * y[i], 0);
+  const scale = Math.max(...rows.map((r) => Math.sqrt(dot(r, r))), 1e-12);
+  const rowBasis: number[][] = [];
+  for (const r of rows) {
+    let q = r.slice();
+    for (const b of rowBasis) {
+      const c = dot(q, b);
+      q = q.map((x, i) => x - c * b[i]);
+    }
+    const n = Math.sqrt(dot(q, q));
+    if (n > 1e-6 * scale) rowBasis.push(q.map((x) => x / n));
+  }
+  if (!rowBasis.length) return shapes;
+  const free: number[][] = [];
+  for (let k = 0; k < m; k++) {
+    let q: number[] = shapes.map((_, i) => (i === k ? 1 : 0));
+    for (const b of [...rowBasis, ...free]) {
+      const c = dot(q, b);
+      q = q.map((x, i) => x - c * b[i]);
+    }
+    const n = Math.sqrt(dot(q, q));
+    if (n > 1e-6) free.push(q.map((x) => x / n));
+  }
+  return free.map((c) => {
+    let P = new Poly([]);
+    c.forEach((ck, k) => (P = P.plus(shapes[k], ck)));
+    const mx = Math.max(...samplesUV.map(([u, v]) => Math.abs(P.w(u, v))), 1e-12);
+    return P.scale(1 / mx); // amplitude q = largest deflection (m)
+  });
 }
 
 /**
@@ -303,10 +399,26 @@ export function buildPanelModes(
       const r = V.sub(p, o);
       return [V.dot(r, eu), V.dot(r, ev)] as const;
     };
+    const lines = creaseLines(set, pi, byId);
+    if (lines.length && panel.parent >= 0) {
+      // a straight crease is a local stiffening; with only the three shapes above it would
+      // stiffen the whole panel, so the panel gets more shapes to bend around it
+      const hg = set.hinges[panel.hinge];
+      const s = pts.map(({ p }) => V.dot(V.sub(p, hg.point), ev));
+      const sHalf = Math.max((Math.max(...s) - Math.min(...s)) / 2, 1e-3);
+      const L = Math.max(...pts.map(({ p }) => V.dot(V.sub(p, hg.point), eu)), 1e-3);
+      for (const [i, j] of EXTRA_CLAMPED) shapes.push(new Poly([[i, j, 1 / (L ** i * sHalf ** j)]]));
+    }
+    shapes = keepCreasesStraight(shapes, lines, local, pts.map(({ p }) => local(p)));
+    if (!shapes.length) return;
+    // a pressed stack of n layers bends like n^k single sheets (each layer's samples weigh n^(k−1))
+    const stackW = pts.map(({ p }) => Math.max(1, facets.filter((f) => facetContains(f, p, 1e-6, STACK_GAP_M)).length) ** (paper.stackStiffnessExponent - 1));
     const stiffnessOf = (sh: Poly[]) => {
       const m = sh.length;
       const K = new Array<number>(m * m).fill(0);
-      for (const { p, a } of pts) {
+      for (let ip = 0; ip < pts.length; ip++) {
+        const { p } = pts[ip];
+        const a = pts[ip].a * stackW[ip];
         const [u, v] = local(p);
         const lap = sh.map((P) => P.wuu(u, v) + P.wvv(u, v));
         const uu = sh.map((P) => P.wuu(u, v));

@@ -1,12 +1,19 @@
 import * as V from '../../core/math/vec3';
 import { applyAffine, applyAffineLinear } from '../../core/math/transform';
 import { applyOp } from '../../core/paper/replay';
+import { reachEdges } from '../../core/paper/cut';
 import type { CutPiece } from '../../core/paper/cut';
 import type { CutOp } from '../../core/paper/ops';
 import { cutIsSelfMirror } from '../../core/paper/symmetry';
 import { symmetryOf } from '../../render/modelCache';
 import { LineDraw } from './LineTool';
 import type { Tool, ToolContext } from './toolContext';
+
+/**
+ * A cut that ends this close to an edge of the paper is carried through it (m): drawn up to the
+ * edge, it should not leave a thin strip holding the pieces together.
+ */
+const REACH_EDGE_M = 0.002;
 
 /** Scissors: drag a straight cut. Detached pieces are removed (largest kept; switchable). */
 export class CutTool implements Tool {
@@ -52,7 +59,9 @@ export class CutTool implements Tool {
     ov.clear();
     const { p0, p1, plane } = this.draw;
     if (!p0 || !p1 || !plane || this.draw.length < 1e-4) return;
-    ov.line(p0, p1, 'cut');
+    // drawn as it will be cut (carried through a nearby edge)
+    const [c0, c1] = this.op().path;
+    ov.line(c0, c1, 'cut');
     let hidden = false;
     if (this.ctx.options.cutMirror) {
       const R = symmetryOf(this.ctx.model());
@@ -71,7 +80,7 @@ export class CutTool implements Tool {
     return {
       type: 'cut',
       id,
-      path: [this.draw.p0!, this.draw.p1!],
+      path: reachEdges(this.ctx.model(), [this.draw.p0!, this.draw.p1!], this.draw.plane!.normal, REACH_EDGE_M),
       planeNormal: this.draw.plane!.normal,
       depth: this.ctx.options.cutDepth,
       mirror: this.ctx.options.cutMirror,

@@ -156,9 +156,10 @@ describe('validation', { timeout: 240_000 }, () => {
       expect(variants.tipsDown.Cnb).toBeGreaterThan(flat.Cnb + 0.005);
     });
 
-    it('a lot of anhedral rolls the wrong way (it can tip over); a little still rights itself on its keel', () => {
-      expect(variants.anhedral.Clb).toBeGreaterThan(0);
-      expect(variants.littleAnhedral.Clb).toBeLessThan(0);
+    it('anhedral rolls the wrong way (it tips over), more the more anhedral; flat wings right themselves', () => {
+      expect(variants.anhedral.Clb).toBeGreaterThan(variants.littleAnhedral.Clb);
+      expect(variants.littleAnhedral.Clb).toBeGreaterThan(0);
+      expect(flat.Clb).toBeLessThan(0);
     });
 
     it('a shallow W changes little, a deep W much more (in lift and stability)', () => {

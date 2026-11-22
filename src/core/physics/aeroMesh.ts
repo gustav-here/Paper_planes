@@ -33,11 +33,6 @@ export interface AeroSurface {
   /** Grouping tag of its facets (control flap / panel index), −1 if untagged. */
   tag: number;
   /**
-   * A wing sitting on top of a keel (see markKeelJunctions): the keel's plane normal and a point
-   * on the junction (body frame), and the equivalent dihedral (rad) the keel gives this wing.
-   */
-  keel?: { normal: Vec3; point: Vec3; dihedral: number };
-  /**
    * A keel with a wing on top. Slender-body theory: a body's side force arises where the lateral
    * apparent mass of its cross-section grows along it. A bare keel's grows only at the nose (where
    * it deepens), so its side force acts far forward and turns the plane away from the wind. The
@@ -470,13 +465,12 @@ export function buildAeroMesh(
 }
 
 /**
- * Wings on top of a keel. In sideslip the keel blocks the air crossing under the wing roots, and
- * the wing turned into the wind is lifted more, as if the wings had some dihedral: the "high
- * wing" effect, worth a few degrees of dihedral on aircraft (DATCOM wing–body term), more the
- * deeper the body is compared with the span. A paper keel is a thin plate, not a body, so this is
- * a semi-empirical equivalent dihedral: perDepth × keel depth / semi-span, at most maxDeg.
- * A wing is a surface within 45° of level, a keel one within 45° of upright, joined by a crease
- * with the keel hanging below the joint.
+ * Keels with a wing on top (see AeroSurface.underWing). A wing is a surface within 45° of level,
+ * a keel one within 45° of upright, joined by a crease with the keel hanging below the joint.
+ *
+ * (Until PLAN.md §34 the wings here also got a semi-empirical equivalent dihedral in sideslip,
+ * the "high wing" effect. It made planes with flat wings or a little anhedral far steadier than
+ * real ones and was removed at the player's request.)
  */
 export function markKeelJunctions(
   mesh: AeroMesh,
@@ -484,8 +478,6 @@ export function markKeelJunctions(
   com: Vec3,
   up: Vec3,
   right: Vec3,
-  semiSpan: number,
-  keelCfg: { perDepth: number; maxDeg: number },
   tags?: Map<number, number>,
 ): void {
   const cos45 = Math.SQRT1_2;
@@ -524,23 +516,10 @@ export function markKeelJunctions(
       const keel = surfaceOf(fk);
       if (!wing || !keel) continue;
       const point = V.sub(toModel(fw, l.seg[0]), com);
-      // the keel hangs below the joint: its depth under it
+      // the keel hangs below the joint
       const depth = Math.max(0, ...keel.outline3.map((v) => V.dot(V.sub(point, v), up)));
       if (depth < 1e-3) continue;
-      const deg = Math.min(keelCfg.maxDeg, (keelCfg.perDepth * depth) / Math.max(semiSpan, 1e-3));
-      const dihedral = (deg * Math.PI) / 180;
-      if (!wing.keel || dihedral > wing.keel.dihedral) wing.keel = { normal: canonicalNormal(nk), point, dihedral };
       keel.underWing = true;
-    }
-  }
-  // the effect is on the wing's lift as a whole: the parts of a folded wing (a W, turned-up tips)
-  // that share its lifting system feel it too
-  for (const s of mesh.surfaces) {
-    if (!s.keel) continue;
-    for (const pid of s.partners) {
-      const o = mesh.surfaces[pid];
-      if (o.keel || Math.abs(V.dot(o.normal, up)) < cos45) continue;
-      o.keel = { ...s.keel };
     }
   }
 }

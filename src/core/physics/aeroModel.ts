@@ -351,12 +351,6 @@ export function evaluateAero(
         center = place(e.center);
         u = velAt(center);
       }
-      // a wing on top of a keel: in sideslip the wing turned into the wind gets an upwash
-      if (s.keel) {
-        const side = Math.sign(V.dot(V.sub(e.center, s.keel.point), s.keel.normal));
-        const w = s.keel.dihedral * V.dot(u, s.keel.normal) * side;
-        if (w !== 0) u = V.addScaled(u, V.dot(nSurf, af.up) >= 0 ? nSurf : V.negate(nSurf), -w);
-      }
       if (debug?.pos) debug.pos[idx] = center;
       const speed = V.length(u);
       if (speed < 1e-6) {

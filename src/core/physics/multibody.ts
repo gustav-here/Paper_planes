@@ -57,7 +57,7 @@ export interface FlexAirframe {
 export function buildFlexAirframe(model: PaperModel, rigid: Airframe, cfg: PhysicsConfig): FlexAirframe {
   const set = buildPanels(model, rigid, cfg.paper);
   const mesh = buildAeroMesh(model, rigid.com, cfg.aero.elementSizeM, cfg.aero.liftingSystemAngleDeg, set.panelOf);
-  markKeelJunctions(mesh, model, rigid.com, rigid.up, rigid.right, rigid.refSpan / 2, cfg.aero.keelDihedral, set.panelOf);
+  markKeelJunctions(mesh, model, rigid.com, rigid.up, rigid.right, set.panelOf);
   const af: Airframe = { ...rigid, mesh };
   // control surfaces of the rigid airframe refer to its own mesh; remap by facet tags
   af.controls = rigid.controls.map((g) => ({ ...g, surfaces: mesh.surfaces.filter((s) => g.facets.includes(firstFacetOf(model, set, s.tag))).map((s) => s.id) }));

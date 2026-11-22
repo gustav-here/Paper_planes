@@ -76,6 +76,46 @@ function cutSegment(model: PaperModel, A: Vec3, B: Vec3, N: Vec3, depth: CutOp['
   return { model: { ...model, facets, cuts, nextFacetId: nextId }, count: kept.length };
 }
 
+/**
+ * A cut drawn up to an edge is meant to go through it. A cut that stops a hair short leaves a
+ * strip that real paper would tear at once, but here it would hold a tab to the rest (folding
+ * the tab up would drag the whole keel along). Each end of `path` that lies on paper with an edge
+ * of that paper within `maxGap` ahead of it (along the cut, in the cut's plane) is carried past
+ * the edge. Ends off the paper, or with paper going on further, are left as drawn.
+ */
+export function reachEdges(model: PaperModel, path: Vec3[], planeNormal: Vec3, maxGap: number): Vec3[] {
+  if (path.length < 2) return path;
+  const N = V.normalize(planeNormal);
+  const past = Math.min(maxGap, 5e-4); // how far beyond the edge the cut ends
+  const extend = (E: Vec3, from: Vec3): Vec3 => {
+    const u = V.sub(E, from);
+    const len = V.length(u);
+    if (len < 1e-9) return E;
+    const dir = V.scale(u, 1 / len);
+    const F = V.addScaled(E, dir, maxGap);
+    // stretches of the ray E → F (as fractions) that lie on paper in the cut's plane
+    const spans: [number, number][] = [];
+    for (const f of model.facets) {
+      if (!facetInPlane(f, E, N)) continue;
+      const r = P.clipSegmentConvex(toSheet(f, E), toSheet(f, F), f.poly);
+      if (r) spans.push(r);
+    }
+    spans.sort((a, b) => a[0] - b[0]);
+    if (!spans.length || spans[0][0] > 1e-6) return E; // the end is not on paper
+    let reach = 0;
+    for (const [t0, t1] of spans) {
+      if (t0 > reach + 1e-6) break;
+      reach = Math.max(reach, t1);
+    }
+    if (reach >= 1 - 1e-9) return E; // paper goes on: the cut ends inside it on purpose
+    return V.addScaled(E, dir, reach * maxGap + past);
+  };
+  const out = path.slice();
+  out[0] = extend(path[0], path[1]);
+  out[out.length - 1] = extend(path[path.length - 1], path[path.length - 2]);
+  return out;
+}
+
 /** Apply a single cut (no mirroring). */
 export function applyCut(model: PaperModel, op: CutOp): CutResult {
   const N = V.normalize(op.planeNormal);

@@ -204,26 +204,10 @@ describe('swept wings', () => {
 });
 
 describe('wings on a keel', () => {
-  it('act as if they had some dihedral, more the deeper the keel is against the span', () => {
+  it('a keel with wings on top is found; a flat sheet has none', () => {
     const af = airframeFromDesign(makeDart(), DEFAULT_CONFIG); // 25 mm keel, flat wings
-    const wings = af.mesh.surfaces.filter((s) => s.keel);
-    expect(wings.length).toBeGreaterThan(0);
-    const { perDepth, maxDeg } = DEFAULT_CONFIG.aero.keelDihedral;
-    const expected = Math.min(maxDeg, (perDepth * 0.025) / (af.refSpan / 2));
-    for (const w of wings) expect((w.keel!.dihedral * 180) / Math.PI).toBeCloseTo(expected, 0);
-    // a flat sheet has no keel
-    expect(airframeFromDesign(flatSheet, DEFAULT_CONFIG).mesh.surfaces.some((s) => s.keel)).toBe(false);
-  });
-
-  it('so in sideslip the plane rolls away from the wind more than without the keel effect', () => {
-    const rollPerSideslip = (perDepth: number) => {
-      const cfg = { ...DEFAULT_CONFIG, aero: { ...DEFAULT_CONFIG.aero, keelDihedral: { perDepth, maxDeg: 10 } } };
-      const af = airframeFromDesign(makeDart(), cfg);
-      const roll = (b: number) => V.dot(tunnelPoint(af, cfg, 5, 6, b).torque, af.nose);
-      return roll(4) - roll(-4);
-    };
-    expect(rollPerSideslip(25)).toBeLessThan(rollPerSideslip(0) * 1.5);
-    expect(rollPerSideslip(0)).toBeLessThan(0);
+    expect(af.mesh.surfaces.filter((s) => s.underWing).length).toBeGreaterThan(0);
+    expect(airframeFromDesign(flatSheet, DEFAULT_CONFIG).mesh.surfaces.some((s) => s.underWing)).toBe(false);
   });
 
   it("the wing on top spreads the keel's side force along it: the dart no longer turns away from the wind", () => {
@@ -307,7 +291,7 @@ describe('twisted paper at a clip', () => {
     // (a few mm remain: the clip holds the creases shut, so the shape itself differs a little;
     // with every strip its own leading edge it moved 23 mm)
     expect(Math.abs(col(clipped) - col(plain))).toBeLessThan(0.005);
-    // and the wings still feel the keel
-    expect(clipped.af.mesh.surfaces.filter((s) => s.keel).length).toBeGreaterThanOrEqual(2);
+    // and the keel under the merged wings is still found
+    expect(clipped.af.mesh.surfaces.some((s) => s.underWing)).toBe(true);
   });
 });

@@ -26,14 +26,6 @@ export interface AeroConfig {
   /** Dynamic viscosity of air (Pa·s), 20 °C. */
   airViscosity: number;
   /**
-   * Wings on top of a keel act as if they had some dihedral (see markKeelJunctions): degrees per
-   * unit (keel depth / semi-span), at most maxDeg. The "high wing" effect is worth a few degrees
-   * on aircraft and grows with how deep the body is compared with the span; a paper keel is a
-   * thin plate, so this is semi-empirical (chosen with the player: a dart with a little anhedral
-   * should rarely roll over, a lot of anhedral can).
-   */
-  keelDihedral: { perDepth: number; maxDeg: number };
-  /**
    * Rotational lift (Kramer effect) as a fraction of thin-airfoil theory: a plate turning about
    * its span lifts as if its angle of attack were the one at ¾ chord (ΔC_L = a·ω c/(2U) beyond
    * what the turning already gives at ¼ chord). 1 = the theory value, which also matches the
@@ -115,6 +107,15 @@ export interface PaperConfig {
   bendingLimitStiffening: number;
   /** Width of the zone a crease bends over (m); creaseStiffnessPerM ≈ D / creaseZoneM. */
   creaseZoneM: number;
+  /**
+   * A pressed stack of n layers in one panel bends like n^k single sheets: k = 1 if the layers
+   * slide freely over each other, k = 3 if they are glued (the stack is one sheet n times as
+   * thick). Folded layers are joined along their folded edges and pressed flat, which stops most
+   * of the sliding, so creased stacks are counted as glued. With k = 1 the stiff, many-layered
+   * leading edges of the presets bent like single sheets, and the wing tips twisted nose-up in
+   * the air until the planes dived (see PLAN.md §33).
+   */
+  stackStiffnessExponent: number;
   /**
    * Springback: the fraction of its fold angle a released crease opens again. Copy paper creased
    * firmly (thumbnail-pressed) keeps most of a fold; a 180° fold then gapes ≈ 9° (0.05 · 180°).
@@ -228,7 +229,6 @@ export const DEFAULT_CONFIG: PhysicsConfig = {
     CN90: 1.2,
     CDedge: 0.005,
     airViscosity: 1.8e-5,
-    keelDihedral: { perDepth: 25, maxDeg: 10 },
     rotationalLift: 1,
     oswaldE: 0.8,
     sepCopShift: 0.16,
@@ -255,6 +255,7 @@ export const DEFAULT_CONFIG: PhysicsConfig = {
     bendingLimitSlopeDeg: 35,
     bendingLimitStiffening: 30,
     creaseZoneM: 0.003,
+    stackStiffnessExponent: 3,
     creaseSpringback: 0.05,
     contactStiffnessFactor: 30,
     creaseDampingS: 0.01,

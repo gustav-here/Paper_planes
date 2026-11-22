@@ -69,6 +69,10 @@ Webbläsarspel: vik ett pappersflygplan av ett A4 och kasta det. Flygbeteendet s
   `Prepared.folded` är exakt vikt). Validering och editor använder den vikta geometrin.
 - Flexibelt papper är standard i spelet. Gångjärnen har plan pappersböjning i serie med vecket och
   ett kontaktstopp vid 180°.
+- Ett veck som en böjande panel bär en annan panel i förblir rakt (`keepCreasesStraight`), och
+  ihoppressade lager böjer sig som ett tjockare ark (`paper.stackStiffnessExponent` = 3). Annars
+  vrider sig vingspetsarna upp i farten och planen dyker. Se PLAN.md §33.
+- Saxen drar ett snitt som slutar högst 2 mm före en papperskant ut över kanten (`reachEdges`).
 - Böjformer ges inte till en rot som bär andra paneler, eller till paneler som ligger an mot en
   annan panel (kölhalvor). En stel panel på en böjande panel ritas med en söm (`seamInto`) som
   följer den böjda kanten.
@@ -96,8 +100,8 @@ Webbläsarspel: vik ett pappersflygplan av ett A4 och kasta det. Flygbeteendet s
   Glidplanet trimmas av uppvikta bakre vinghörn (`reflexOps`). Valideringen använder `trimmedDart`.
   Tester av klaffar använder `ELEVATOR_TRIM` och `NO_REFLEX` (de gamla modellerna).
 - Lyftlutningen per element tar med strimlans pilvinkel mot flödet (DATCOM-form av Helmbold).
-- Vingar ovanpå en köl får en ekvivalent dihedral i sidglidning (`aero.keelDihedral`,
-  `markKeelJunctions`). Den är halvempirisk och vald med användaren.
+- Vingar ovanpå en köl får ingen extra dihedral i sidglidning (köleffekten är borttagen på
+  användarens begäran, se PLAN.md §34).
 - En köl under en vinge får sin sidokraft jämnt fördelad längs sig (slank kroppsteori: vingen är en
   ändplatta som breddas bakåt), inte samlad vid nosen (`AeroSurface.underWing`).
 - Rotationslyft (`aero.rotationalLift`, Kramer-effekten): ett element som roterar kring sin

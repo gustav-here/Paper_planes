@@ -1186,3 +1186,130 @@ Resultat med standardkonfigurationen (släpp från 10 m, olika kastfarter):
     spridning. Den stora skillnaden för baktunga plan kommer från de sammanslagna remsorna.
   - Ett gem framtill gör att planet lutar mer åt sidan än utan gem. Det gjorde det redan förut
     (högst 63°), och med de nya ytorna blir det högst 75°.
+
+## 33. Flexibla vingar som håller trimmen, och snitt ända ut till kanten
+- **Felet:** i flexibelt papper (spelets standard) dök alla plan som trimmats med uppvikta
+  vinghörn. Glidplanet kastat i glidfart från 30 m gick från −14° till −67° bana på 12 m, och från
+  6 m höjd landade det efter 11 m (stelt papper: 30 m). Vanliga kast från 1,6 m blev ungefär
+  hälften så långa som i stelt papper. Det började när förinställningarna bytte klaffar mot
+  uppvikta hörn (§29). Med klaffar glider glidplanet.
+- **Orsak:** vingarna böjde sig med framkanten uppåt vid spetsen (wash-in, 5–9° vid
+  glidplanets spets). Spetsarna sitter bakom tyngdpunkten, så mer lyft där trycker ner nosen.
+  Mest var det formen som välver vingen längs kordan, d̃²(s̃²−⅓). Tre saker saknades:
+  - **Raka veck:** ett veck som bär en annan panel är en vinkelprofil, ungefär tusen gånger
+    styvare längs sin längd än plant papper, även vid 10° vikvinkel. Den stela flik som hänger i
+    det är också rak. Förut kunde vingen kröka sig längs det uppvikta hörnets veck som om hörnet
+    inte fanns. Nu begränsas böjformerna till kombinationer där nedböjningen är linjär längs varje
+    sådant veck (`keepCreasesStraight`), och panelen får fyra extra former (d̃³, d̃³s̃, d̃²s̃³,
+    d̃³s̃²) så att villkoret bara styvar upp vingen nära vecket.
+  - **Lager som böjer sig tillsammans** (`paper.stackStiffnessExponent` = 3): en ihoppressad
+    bunt av n lager böjer sig som nᵏ enkla ark. k = 1 om lagren glider fritt mot varandra,
+    k = 3 om de är limmade. Vikta lager hålls ihop av sina vikta kanter och är pressade platta,
+    så de räknas som limmade. Förut böjde sig förinställningarnas framkanter, med 3–4 lager, som
+    tre eller fyra lösa ark.
+  - Det räcker inte med en av delarna. Raka veck utan styva lager, eller tvärtom, ger fortfarande
+    dykning för W-darten. Utan de extra formerna blir en vinge som bär ett veck nästan helt stel.
+- **Kontroll:** fler böjformer (upp till sex extra) ändrade inte resultatet före rättningen, så
+  felet var inte för få former. En kontroll av aerodynamiken visade att en böjd korda borde ge
+  ännu mer nosen nedåt, inte mindre: modellen väger varje elements egen vinkel med
+  lastfördelningen (tyngst vid framkanten), medan tunnplatteteorin väger bakkanten tyngst. Det är
+  kvar som det är.
+- **Utfall** (6 kast med spridning per fart, från 1,6 m, 0° uppåt, medeldistans):
+
+  | Plan | Stelt 5 / 8 / 11 m/s | Flexibelt förut | Flexibelt nu |
+  |---|---|---|---|
+  | Dart | 3,6 / 5,7 / 8,0 | 3,5 / 5,5 / 7,7 | 3,6 / 5,7 / 8,0 |
+  | W-dart (platta vingar, uppvikta hörn) | 5,7 / 10,3 / 11,1 | 3,9 / 5,3 / 5,9 | 5,0 / 10,7 / 15,8 |
+  | Trimmad dart | 5,7 / 9,9 / 10,4 | 4,0 / 5,3 / 6,1 | 5,1 / 10,8 / 15,5 |
+  | Glidplan | 8,8 / 12,2 / 12,5 | 5,1 / 6,0 / 5,9 | 9,0 / 12,7 / 20,1 |
+
+  - Vid hårda kast flyger flexibla plan längre än stela. Det stela planet stiger, tappar fart och
+    sjunker. Det flexibla vrider spetsarna lite uppåt i farten, vilket dämpar stigningen.
+  - Glid från 30 m i glidfart: alla prövade plan glider stadigt, W-darten på −16°, glidplanet
+    −11° (stelt −15° och −12°). En dart med klaffar längs hela bakkanten glider brant (−34°, stelt
+    −15°): bakkanten hålls rak av klaffvecket, och bara den främre spetsen böjer sig upp.
+  - Vingarna böjer sig mindre: glidplanet med klaffar 2,5 mm i ett lugnt kast och 8 mm i ett hårt
+    (förut 15 och 38 mm).
+  - Ett steg tar upp till 30 % längre tid för plan med uppvikta hörn (glidplanet 0,64 ms).
+- **Månen:** en brant och hård landning (14 m/s, 45°) gör glidplanet i flexibelt papper
+  osymmetriskt när nosen skrynklas, och det rullar över en vinge och glider 45–60 cm. Förut gjorde
+  samma sak 1 kast av 15 närliggande. Nu sker det oftare, eftersom styvare vingar tar upp mindre
+  av stöten. Testet för det går inte igenom. Det är inte rättat.
+- **Snitt ända ut till kanten** (`reachEdges` i `cut.ts`, saxen): ett snitt delar bara papperet
+  där det dras. Ett snitt i kölen som slutade en halv millimeter före mittvecket lämnade en remsa
+  som höll ihop fliken med kölen framför, så hela kölen följde med när fliken viktes upp. Saxen
+  drar nu ett snitt som slutar högst 2 mm före en papperskant (i snittets plan, längs snittet)
+  0,5 mm förbi kanten. Ett snitt som slutar längre in i papperet lämnas som det är.
+
+## 34. Köleffekten borttagen, och varför dihedral vinglar
+- **Köleffekten** (§30, `aero.keelDihedral`) är borttagen på användarens begäran. Den gav vingar
+  ovanpå en köl en halvempirisk ekvivalent dihedral på ungefär 8° i sidglidning, oberoende av
+  fart. Riktiga plan med plana vingar eller några graders anhedral tappar stabiliteten inom
+  5–8 m, och med köleffekten var de i stället lika stadiga som plan med dihedral. Kvar finns bara
+  markeringen av kölen under vingen (`underWing`, kölens sidokraft fördelad längs den).
+- **Rollmoment i sidglidning**, Clβ per radian vid trimvinkeln (stelt, W-dart med platta vingar):
+
+  | Källa | Bidrag |
+  |---|---|
+  | Köleffekten (borttagen) | −0,035 |
+  | Pilvinkeln: lasten flyttas mot den vindvända vingen, och lyftlutningen | −0,031 |
+  | De uppvikta hörnen | −0,016 |
+
+  - Pilvinkelns bidrag är i nivå med DATCOM för en deltavinge med dartens pilvinkel (ungefär
+    −0,06 till −0,09 vid CL 0,13), så det ändras inte.
+  - Plana vingar slogs ihop till en yta och fick större Clβ än vingar ½° ur planet (−0,047 mot
+    −0,024). Det berodde på rutnätet: med finare element går de separata vingarna mot samma
+    värde (−0,033 vid 5 mm, −0,038 vid 2,5 mm). Det är alltså inget fel i sammanslagningen.
+- **Kast med spridning** (10 kast, flexibelt papper, från 1,6 m, 5° uppåt). "Tappar" = lutar mer
+  än 35° (L) eller svänger mer än 25° (S) före landningen:
+
+  | Plan | 8 m/s | 11 m/s |
+  |---|---|---|
+  | Dart (otrimmad) | 0 tappar, 6,5 m | 0, 9,4 m |
+  | 3° anhedral, W | 3 tappar (L) efter 4,8 m | 5 (L) efter 6,4 m |
+  | Plana vingar, W | 0, 10,7 m | 2 (S) efter 12 m |
+  | 3° dihedral, W | 2 (S) efter 9,5 m | 7 (S) efter 12,6 m |
+  | 10° dihedral, W | 4 (S) efter 8,5 m | 7 (S) efter 9,6 m |
+  | Plana vingar, W, gem i nosen | 0, 6,2 m | 0, 9,0 m |
+  | Glidplan | 7 (S) efter 7,9 m | 9 (S) efter 11 m |
+
+  - Med köleffekten tappade 3° anhedral bara 1 av 10 vid 8 m/s, och plan med gem i nosen tappade
+    lutningen redan efter 3 m.
+- **Varför dihedral vinglar och svänger:**
+  - I stadigt glid utan spridning dämpas en lutning på 10° fort för alla dartar (holländsk roll
+    väl dämpad), och de glider nästan rakt. Med gem i nosen blir spiralen långsamt divergent
+    (riktningsstabiliteten ökar), och glidplanet svänger stadigt.
+  - I kasten är det veckspridningen (`scatter.creaseDeg`, 3°) som avgör: utan den tappar 10°
+    dihedral 2 av 10 vid 11 m/s i stället för 7. Två vingar med olika vinkel lutar lyftkraften
+    olika och ger en sidokraft. Plana vingar glider då lite snett. Med dihedral blir sidglidningen
+    lutning och sväng, som när ett modellflygplan svänger med bara sidroder. Det är fysikaliskt
+    riktigt och ändras inte.
+  - Plana vingar med W glider fortfarande stadigt. Pilvinkeln rätar upp dem.
+- **Spetsöverstegring prövad, inte införd:** användaren beskriver att plana vingar lutar, svänger
+  eller ibland stegrar sig efter en kort sträcka och sedan faller. Det liknar spetsöverstegring
+  hos pilade vingar, och W, gem i nosen och dihedral är de klassiska botemedlen. Modellen ger
+  varje element samma lyftkoefficient, så lasten längs spännvidden följer kordan. En prövning
+  med Schrenks fördelning (medelvärdet av kordan och en elliptisk fördelning, så att spetsarna får
+  högre lokal lyftkoefficient och överstegras först) ändrade nästan ingenting. Planen glider vid
+  6–8° anfallsvinkel och minst 4–5 m/s, så spetsarna når aldrig överstegring.
+
+## 35. Månlandningar (inte rättat än)
+- **Läget:** testet med ett perfekt symmetriskt kast (14 m/s, 45°) klarade sig på tur. Med spelets
+  spridning hoppar planen upp till 2–5 m och glider upp till 20–33 m efter nedslaget, både före
+  och efter §33–34. Det strider mot användarens val för Månen: dammet ska stoppa papperet, och
+  inga kullerbyttor.
+- **Orsak:** när en spets slår i vid ungefär 9 m/s stoppar friktionen och plogningen den tvärt.
+  Spetsen har liten effektiv massa, så planets fart blir snurr kring den, 1 300–2 700 °/s. Samma
+  sak händer i gymnastiksalen. På Månen bromsar ingen luft snurren efteråt, och nästa hörn som slår
+  i lyfter planet i den svaga tyngden. Varje kontakt varar bara ett steg, så dammets dämpning av
+  rotationen hinner nästan inte verka.
+- **Prövat utan att det räckte:**
+  - Kontaktlösare som inte beror på punkternas ordning (Jacobi): landningen blev inte symmetrisk.
+  - Dämpa snurren innan stöten räknas: värre.
+  - Ett dammlager på 3 mm där papperet plogar åt alla håll: medianen för en stel dart gick från
+    5,3 till 0,7 m, men enstaka kast hoppar fortfarande nästan 2 m.
+  - Starkare dämpning (600/s): medianen 0,3–0,5 m, men kast på 5–15 m kvar. Vid 2 000/s kommer
+    planet aldrig till vila.
+- **Trolig väg framåt:** papperet är inte stelt där det slår i. Spetsen skrynklas och böjer sig,
+  stöten tar längre tid och energin går åt till att deformera papperet. I modellen registreras
+  skrynklingen bara och ritas efteråt, och kontakten är en stel punkt.

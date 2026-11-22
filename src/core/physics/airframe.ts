@@ -108,7 +108,7 @@ export function buildAirframe(
     hi = Math.max(hi, y);
   }
   const refSpan = Math.max(hi - lo, 1e-3);
-  markKeelJunctions(mesh, model, com, up, right, refSpan / 2, cfg.aero.keelDihedral, valid);
+  markKeelJunctions(mesh, model, com, up, right, valid);
   return {
     massProps: mp,
     mass: mp.mass,
