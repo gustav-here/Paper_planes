@@ -238,10 +238,9 @@ function updateSurfaceCache(af: Airframe, sid: number, w2: Vec2, w3: Vec3, c: Su
       const b = Math.max(a + 1e-6, smax - le);
       c.friction[k] = (Math.sqrt(b) - Math.sqrt(a)) / (b - a);
     }
-    // a keel under a wing: its side force is spread along it (see AeroSurface.underWing)
-    const g = s.underWing ? 1 : attachedWeight(x1, x2);
+    const g = attachedWeight(x1, x2);
     c.gAtt[k] = g;
-    const ge = s.underWing ? 1 : ellipticWeight(x1, x2);
+    const ge = ellipticWeight(x1, x2);
     c.gEll[k] = ge;
     const xm = Math.min(1, Math.max(0, (x1 + x2) / 2));
     c.xiMid[k] = xm;

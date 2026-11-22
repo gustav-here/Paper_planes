@@ -10,7 +10,7 @@ import type { RigidTransform } from '../math/transform';
 import { facetVertices } from '../paper/model';
 import type { PaperModel } from '../paper/model';
 import type { Airframe } from './airframe';
-import { buildAeroMesh, markKeelJunctions } from './aeroMesh';
+import { buildAeroMesh } from './aeroMesh';
 import { createAeroCache, evaluateAero } from './aeroModel';
 import type { AeroCache, AeroDebug, ElementDeform, SurfacePose } from './aeroModel';
 import { computeAddedMass } from './addedMass';
@@ -57,7 +57,6 @@ export interface FlexAirframe {
 export function buildFlexAirframe(model: PaperModel, rigid: Airframe, cfg: PhysicsConfig): FlexAirframe {
   const set = buildPanels(model, rigid, cfg.paper);
   const mesh = buildAeroMesh(model, rigid.com, cfg.aero.elementSizeM, cfg.aero.liftingSystemAngleDeg, set.panelOf);
-  markKeelJunctions(mesh, model, rigid.com, rigid.up, rigid.right, set.panelOf);
   const af: Airframe = { ...rigid, mesh };
   // control surfaces of the rigid airframe refer to its own mesh; remap by facet tags
   af.controls = rigid.controls.map((g) => ({ ...g, surfaces: mesh.surfaces.filter((s) => g.facets.includes(firstFacetOf(model, set, s.tag))).map((s) => s.id) }));

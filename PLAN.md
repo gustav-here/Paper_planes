@@ -1313,3 +1313,40 @@ Resultat med standardkonfigurationen (släpp från 10 m, olika kastfarter):
 - **Trolig väg framåt:** papperet är inte stelt där det slår i. Spetsen skrynklas och böjer sig,
   stöten tar längre tid och energin går åt till att deformera papperet. I modellen registreras
   skrynklingen bara och ritas efteråt, och kontakten är en stel punkt.
+
+## 36. Kölen lastas som andra ytor: plana vingar viker av
+- **Användarens iakttagelse:** en dart med helt plana vingar är instabil och viker oftast av åt
+  något håll inom 4–8 m, oavsett hur den släpps. Vingar med uppvikta eller nedvikta spetsar, eller
+  ett W, är stabilare men vinglar lite i roll. Att både upp- och nedvikta spetsar hjälper betyder
+  att det är riktningsstabiliteten (fenor bakom tyngdpunkten), inte rollstabiliteten.
+- **Tidigare (§30):** kölens sidokraft spreds jämnt längs hela kölen (`underWing`), med motiveringen
+  att vingen ovanför är en ändplatta som breddas hela vägen bakåt. Det gjorde den plana darten svagt
+  riktningsstabil (Cnβ +0,004).
+- **Varför det var fel:** i slank kroppsteori uppstår sidokraften där tvärsnittets medföljande
+  luftmassa växer: där kölen blir djupare (de första ~6 cm) och där vingen bredvid breddas tills den
+  är ungefär dubbelt så bred som kölen är djup. På en dart händer båda ungefär 12 cm från nosen,
+  framför tyngdpunkten (16 cm). En uppskattning av det (m ∝ h²(1 + r²/(1 + r²)), r = s/h) lade
+  kraften ännu längre fram, och då blev även plan med fenor på spetsarna instabila, tvärtom mot
+  användarens iakttagelse. Strömningen släpper vid kölens vassa kant, vilket brukar ge mindre kraft
+  vid nosen än teorin.
+- **Nu:** kölen lastas som vilken yta som helst, från sin framkant (tryckcentrum vid ¼ korda).
+  Specialfallet `underWing` och `markKeelJunctions` är borttagna.
+- **Utfall** (8 kast med spridning, 8 m/s, 5° uppåt, flexibelt papper; "viker av" = kursen ändras
+  mer än 20°):
+
+  | Plan | Cnβ | Viker av | Anmärkning |
+  |---|---|---|---|
+  | Plana vingar | −0,031 | 7 av 8 | slår ofta runt efter 3,5–6 m |
+  | Spetsar uppvikta 80° (2 cm) | +0,014 | 1 | stadig |
+  | Spetsar nedvikta 80° | +0,018 | 1 | stadig |
+  | Ett gem i nosen | +0,013 | 0 | rak, landar efter 5 m (utan gem 6 m) |
+  | Två gem i nosen | +0,020 | 0 | rak, 5 m |
+  | 10° dihedral | −0,019 | 6 | vinglar i roll, ungefär 2 växlingar per kast |
+  | Grunt W (14° vid 45 % av spännvidden) | −0,031 | 8 | för litet för att verka som fena |
+  | Trimmad dart (små uppvikta hörn) | −0,015 | 7 | |
+  | Glidplan | −0,002 | 4 | landar ändå efter 12–17 m |
+
+  - De små uppvikta bakre hörnen hjälper nästan inte: vid flygvinkeln står de ungefär 23° mot
+    luften och har släppt strömningen, så de är svaga fenor.
+  - Valideringens trimmade dart viker nu av vid 11 m/s (14 av 16 kast) i stället för att stegra
+    sig. Testet för överstegring använder därför 13 och 15 m/s (5 och 7 av 16 stegrar sig).

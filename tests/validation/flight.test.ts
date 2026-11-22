@@ -204,8 +204,10 @@ describe('validation', { timeout: 240_000 }, () => {
       return n;
     };
     const gentle = stalls(5);
-    const firm = stalls(11);
-    const hard = stalls(13);
+    // (at 11 m/s it mostly veers off to one side before it can climb: its flat wings with small
+    // turned-up corners are directionally unstable, PLAN.md §36)
+    const firm = stalls(13);
+    const hard = stalls(15);
     expect(gentle).toBe(0);
     // thrown firmly it sometimes climbs into a stall, not always; harder, more often
     expect(firm).toBeGreaterThan(0);

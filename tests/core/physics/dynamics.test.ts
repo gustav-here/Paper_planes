@@ -203,20 +203,13 @@ describe('swept wings', () => {
   });
 });
 
-describe('wings on a keel', () => {
-  it('a keel with wings on top is found; a flat sheet has none', () => {
-    const af = airframeFromDesign(makeDart(), DEFAULT_CONFIG); // 25 mm keel, flat wings
-    expect(af.mesh.surfaces.filter((s) => s.underWing).length).toBeGreaterThan(0);
-    expect(airframeFromDesign(flatSheet, DEFAULT_CONFIG).mesh.surfaces.some((s) => s.underWing)).toBe(false);
-  });
-
-  it("the wing on top spreads the keel's side force along it: the dart no longer turns away from the wind", () => {
+describe('a keel under flat wings', () => {
+  it("is loaded like any surface, from its leading edge: the flat dart turns away from the wind", () => {
     const af = airframeFromDesign(makeDart(), DEFAULT_CONFIG);
-    expect(af.mesh.surfaces.some((s) => s.underWing)).toBe(true);
     const k = 0.5 * DEFAULT_CONFIG.rho * 25 * af.refArea * af.refSpan;
     const yaw = (b: number) => -V.dot(tunnelPoint(af, DEFAULT_CONFIG, 5, 6, b).torque, af.up) / k;
-    // nose-right moment grows with sideslip to the right: it turns into the wind (or is neutral)
-    expect((yaw(4) - yaw(-4)) / ((8 * Math.PI) / 180)).toBeGreaterThan(-0.005);
+    // nose-right moment falls with sideslip to the right: it is directionally unstable
+    expect((yaw(4) - yaw(-4)) / ((8 * Math.PI) / 180)).toBeLessThan(-0.01);
   });
 });
 
@@ -291,7 +284,5 @@ describe('twisted paper at a clip', () => {
     // (a few mm remain: the clip holds the creases shut, so the shape itself differs a little;
     // with every strip its own leading edge it moved 23 mm)
     expect(Math.abs(col(clipped) - col(plain))).toBeLessThan(0.005);
-    // and the keel under the merged wings is still found
-    expect(clipped.af.mesh.surfaces.some((s) => s.underWing)).toBe(true);
   });
 });
