@@ -985,8 +985,12 @@ Resultat med standardkonfigurationen (släpp från 10 m, olika kastfarter):
   i stället av att vingens bakre yttre hörn viks upp (4 cm och 3 cm, 30°, `reflexOps`). Det ger
   ungefär samma trim som de gamla klaffarna. Klaffar finns kvar för tester (`ELEVATOR_TRIM`).
 - **Lyftcentrum:** den blå pilen i fysikvyn var kroppens uppåtaxel. Nu visar den lyftcentrum
-  (neutralpunkten, `centerOfLift`): x_np = x_cm + (Cmα/CLα)·c̄ vid trimvinkeln. Bakom
-  tyngdpunkten betyder stabilt i tippled.
+  (neutralpunkten, `centerOfLift`): x_np = x_cm + (Cmα/CLα)·c̄ vid en fast anfallsvinkel på 5°.
+  Bakom tyngdpunkten betyder stabilt i tippled.
+  - Vinkeln är fast, så punkten beror bara på formen. Ett gem flyttar tyngdpunkten men inte
+    pilen.
+  - Vid trimvinkeln skulle punkten också flytta sig, eftersom trimvinkeln ändras med gemmet och
+    dartens neutralpunkt flyttar bakåt när vinkeln ökar: −30 mm vid 3° och −58 mm vid 10°.
 - **Ojämna kast** (`LaunchParams.scatterSeed`, `PhysicsConfig.scatter`): spelet ger varje kast ett
   nytt slumpfrö, och uppspelningar behåller det. Ingen kastar exakt rakt eller viker exakt
   symmetriskt.

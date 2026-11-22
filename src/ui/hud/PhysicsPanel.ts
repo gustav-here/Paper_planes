@@ -105,7 +105,7 @@ export class PhysicsPanel {
       ['Vingyta (projicerad)', `${fmt(af.refArea * 1e4, 0)} cm², spännvidd ${fmt(af.refSpan * 1000, 0)} mm`],
       ['Medflyttad luft', `${fmt(addedTotal * 1000, 1)} g (normalriktning, summa ytor)`],
     ];
-    if (col) rows.push(['Lyftcentrum', `${fmt(Math.abs(col.behindCom) * 1000, 0)} mm ${col.behindCom >= 0 ? 'bakom' : 'framför'} tyngdpunkten (${col.behindCom > 0 ? 'stabil' : 'instabil'} i tippled)`]);
+    if (col) rows.push(['Lyftcentrum (vid 5°)', `${fmt(Math.abs(col.behindCom) * 1000, 0)} mm ${col.behindCom >= 0 ? 'bakom' : 'framför'} tyngdpunkten (${col.behindCom > 0 ? 'stabil' : 'instabil'} i tippled)`]);
     if (st.trimAlphaDeg !== null) {
       rows.push(
         ['Trimvinkel α', `${fmt(st.trimAlphaDeg)}°`],
@@ -117,7 +117,7 @@ export class PhysicsPanel {
     }
     this.body.innerHTML =
       `<table>${rows.map(([k, v]) => `<tr><th>${k}</th><td>${v}</td></tr>`).join('')}</table>` +
-      `<p class="note">Vindtunnel vid 5 m/s. Gul kula = tyngdpunkt, orange pil = nos, blå pil = lyftcentrum (där lyftkraften angriper när anfallsvinkeln ändras), prickar = ytelement.</p>`;
+      `<p class="note">Vindtunnel vid 5 m/s. Gul kula = tyngdpunkt, orange pil = nos, blå pil = lyftcentrum vid 5° anfallsvinkel (där lyftkraften angriper när vinkeln ändras; det beror bara på formen, så ett gem flyttar tyngdpunkten men inte pilen), prickar = ytelement.</p>`;
     return af;
   }
 }

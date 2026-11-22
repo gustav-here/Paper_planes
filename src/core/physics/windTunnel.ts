@@ -76,13 +76,15 @@ export function stability(af: Airframe, cfg: PhysicsConfig, V0 = 5): Stability {
 /**
  * Centre of lift (neutral point): where the change in lift with angle of attack acts, on the
  * line through the centre of mass along the nose. Behind the centre of mass = statically stable
- * in pitch. From the tunnel at α₀ (the trim angle, or 5° if there is none):
+ * in pitch. From the tunnel at a fixed α₀ (5°, a typical glide):
  *   x_np = x_cm + (Cmα / CLα) · c̄  along the nose (Cmα < 0, CLα > 0 ⇒ behind).
+ * At a fixed α it depends on the shape alone, not on where the weight is: a clip moves the centre
+ * of mass, not this point. (At the trim angle it would also move, because the trim angle changes
+ * with the weight and the neutral point of a low wing moves back as α grows.)
  * Returns the point (model space) and its distance behind the centre of mass (m), or null when
  * the lift hardly changes with α (no meaningful point).
  */
-export function centerOfLift(af: Airframe, cfg: PhysicsConfig, V0 = 5): { point: Vec3; behindCom: number } | null {
-  const a0 = stability(af, cfg, V0).trimAlphaDeg ?? 5;
+export function centerOfLift(af: Airframe, cfg: PhysicsConfig, V0 = 5, a0 = 5): { point: Vec3; behindCom: number } | null {
   const lo = tunnelPoint(af, cfg, V0, a0 - 1);
   const hi = tunnelPoint(af, cfg, V0, a0 + 1);
   const CLa = (hi.CL - lo.CL) / (2 * DEG);

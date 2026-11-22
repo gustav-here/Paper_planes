@@ -9,6 +9,8 @@ import { FlightSim } from '../../../src/core/physics/simulation';
 import { centerOfLift, stability, tunnelPoint } from '../../../src/core/physics/windTunnel';
 import { computeAddedMass } from '../../../src/core/physics/addedMass';
 import { attachedWeight } from '../../../src/core/physics/aeroModel';
+import { replayDesign } from '../../../src/core/paper/replay';
+import { findClipPlacement } from '../../../src/core/paper/clips';
 
 const flat = airframeFromDesign(flatSheet, DEFAULT_CONFIG);
 
@@ -145,6 +147,23 @@ describe('centre of lift', () => {
     }
     const flat = centerOfLift(airframeFromDesign(flatSheet, DEFAULT_CONFIG), DEFAULT_CONFIG)!;
     expect(flat.behindCom).toBeLessThan(0);
+  });
+
+  it('depends on the shape only: a clip moves the centre of mass, not the centre of lift', () => {
+    const d = makeDart();
+    const m = replayDesign(d).models.at(-1)!;
+    const withClip = (x: number) => {
+      const p = findClipPlacement(m, [x, 0, -0.01], 0.05)!;
+      return airframeFromDesign({ ...d, ops: [...d.ops, { type: 'clip', id: 'g', at: p.at, edgeDir: p.edgeDir, massKg: 0.001 }] }, DEFAULT_CONFIG);
+    };
+    const front = withClip(0.12);
+    const back = withClip(-0.12);
+    const colFront = centerOfLift(front, DEFAULT_CONFIG)!;
+    const colBack = centerOfLift(back, DEFAULT_CONFIG)!;
+    expect(front.com[0] - back.com[0]).toBeGreaterThan(0.03);
+    expect(Math.abs(colFront.point[0] - colBack.point[0])).toBeLessThan(0.002);
+    // so the clip at the front leaves a bigger margin behind the centre of mass
+    expect(colFront.behindCom).toBeGreaterThan(colBack.behindCom + 0.03);
   });
 });
 
