@@ -40,6 +40,9 @@ Webbläsarspel: vik ett pappersflygplan av ett A4 och kasta det. Flygbeteendet s
 - Kvasistationär tunnplattemodell per ytelement: lyft enligt Helmbold (finit AR beräknad ur
   geometri och flöde), stall via mjuk blandning mot separerad platta, kordvis lastfördelning
   (tryckcentrum ¼c fäst flöde → ½c vid 90°) där framkanten bestäms av aktuellt flöde.
+- Friktionsmotståndet räknas per element från ytans framkant längs flödet (laminärt gränsskikt,
+  `airViscosity`), plus kanterna (`CDedge`). En bit som står fritt i luften, som en fena, får sin
+  egen framkant.
 - Tillskottsmassa (6×6, kroppsram, strip-teori) ingår. Munk-momentet är AV som standard: det
   ingår redan i lastfördelningen med tryckcentrum vid ¼ korda (annars dubbelräknas det, se PLAN.md §15).
 - Sidoförhållandet räknas per lyftsystem (ytor inom 45° från varandra delar spännvidd).

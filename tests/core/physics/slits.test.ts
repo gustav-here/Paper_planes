@@ -5,6 +5,8 @@ import type { CutOp, DesignFile, FoldOp } from '../../../src/core/paper/ops';
 import type { Vec3 } from '../../../src/core/math/vec3';
 import { facetArea, facetVertices, totalArea } from '../../../src/core/paper/model';
 import { DEFAULT_CONFIG } from '../../../src/core/physics/config';
+import { airframeFromDesign } from '../../../src/core/physics/airframe';
+import { tunnelPoint } from '../../../src/core/physics/windTunnel';
 import { slitTabs } from '../../../src/core/physics/slits';
 import { createSimulator, prepare } from '../../../src/core/physics/factory';
 import { MultiBodySim } from '../../../src/core/physics/multibody';
@@ -158,6 +160,16 @@ describe('slit tabs in flexible paper', () => {
         planeNormal: UP, movingSide: [-1, 0, 0], kind: 'valley', angleDeg: 180, scope: 'flap', pick: onWing(TE + 0.015, 0.06),
       };
       expect(canPushThrough(m, tab)).toBe(false);
+    });
+
+    it('standing up it is a new piece in the airflow and drags more; hanging down it is just more keel', () => {
+      const { cuts, fold } = keelTab(KEEL);
+      const zeroLiftDrag = (d: DesignFile) => tunnelPoint(airframeFromDesign(d, DEFAULT_CONFIG), DEFAULT_CONFIG, 5, 0).CD;
+      const keel = zeroLiftDrag(withOps(plainDart(), [], false));
+      const down = zeroLiftDrag(withOps(plainDart(), cuts, false));
+      const up = zeroLiftDrag(withOps(plainDart(), [...cuts, { ...fold, through: true }], false));
+      expect(down).toBeCloseTo(keel, 6);
+      expect(up).toBeGreaterThan(down * 1.01);
     });
 
     it('the fin flies: the plane stays in one piece and lands', () => {

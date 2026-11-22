@@ -15,8 +15,16 @@ export interface AeroConfig {
   /** Normal-force coefficient of a plate broadside to the flow. Hoerner: ≈1.17 for a square
    *  plate up to 1.98 for an infinite one; paper-plane surfaces have low aspect ratio. */
   CN90: number;
-  /** Zero-lift drag (skin friction on both sides, laminar, Re ≈ 3·10⁴: 2·1.328/√Re ≈ 0.015, plus edges). */
-  CD0: number;
+  /**
+   * Skin friction is worked out per element from how far the air has run along the paper since its
+   * leading edge (a laminar boundary layer, Blasius): local Cf = 0.664/√Re_x on each side. Over a
+   * whole plate that is 2·1.328/√Re_c (≈ 0.015 at Re ≈ 3·10⁴); a piece standing alone in the flow
+   * (a fin) starts its own boundary layer and drags more per area than paper further along a long
+   * surface. This is the rest of the zero-lift drag: the cut edges and small wrinkles.
+   */
+  CDedge: number;
+  /** Dynamic viscosity of air (Pa·s), 20 °C. */
+  airViscosity: number;
   /** Oswald span efficiency for induced drag. */
   oswaldE: number;
   /** Centre-of-pressure shift for separated flow: x_cp = 0.5 − Δ·cos α
@@ -201,7 +209,8 @@ export const DEFAULT_CONFIG: PhysicsConfig = {
     alphaStallDeg: 10,
     stallBlendM: 25,
     CN90: 1.2,
-    CD0: 0.02,
+    CDedge: 0.005,
+    airViscosity: 1.8e-5,
     oswaldE: 0.8,
     sepCopShift: 0.16,
     elementSizeM: 0.01,

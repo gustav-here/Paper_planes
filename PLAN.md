@@ -1019,5 +1019,14 @@ Resultat med standardkonfigurationen (släpp från 10 m, olika kastfarter):
   - **Kollisionskontrollen:** papper som svänger förbi annat papper som sitter i samma
     gångjärnslinje räknas nu som papper genom papper. Tidigare passerade en flik som var klippt
     ända upp till vingroten rakt genom vingen.
-  - Fenan har samma yta som fliken hade nedåt och därmed samma luftmotstånd. Den gav något rakare
-    flygning i provkasten.
+  - Fenan gav något rakare flygning i provkasten. Den ger också mer luftmotstånd, se friktionen
+    nedan.
+- **Friktion från framkanten:** friktionsmotståndet räknas per element från hur långt luften har
+  strömmat längs papperet sedan framkanten. Det är ett laminärt gränsskikt (Blasius) med lokalt
+  Cf = 0,664/√Re_x per sida. Medelvärdet över elementet, (√x₂ − √x₁)/(x₂ − x₁), räknas fram när
+  flödesriktningen ändras, och ett tillägg för kanterna (`CDedge` = 0,005) kommer till.
+  - En flik nedåt är en fortsättning på kölen, där gränsskiktet redan har växt. Den ger exakt
+    samma motstånd som en hel köl.
+  - Uppåt får fenan en egen framkant och ger ungefär 4 % mer nollyftmotstånd för hela darten.
+  - Totalt blev friktionen ungefär 12 % lägre än med det gamla fasta värdet (CD0 = 0,02), eftersom
+    papperet längre bak på långa ytor har tunnare friktion. Dartens glidtal gick från 3,2 till 3,6.

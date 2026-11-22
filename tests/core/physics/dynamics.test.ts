@@ -147,3 +147,16 @@ describe('centre of lift', () => {
     expect(flat.behindCom).toBeLessThan(0);
   });
 });
+
+describe('skin friction', () => {
+  it('builds up from the leading edge: a sheet flying long side first has less friction per area', () => {
+    const along = airframeFromDesign(flatSheet, DEFAULT_CONFIG);
+    const across = airframeFromDesign({ ...flatSheet, orientation: { nose: [0, 0, 1], up: [0, 1, 0] } }, DEFAULT_CONFIG);
+    const cd = (af: typeof along) => tunnelPoint(af, DEFAULT_CONFIG, 5, 0).CD;
+    expect(cd(along)).toBeLessThan(cd(across));
+    // and about as for a laminar plate: 2·1.328/√Re (297 mm and 210 mm chords) plus the edges
+    const nu = DEFAULT_CONFIG.aero.airViscosity / DEFAULT_CONFIG.rho;
+    for (const [af, c] of [[along, 0.297], [across, 0.21]] as const)
+      expect(cd(af)).toBeCloseTo(DEFAULT_CONFIG.aero.CDedge + (2 * 1.328) / Math.sqrt((5 * c) / nu), 3);
+  });
+});

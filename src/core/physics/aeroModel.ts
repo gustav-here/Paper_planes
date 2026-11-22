@@ -52,6 +52,11 @@ interface SurfaceCache {
   xiMid: Float64Array;
   /** Σ Aₑ(1−2ξₘ) for normalizing the separated distribution. */
   K: number;
+  /**
+   * Per element, (√x₂ − √x₁)/(x₂ − x₁) (m^-½) for its extent x₁…x₂ behind the leading edge along the
+   * flow: the mean of 1/√x over the element, for laminar skin friction.
+   */
+  friction: Float64Array;
   aspect: number;
 }
 
@@ -59,12 +64,16 @@ export interface AeroCache {
   surfaces: SurfaceCache[];
 }
 
+/** Friction factor for an element before the flow direction is known: as for a 10 cm plate. */
+const DEFAULT_FRICTION = 1 / Math.sqrt(0.1);
+
 export function createAeroCache(af: Airframe): AeroCache {
   return {
     surfaces: af.mesh.surfaces.map((s) => ({
       dir: null,
       gAtt: new Float64Array(s.elementCount).fill(1),
       xiMid: new Float64Array(s.elementCount).fill(0.5),
+      friction: new Float64Array(s.elementCount).fill(DEFAULT_FRICTION),
       K: 0,
       aspect: 1,
     })),
@@ -155,11 +164,16 @@ function updateSurfaceCache(af: Airframe, sid: number, w2: Vec2, w3: Vec3, c: Su
     }
     let x1 = 0;
     let x2 = 1;
+    c.friction[k] = DEFAULT_FRICTION;
     if (Number.isFinite(tLo) && Number.isFinite(tHi) && tHi - tLo > 1e-6) {
       const le = sc + tLo;
       const chord = tHi - tLo;
       x1 = (smin - le) / chord;
       x2 = (smax - le) / chord;
+      // metres behind the leading edge
+      const a = Math.max(0, smin - le);
+      const b = Math.max(a + 1e-6, smax - le);
+      c.friction[k] = (Math.sqrt(b) - Math.sqrt(a)) / (b - a);
     }
     const g = attachedWeight(x1, x2);
     c.gAtt[k] = g;
@@ -276,13 +290,15 @@ export function evaluateAero(
       const un = V.dot(n, uh);
       const alpha = Math.asin(Math.min(1, Math.abs(un)));
       const q = 0.5 * rho * speed * speed;
+      // zero-lift drag: laminar skin friction on both sides from the leading edge, plus the edges
+      const CD0 = cfg.CDedge + (rho > 0 ? 2 * 1.328 * Math.sqrt(cfg.airViscosity / (rho * speed)) * c.friction[i] : 0);
       const sig = 1 / (1 + Math.exp(-cfg.stallBlendM * (alpha - alphaS)));
       const sa = Math.sin(alpha);
       const ca = Math.cos(alpha);
       const clAtt = a * sa;
-      const cdAtt = cfg.CD0 + (clAtt * clAtt) / (Math.PI * cfg.oswaldE * AR);
+      const cdAtt = CD0 + (clAtt * clAtt) / (Math.PI * cfg.oswaldE * AR);
       const clSep = cfg.CN90 * sa * ca;
-      const cdSep = cfg.CD0 + cfg.CN90 * sa * sa;
+      const cdSep = CD0 + cfg.CN90 * sa * sa;
       const CL = (1 - sig) * clAtt + sig * clSep;
       const CD = (1 - sig) * cdAtt + sig * cdSep;
       let gbar = 1;
@@ -298,7 +314,7 @@ export function evaluateAero(
       eL = l > 1e-9 ? V.scale(eL, 1 / l) : [0, 0, 0];
       const qa = q * e.area;
       const L = V.scale(eL, qa * gbar * CL);
-      const D = V.scale(eD, qa * (gbar * (CD - cfg.CD0) + cfg.CD0));
+      const D = V.scale(eD, qa * (gbar * (CD - CD0) + CD0));
       const F = V.add(L, D);
       if (elementForces) {
         elementForces[idx * 3] = F[0];
