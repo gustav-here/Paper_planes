@@ -23,7 +23,15 @@ import type { AeroConfig } from './config';
  *   separated: g(ξ) = 1 + k(1−2ξ),  k = 6Δ cos α   (x_cp = ½ − Δ cos α)
  * Weights are normalized per surface so the total force is unchanged.
  *
- *   Fₑ = q Aₑ [ ḡ (C_L ê_L + (C_D − C_D0) ê_D) + C_D0 ê_D ]
+ *   Fₑ = q Aₑ [ ḡ (C_L ê_L + (C_D − C_D0) ê_D) + C_D0 ê_D ]  + ΔFₑ,rot
+ *
+ * Rotational lift (Kramer effect): each element's own α already includes ω × r, so a plate
+ * turning about its span gets the α at its centre of pressure (¼c). Thin-airfoil theory puts the
+ * circulation at the α of the ¾-chord point instead, half a chord further back. The difference,
+ *   ΔC_L = k_rot · a · ω_s c / (2U)      (ω_s: rate about the span axis, c: local chord)
+ * acts half with the ¼c loading and half with the elliptic ½c loading (the pitch-rate "camber"),
+ * and stays in separated flow (Pesavento & Wang 2004: the rotational circulation of a tumbling
+ * plate does not stall), there at ½c. It is perpendicular to the flow: no work, no drag.
  */
 
 const DEG = Math.PI / 180;
@@ -42,6 +50,20 @@ export function attachedWeight(x1: number, x2: number): number {
     return (2 / Math.PI) * Math.sqrt((1 - m) / m);
   }
   return (G(b) - G(a)) / (b - a);
+}
+
+/** ∫₀ˣ (8/π)√(t(1−t)) dt: the elliptic chordwise loading, 1 over the whole chord. */
+function H(x: number): number {
+  const t = Math.min(1, Math.max(0, x));
+  return (8 / Math.PI) * (((2 * t - 1) * Math.sqrt(t * (1 - t))) / 4 + Math.asin(Math.sqrt(t)) / 4);
+}
+
+/** Mean elliptic weight over [x1, x2]. */
+export function ellipticWeight(x1: number, x2: number): number {
+  const a = Math.min(1, Math.max(0, Math.min(x1, x2)));
+  const b = Math.min(1, Math.max(0, Math.max(x1, x2)));
+  if (b - a < 1e-9) return (8 / Math.PI) * Math.sqrt(a * (1 - a));
+  return (H(b) - H(a)) / (b - a);
 }
 
 interface SurfaceCache {
@@ -63,6 +85,10 @@ interface SurfaceCache {
    * sideslip the wing turned into the wind is swept less and lifts more.
    */
   sweepTan2: Float64Array;
+  /** Per element, the chord through its centre along the flow (m); 0 when not known. */
+  chord: Float64Array;
+  /** Normalized elliptic weights per element, (8/π)√(ξ(1−ξ)) averaged over its extent. */
+  gEll: Float64Array;
   aspect: number;
 }
 
@@ -84,6 +110,8 @@ export function createAeroCache(af: Airframe): AeroCache {
       xiMid: new Float64Array(s.elementCount).fill(0.5),
       friction: new Float64Array(s.elementCount).fill(DEFAULT_FRICTION),
       sweepTan2: new Float64Array(s.elementCount),
+      chord: new Float64Array(s.elementCount),
+      gEll: new Float64Array(s.elementCount).fill(1),
       K: 0,
       aspect: 1,
     })),
@@ -145,6 +173,7 @@ function updateSurfaceCache(af: Airframe, sid: number, w2: Vec2, w3: Vec3, c: Su
   const s = af.mesh.surfaces[sid];
   const els = af.mesh.elements;
   let sumAG = 0;
+  let sumAE = 0;
   let K = 0;
   for (let k = 0; k < s.elementCount; k++) {
     const e = els[s.firstElement + k];
@@ -197,9 +226,11 @@ function updateSurfaceCache(af: Airframe, sid: number, w2: Vec2, w3: Vec3, c: Su
     let x1 = 0;
     let x2 = 1;
     c.friction[k] = DEFAULT_FRICTION;
+    c.chord[k] = 0;
     if (Number.isFinite(tLo) && Number.isFinite(tHi) && tHi - tLo > 1e-6) {
       const le = sc + tLo;
       const chord = tHi - tLo;
+      c.chord[k] = chord;
       x1 = (smin - le) / chord;
       x2 = (smax - le) / chord;
       // metres behind the leading edge
@@ -210,13 +241,18 @@ function updateSurfaceCache(af: Airframe, sid: number, w2: Vec2, w3: Vec3, c: Su
     // a keel under a wing: its side force is spread along it (see AeroSurface.underWing)
     const g = s.underWing ? 1 : attachedWeight(x1, x2);
     c.gAtt[k] = g;
+    const ge = s.underWing ? 1 : ellipticWeight(x1, x2);
+    c.gEll[k] = ge;
     const xm = Math.min(1, Math.max(0, (x1 + x2) / 2));
     c.xiMid[k] = xm;
     sumAG += e.area * g;
+    sumAE += e.area * ge;
     K += e.area * (1 - 2 * xm);
   }
   const norm = sumAG > 0 ? s.area / sumAG : 1;
   for (let k = 0; k < s.elementCount; k++) c.gAtt[k] *= norm;
+  const normE = sumAE > 0 ? s.area / sumAE : 1;
+  for (let k = 0; k < s.elementCount; k++) c.gEll[k] *= normE;
   c.K = K;
   // aspect ratio of the lifting system this surface belongs to, across the current flow
   const across = V.normalize(V.cross(s.normal, w3));
@@ -281,9 +317,16 @@ export function evaluateAero(
     const inPlane = V.negate(V.rejectFrom(uc, n0));
     const ipl = V.length(inPlane);
     let uniform = false;
+    // rotation rate of this surface about its span axis s = n × d (d: downstream in the plane)
+    let span: Vec3 = [0, 0, 0];
+    let spanRate = 0;
     if (ipl < 1e-6 * Math.max(V.length(uc), 1e-9) || ipl < 1e-9) {
       uniform = true;
     } else {
+      if (cfg.rotationalLift > 0) {
+        span = V.cross(n0, V.scale(inPlane, 1 / ipl));
+        spanRate = V.dot(P ? V.add(w, P.w) : w, span);
+      }
       // chord geometry is evaluated in the surface's rest frame
       const w3 = P ? M3.mulVec(M3.transpose(P.R), V.scale(inPlane, 1 / ipl)) : V.scale(inPlane, 1 / ipl);
       const w2: Vec2 = [V.dot(w3, s.e1), V.dot(w3, s.e2)];
@@ -355,7 +398,13 @@ export function evaluateAero(
       const l = V.length(eL);
       eL = l > 1e-9 ? V.scale(eL, 1 / l) : [0, 0, 0];
       const qa = q * e.area;
-      const L = V.scale(eL, qa * gbar * CL);
+      let L = V.scale(eL, qa * gbar * CL);
+      if (spanRate !== 0 && c.chord[i] > 0) {
+        // rotational lift along −uh × s (perpendicular to the flow; n at small α)
+        const gRot = (1 - sig) * 0.5 * (c.gAtt[i] + c.gEll[i]) + sig * c.gEll[i];
+        const dCL = (cfg.rotationalLift * aSw * spanRate * c.chord[i]) / (2 * speed);
+        L = V.addScaled(L, V.cross(span, uh), qa * gRot * dCL);
+      }
       const D = V.scale(eD, qa * (gbar * (CD - CD0) + CD0));
       const F = V.add(L, D);
       if (elementForces) {

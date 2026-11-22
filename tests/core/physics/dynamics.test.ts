@@ -2,13 +2,14 @@ import { describe, expect, it } from 'vitest';
 import * as V from '../../../src/core/math/vec3';
 import * as Q from '../../../src/core/math/quat';
 import * as M3 from '../../../src/core/math/mat3';
-import { flatSheet, makeDart, makeGlider } from '../../../src/core/presets';
+import { flatSheet, makeDart, makeGlider, trimmedDart } from '../../../src/core/presets';
 import { airframeFromDesign } from '../../../src/core/physics/airframe';
 import { makeConfig, DEFAULT_CONFIG } from '../../../src/core/physics/config';
 import { FlightSim } from '../../../src/core/physics/simulation';
 import { centerOfLift, stability, tunnelPoint } from '../../../src/core/physics/windTunnel';
 import { computeAddedMass } from '../../../src/core/physics/addedMass';
-import { attachedWeight, createAeroCache, evaluateAero } from '../../../src/core/physics/aeroModel';
+import { attachedWeight, createAeroCache, ellipticWeight, evaluateAero } from '../../../src/core/physics/aeroModel';
+import { prepare } from '../../../src/core/physics/factory';
 import { replayDesign } from '../../../src/core/paper/replay';
 import { findClipPlacement } from '../../../src/core/paper/clips';
 
@@ -232,5 +233,81 @@ describe('wings on a keel', () => {
     const yaw = (b: number) => -V.dot(tunnelPoint(af, DEFAULT_CONFIG, 5, 6, b).torque, af.up) / k;
     // nose-right moment grows with sideslip to the right: it turns into the wind (or is neutral)
     expect((yaw(4) - yaw(-4)) / ((8 * Math.PI) / 180)).toBeGreaterThan(-0.005);
+  });
+});
+
+describe('rotational lift', () => {
+  it('the elliptic chord loading integrates to 1 with its centre at ½ chord', () => {
+    const n = 200;
+    let sum = 0;
+    let moment = 0;
+    for (let i = 0; i < n; i++) {
+      const w = ellipticWeight(i / n, (i + 1) / n) / n;
+      sum += w;
+      moment += w * ((i + 0.5) / n);
+    }
+    expect(sum).toBeCloseTo(1, 10);
+    expect(moment).toBeCloseTo(0.5, 6);
+  });
+
+  it('a plate turning nose-up lifts as if its angle of attack were taken at ¾ chord', () => {
+    const c = 0.297;
+    const U = 5;
+    const w = 2;
+    const alpha = (3 * Math.PI) / 180;
+    const v = V.add(V.scale(flat.nose, U * Math.cos(alpha)), V.scale(flat.up, -U * Math.sin(alpha)));
+    const force = (k: number, rate: number) => {
+      const cfg = makeConfig({ aero: { rotationalLift: k } });
+      return evaluateAero(flat, v, V.scale(flat.right, rate), cfg.aero, cfg.rho, createAeroCache(flat)).force;
+    };
+    // without turning it adds nothing
+    expect(V.dist(force(1, 0), force(0, 0))).toBeLessThan(1e-12);
+    const extra = V.sub(force(1, w), force(0, w));
+    // ΔC_L = a·ωc/(2U), a: Helmbold slope of the sheet (span 210 mm across the flow)
+    const AR = (0.21 * 0.21) / (0.21 * c);
+    const a = (DEFAULT_CONFIG.aero.a0 * AR) / (2 + Math.sqrt(AR * AR + 4));
+    const expected = 0.5 * DEFAULT_CONFIG.rho * U * U * 0.21 * c * a * ((w * c) / (2 * U));
+    expect(V.dot(extra, flat.up) / expected).toBeGreaterThan(0.9);
+    expect(V.dot(extra, flat.up) / expected).toBeLessThan(1.02);
+    // perpendicular to the flow (at each element): next to no drag
+    expect(Math.abs(V.dot(extra, V.normalize(v)))).toBeLessThan(0.03 * V.length(extra));
+    // nose-down turning loses the same lift
+    expect(-V.dot(V.sub(force(1, -w), force(0, -w)), flat.up) / V.dot(extra, flat.up)).toBeGreaterThan(0.9);
+  });
+
+  it('damps the pitch of a plane whose centre of lift is behind its centre of mass, and drives one where it is ahead', () => {
+    const cmq = (af: typeof flat, k: number) => {
+      const cfg = makeConfig({ aero: { rotationalLift: k } });
+      const a = (5 * Math.PI) / 180;
+      const v = V.add(V.scale(af.nose, 5 * Math.cos(a)), V.scale(af.up, -5 * Math.sin(a)));
+      const m = (q: number) => V.dot(evaluateAero(af, v, V.scale(af.right, q), cfg.aero, cfg.rho, createAeroCache(af)).torque, af.right);
+      return m(1) - m(-1);
+    };
+    const dart = airframeFromDesign(trimmedDart(), DEFAULT_CONFIG);
+    expect(cmq(dart, 1)).toBeLessThan(cmq(dart, 0));
+    // the flat sheet's centre of lift is ahead of its centre of mass
+    expect(cmq(flat, 1)).toBeGreaterThan(cmq(flat, 0));
+  });
+});
+
+describe('twisted paper at a clip', () => {
+  it('is one surface for the air: a clip at the tail moves the centre of mass, not the centre of lift', () => {
+    const d = { ...trimmedDart(), flexible: true };
+    const m = replayDesign(d).models.at(-1)!;
+    const p = findClipPlacement(m, [-0.13, 0, -0.01], 0.05)!;
+    const plain = prepare(d, DEFAULT_CONFIG);
+    const clipped = prepare({ ...d, ops: [...d.ops, { type: 'clip', id: 'g', at: p.at, edgeDir: p.edgeDir, massKg: 0.001 }] }, DEFAULT_CONFIG);
+    // the wing is one piece with one leading edge, not a row of narrow strips
+    const wing = (af: typeof flat) => Math.max(...af.mesh.surfaces.filter((s) => Math.abs(V.dot(s.normal, af.up)) > 0.7).map((s) => s.area));
+    expect(wing(clipped.af)).toBeGreaterThan(0.95 * wing(plain.af));
+    expect(wing(clipped.flex!.af)).toBeGreaterThan(0.85 * wing(plain.flex!.af));
+    const area = (pr: typeof plain) => pr.af.mesh.surfaces.reduce((s, x) => s + x.area, 0);
+    expect(area(clipped)).toBeCloseTo(area(plain), 3);
+    const col = (pr: typeof plain) => centerOfLift(pr.af, DEFAULT_CONFIG)!.point[0];
+    // (a few mm remain: the clip holds the creases shut, so the shape itself differs a little;
+    // with every strip its own leading edge it moved 23 mm)
+    expect(Math.abs(col(clipped) - col(plain))).toBeLessThan(0.005);
+    // and the wings still feel the keel
+    expect(clipped.af.mesh.surfaces.filter((s) => s.keel).length).toBeGreaterThanOrEqual(2);
   });
 });

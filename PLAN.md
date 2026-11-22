@@ -1059,6 +1059,13 @@ Resultat med standardkonfigurationen (släpp från 10 m, olika kastfarter):
 - **Kölflik med ett snitt:** när ett snitt slutar på vecklinjen och delar pappret under den, viks
   bara biten man tog tag i (`FoldOp.pick`, alla lagerval). Det gäller även om linjen ritas förbi
   snittet. Två platta vinghalvor som möts kant mot kant räknas nu som en skarv att trycka igenom.
+- **Kölfliken i vikverktyget:** en vecklinje längs vingroten ligger både i vingen och i kölen. Om
+  linjen drogs i vingens plan, låg kölen i det planet varken på den ena eller andra sidan av linjen,
+  och den gick inte att vika. Nu viks pappret i planet för den bit man tar tag i, när linjen ligger i
+  det planet. Ligger linjen upp till 3 mm därifrån flyttas den in i planet (`FoldTool.grab`).
+  - Med två snitt ställer sig fliken mellan dem upp, och kölen bakom det bakre snittet hänger kvar.
+  - Med ett snitt ställer sig hela kölen bakom snittet upp.
+  - Båda varianterna testas genom verktyget i `tests/ui/foldTool.test.ts`.
 - **Tävlingsläge:** en rullgardin längst till höger i vikningens topprad, med valen Längd, Tid och
   Precision. En tävling har tre kast.
   - Mellan kasten kan man reparera, ändra kastet eller trycka "Ändra vikning". Då kommer man till
@@ -1097,3 +1104,85 @@ Resultat med standardkonfigurationen (släpp från 10 m, olika kastfarter):
   - Platta vingar vinglar lite, ungefär en rollväxling per kast, och kursen ändras i snitt 4°.
   - Hårda kast stiger och överstegrar: darten aldrig vid 5–9 m/s, i 4 av 16 kast vid 11 m/s och
     i alla från 13 m/s.
+
+## 31. Större spridning, baktunga plan och resultatruta
+- **Större spridning mellan kasten** (användarens val): spridningen är fördubblad, och rollen vid
+  släppet tre gånger första gissningen. Standardavvikelserna är nu:
+
+  | Lutning åt sidan | Nos snett i sidled | Nos snett i höjd | Roll | Gir | Tipp | Veck |
+  |---|---|---|---|---|---|---|
+  | 8° | 6° | 4° | 120 °/s | 40 °/s | 50 °/s | 3° |
+
+  - Platt dart (24 kast, 6 m/s från 1,8 m): största lutning i snitt 15° → 33°, och distansen
+    varierar ±0,1 → ±0,4 m. Glidplanet ±0,4 → ±0,7 m.
+  - Rollväxlingarna blev inte fler (ungefär en per kast för den platta darten, två för den
+    trimmade). Svängning i roll kräver att planet vrider nosen tillbaka mot vinden, och den platta
+    darten är nästan neutral i gir (Cnβ ≈ 0).
+  - En svagare köleffekt gjorde inte platta vingar ostadigare inom ett kort kast, men fick anhedral
+    10° att tippa runt igen. Köleffekten är därför oförändrad.
+- **Tyngdpunkt och lyftcentrum** (trimmad dart, flexibelt papper, 12 kast):
+
+  | Gem | Lyftcentrum bakom tyngdpunkten | Cmα | Trimvinkel | Tippar | Flygtid |
+  |---|---|---|---|---|---|
+  | Ett framtill | 44 mm | −0,40 | 4° | 0 | 0,76 s |
+  | Inga | 23 mm | −0,23 | 7° | 0 | 0,97 s |
+  | Ett baktill | 1 mm | −0,16 | 15° | 3 | 0,90 s |
+  | Två baktill | −10 mm | −0,12 | 38° | 0 | 1,64 s |
+
+  - Framtung blir stabilare, som det ska.
+  - Baktung blir inte oflygbar: planet hittar ett stabilt läge vid hög anfallsvinkel och sjunker
+    som en fallskärm. Lyftcentrum flyttar bakåt när strömningen släpper (tryckcentrum mot ½ korda),
+    så det hamnar bakom tyngdpunkten igen.
+  - Riktiga baktunga plan tippar ofta runt. Det beror till stor del på effekter som uppstår när
+    papperet roterar: rotationen ger ett eget lyft, som när fallande ark fladdrar och tumlar
+    (Pesavento & Wang 2004). Den kvasistatiska modellen saknar det. (Det är tillagt i §32. Där
+    visade det sig också att gemets remsor gav fel lyftcentrum, och det var den största orsaken.)
+- **Resultatruta:** när tävlingens tredje kast är klart visas en ruta mitt på skärmen. Den visar
+  kasten från bäst till sämst, eventuell placering på topplistan och knapparna Ny tävling, Till
+  vikningen och Stäng.
+
+## 32. Rotationslyft och tvinnat papper vid gem
+- **Rotationslyft (Kramer-effekten)**, `aero.rotationalLift` (1 = teorivärdet):
+  - Varje element får redan sin anfallsvinkel med ω × r. Ett plan som roterar kring spännvidden
+    får då anfallsvinkeln vid tryckcentrum (¼ korda).
+  - Enligt tunnplatteteorin bestäms cirkulationen i stället av anfallsvinkeln vid ¾ korda.
+    Skillnaden är ΔC_L = a·ω c/(2U), där c är den lokala kordan längs flödet.
+  - Hälften av tillskottet får fördelningen vid ¼ korda och hälften den elliptiska fördelningen
+    kring ½ korda. Tillskottet står vinkelrätt mot flödet, så det ger inget motstånd.
+  - Tillskottet finns kvar när strömningen släppt, då vid ½ korda. Det är rotationscirkulationen
+    hos ett fallande, tumlande kort (Pesavento & Wang 2004, samma storlek).
+  - Rotationen ger extra lyft som verkar ungefär vid ⅜ korda. Ligger lyftcentrum bakom
+    tyngdpunkten dämpar tillskottet tippningen. Ligger det framför förstärker det tippningen.
+  - Storleken är kontrollerad mot teorin. För den trimmade darten är ΔCLq ≈ 1,5, alltså ungefär
+    CLα (1,28) gånger 4/3. Faktorn 4/3 kommer av att kordan vägs med area: en triangelvinges
+    medelkorda är ⅔ av rotkordan, mot S/b = ½. Det är tvådimensionell teori. DATCOM:s
+    uppskattning för ändliga vingar är ungefär hälften så stor.
+- **Tvinnat papper är en yta för luften** (`mergeTwisted` i `aeroMesh.ts`):
+  - Vid ett gem tvinnas papperet av återfjädringen och delas i smala remsor (`springback.ts`).
+    Varje remsa var en egen yta med egen framkant, egen lastfördelning och eget gränsskikt.
+  - Därför flyttade ett gem baktill lyftcentrum 23 mm bakåt, och baktunga plan såg mycket
+    stabilare ut än de är.
+  - Nu blir närliggande nästan plana bitar av samma panel en yta i sitt medelplan. Bitarna får
+    skilja högst 3°, men upp till 15° om de har samma vikhistorik (`foldPath`), alltså samma
+    ovikta papper. Spelarens egna veck slås därför aldrig ihop.
+  - Hårfina glipor mellan bitarna räknas inte som kanter, och köleffekten hittar de
+    sammanslagna vingarna.
+  - Rutnätet klipps kolumn för kolumn, så det går inte långsammare att bygga.
+- **Mätning** (trimmad dart, flexibelt papper, 12 kast, 6 m/s, 5° uppåt, från 1,8 m):
+
+  | Gem | Lyftcentrum bakom tyngdpunkten | Trimvinkel | Flygtid | Distans | Stegrar sig (> 60°) |
+  |---|---|---|---|---|---|
+  | Ett framtill | 46 mm | 3° | 0,78 s | 4,1 ± 0,1 m | 0 |
+  | Inga | 22 mm | 7° | 1,00 s | 5,3 ± 0,3 m | 0 |
+  | Ett baktill | 1 mm | 15° | 1,87 s | 7,1 ± 1,3 m | 0 (högst 54°) |
+  | Två baktill | −8 mm | 36° | 1,46 s | 2,6 ± 0,3 m | 12 |
+  | Tre baktill | −12 mm | – | 1,31 s | 2,5 ± 0,3 m | 12 |
+
+  - Med två eller tre gem baktill reser planet nosen nästan lodrätt, överstegrar och faller.
+    Förut sjönk det med två gem som en fallskärm (6,1 m).
+  - Med ett gem baktill är planet nära neutralt. Det glider långt men varierar mest mellan kasten.
+  - Rotationslyften ensam ändrar distansen med några procent. Platt dart +3 %, trimmad dart
+    +3 %, glidplan +11 % (mer dämpning i tipp). Ett gem baktill −6 % och dubbelt så stor
+    spridning. Den stora skillnaden för baktunga plan kommer från de sammanslagna remsorna.
+  - Ett gem framtill gör att planet lutar mer åt sidan än utan gem. Det gjorde det redan förut
+    (högst 63°), och med de nya ytorna blir det högst 75°.

@@ -3,7 +3,7 @@ import type { MultiPolygon, Polygon, Ring } from 'polygon-clipping';
 import * as V from '../math/vec3';
 import type { Vec2 } from '../math/vec2';
 import type { Vec3 } from '../math/vec3';
-import { canonicalNormal, facetNormal, facetVertices, parallelNormals, toModel } from '../paper/model';
+import { canonicalNormal, facetCentroid, facetNormal, facetVertices, parallelNormals, toModel } from '../paper/model';
 import { computeEdges } from '../paper/edges';
 import type { Facet, PaperModel } from '../paper/model';
 
@@ -139,6 +139,8 @@ interface PlaneGroup {
   union: MultiPolygon;
   area: number;
   tag: number;
+  /** Fold histories (`Facet.foldPath`) of its facets: pieces with one in common are one unfolded sheet. */
+  paths: Set<string>;
 }
 
 /** Layers this close in angle that overlap are one stack for the air (a gaping fold). */
@@ -196,6 +198,7 @@ function mergeStacks(groups: PlaneGroup[]): PlaneGroup[] {
       if (big.tag === cur.tag) {
         big.union = robust((x) => polygonClipping.union(x[0], x[1]), [big.union, proj]);
         big.area = areaOf(big.union);
+        for (const p of cur.paths) big.paths.add(p);
         cur = null;
       } else {
         const back = projectInto(big, cur);
@@ -205,6 +208,148 @@ function mergeStacks(groups: PlaneGroup[]): PlaneGroup[] {
       }
     }
     if (cur) out.push(cur);
+  }
+  return out;
+}
+
+/**
+ * Neighbouring pieces differ by less than this in angle (deg)… (pieces of the same unfolded paper,
+ * cut apart only by springback, may differ by up to TWIST_MAX_DEG: a strongly twisted corner is
+ * fitted with triangles that zigzag a little)
+ */
+const TWIST_STEP_DEG = 3;
+/** …and the whole twisted piece by at most this from its mean plane (deg). */
+const TWIST_MAX_DEG = 15;
+/** Edges of neighbouring pieces this close (m) are one seam inside the sheet. */
+const SEAM_GAP_M = 5e-4;
+/** Pieces whose edges run this close (m) are neighbours (they may overlap a little where layers end). */
+const TOUCH_GAP_M = 2e-3;
+
+const groupPoint = (g: PlaneGroup, q: [number, number] | Vec2): Vec3 => V.add(V.add(g.originModel, V.scale(g.e1, q[0])), V.scale(g.e2, q[1]));
+
+/** Distance from p to segment ab measured square to it, or Infinity if p is not beside it. */
+function besideDist(p: Vec3, a: Vec3, b: Vec3): number {
+  const ab = V.sub(b, a);
+  const l2 = V.dot(ab, ab);
+  if (l2 <= 0) return Infinity;
+  const t = V.dot(V.sub(p, a), ab) / l2;
+  return t < 0 || t > 1 ? Infinity : V.dist(p, V.addScaled(a, ab, t));
+}
+
+/** Pairs of outline edges (indices) lying on each other: seams between pieces, not edges of the paper. */
+function seamEdges(edges: [Vec3, Vec3][]): Set<number> {
+  const out = new Set<number>();
+  for (let i = 0; i < edges.length; i++) {
+    const [a, b] = edges[i];
+    const da = V.sub(b, a);
+    const la = V.length(da);
+    if (la < 1e-9) continue;
+    const mid = V.scale(V.add(a, b), 0.5);
+    for (let j = 0; j < edges.length; j++) {
+      if (j === i) continue;
+      const [c, d] = edges[j];
+      const dc = V.sub(d, c);
+      const lc = V.length(dc);
+      // the two sides of a gap run in opposite directions round the outline
+      if (lc < 1e-9 || V.dot(da, dc) > -0.999 * la * lc) continue;
+      if (besideDist(mid, c, d) < SEAM_GAP_M) {
+        out.add(i);
+        out.add(j);
+      }
+    }
+  }
+  return out;
+}
+
+/**
+ * Springback twists paper held by a clip: the sheet is cut into narrow strips, each a slightly
+ * different plane (see paper/springback.ts). For the air it is still one sheet with one leading
+ * edge: neighbouring near-coplanar pieces of one panel (touching along an edge) become one
+ * surface in their mean plane. Otherwise every strip would get its own leading edge, chordwise
+ * loading and boundary layer.
+ */
+function mergeTwisted(groups: PlaneGroup[], com: Vec3): { g: PlaneGroup; merged: boolean }[] {
+  const step = Math.cos((TWIST_STEP_DEG * Math.PI) / 180);
+  const edges3 = groups.map((g) =>
+    g.union.flatMap((poly) => poly.flatMap((ring) => ring.slice(0, -1).map((q, i) => [groupPoint(g, q), groupPoint(g, ring[i + 1])] as [Vec3, Vec3]))),
+  );
+  const boxes = edges3.map((es) => {
+    const lo: Vec3 = [Infinity, Infinity, Infinity];
+    const hi: Vec3 = [-Infinity, -Infinity, -Infinity];
+    for (const e of es)
+      for (const p of e)
+        for (let k = 0; k < 3; k++) {
+          lo[k] = Math.min(lo[k], p[k] - TOUCH_GAP_M);
+          hi[k] = Math.max(hi[k], p[k] + TOUCH_GAP_M);
+        }
+    return { lo, hi };
+  });
+  const boxesMeet = (i: number, j: number) => [0, 1, 2].every((k) => boxes[i].lo[k] <= boxes[j].hi[k] && boxes[j].lo[k] <= boxes[i].hi[k]);
+  const maxDev = Math.cos((TWIST_MAX_DEG * Math.PI) / 180);
+  const parent = groups.map((_, i) => i);
+  const find = (i: number): number => (parent[i] === i ? i : (parent[i] = find(parent[i])));
+  const touching = (i: number, j: number) => {
+    for (const [a, b] of edges3[i]) {
+      const da = V.sub(b, a);
+      const la = V.length(da);
+      if (la < 1e-3) continue;
+      const mid = V.scale(V.add(a, b), 0.5);
+      for (const [c, d] of edges3[j]) {
+        const dc = V.sub(d, c);
+        if (Math.abs(V.dot(da, dc)) < 0.999 * la * V.length(dc)) continue;
+        if (besideDist(mid, c, d) < TOUCH_GAP_M) return true;
+      }
+    }
+    return false;
+  };
+  for (let i = 0; i < groups.length; i++)
+    for (let j = i + 1; j < groups.length; j++) {
+      if (groups[i].tag !== groups[j].tag || !boxesMeet(i, j)) continue;
+      const cos = Math.abs(V.dot(groups[i].n, groups[j].n));
+      const sameSheet = [...groups[i].paths].some((p) => groups[j].paths.has(p));
+      if (cos < (sameSheet ? maxDev : step)) continue;
+      if (find(i) !== find(j) && (touching(i, j) || touching(j, i))) parent[find(j)] = find(i);
+    }
+  const clusters = new Map<number, number[]>();
+  groups.forEach((_, i) => clusters.set(find(i), [...(clusters.get(find(i)) ?? []), i]));
+  const out: { g: PlaneGroup; merged: boolean }[] = [];
+  for (const members of clusters.values()) {
+    if (members.length === 1) {
+      out.push({ g: groups[members[0]], merged: false });
+      continue;
+    }
+    // mean plane, normals turned to agree with the largest piece
+    const ref = members.reduce((x, y) => (groups[y].area > groups[x].area ? y : x));
+    let nSum: Vec3 = [0, 0, 0];
+    for (const m of members) nSum = V.addScaled(nSum, groups[m].n, groups[m].area * Math.sign(V.dot(groups[m].n, groups[ref].n)));
+    const n = canonicalNormal(V.normalize(nSum));
+    if (members.some((m) => Math.abs(V.dot(groups[m].n, n)) < maxDev)) {
+      for (const m of members) out.push({ g: groups[m], merged: false });
+      continue;
+    }
+    let area = 0;
+    let dSum = 0;
+    for (const m of members) {
+      const g = groups[m];
+      for (const poly of g.union) {
+        const ac = polygonAreaCentroid(poly);
+        dSum += V.dot(n, groupPoint(g, ac.c)) * ac.area;
+        area += ac.area;
+      }
+    }
+    let e1 = V.rejectFrom([1, 0, 0], n);
+    if (V.length(e1) < 0.3) e1 = V.rejectFrom([0, 0, 1], n);
+    e1 = V.normalize(e1);
+    const e2 = V.cross(n, e1);
+    const originModel = V.addScaled(com, n, dSum / Math.max(area, 1e-12) - V.dot(n, com));
+    const to2 = (p: Vec3): [number, number] => {
+      const r = V.sub(p, originModel);
+      return [V.dot(r, e1), V.dot(r, e2)];
+    };
+    const parts: MultiPolygon[] = members.map((m) => groups[m].union.map((poly) => poly.map((ring) => ring.map((q) => to2(groupPoint(groups[m], q))))));
+    const union: MultiPolygon = robust((g) => polygonClipping.union(g[0], ...g.slice(1)), parts);
+    const paths = new Set(members.flatMap((m) => [...groups[m].paths]));
+    out.push({ g: { n, e1, e2, originModel, union, area: areaOf(union), tag: groups[ref].tag, paths }, merged: true });
   }
   return out;
 }
@@ -242,13 +387,14 @@ export function buildAeroMesh(
       return [ring];
     });
     const union: MultiPolygon = polys.length === 1 ? [polys[0]] : robust((g) => polygonClipping.union(g[0], ...g.slice(1)), polys);
-    groups.push({ n, e1, e2, originModel, union, area: areaOf(union), tag });
+    groups.push({ n, e1, e2, originModel, union, area: areaOf(union), tag, paths: new Set(group.map((f) => f.foldPath.join('/'))) });
   }
-  for (const { n, e1, e2, originModel, union, tag } of mergeStacks(groups)) {
+  for (const { g, merged } of mergeTwisted(mergeStacks(groups), com)) {
+    const { n, e1, e2, originModel, union, tag } = g;
     let area = 0;
     let cx = 0;
     let cy = 0;
-    const edges: [Vec2, Vec2][] = [];
+    let edges: [Vec2, Vec2][] = [];
     const outline3: Vec3[] = [];
     let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
     const from2 = (q: Vec2): Vec3 => V.sub(V.add(V.add(originModel, V.scale(e1, q[0])), V.scale(e2, q[1])), com);
@@ -269,15 +415,24 @@ export function buildAeroMesh(
       }
     }
     if (area < 1e-8) continue;
+    // hairline gaps left between the pieces of a twisted sheet are not edges of the paper
+    if (merged) {
+      const seams = seamEdges(edges.map(([a, b]) => [groupPoint(g, a), groupPoint(g, b)] as [Vec3, Vec3]));
+      edges = edges.filter((_, i) => !seams.has(i));
+    }
     const id = surfaces.length;
     const firstElement = elements.length;
     const h = elementSize;
     for (let gx = Math.floor(minX / h); gx * h < maxX; gx++) {
+      // one column at a time: each cell is then clipped against a small piece of the outline
+      const x0 = gx * h;
+      const band: Polygon = [[[x0, minY - h], [x0 + h, minY - h], [x0 + h, maxY + h], [x0, maxY + h], [x0, minY - h]]];
+      const column = robust((g) => polygonClipping.intersection(g[0], g[1]), [union, band]);
+      if (!column.length) continue;
       for (let gy = Math.floor(minY / h); gy * h < maxY; gy++) {
-        const x0 = gx * h;
         const y0 = gy * h;
         const cell: Polygon = [[[x0, y0], [x0 + h, y0], [x0 + h, y0 + h], [x0, y0 + h], [x0, y0]]];
-        const pieces = robust((g) => polygonClipping.intersection(g[0], g[1]), [union, cell]);
+        const pieces = robust((g) => polygonClipping.intersection(g[0], g[1]), [column, cell]);
         for (const piece of pieces) {
           const ac = polygonAreaCentroid(piece);
           if (ac.area < 1e-8) continue;
@@ -335,11 +490,24 @@ export function markKeelJunctions(
 ): void {
   const cos45 = Math.SQRT1_2;
   const byId = new Map(model.facets.map((f) => [f.id, f]));
+  // the surface a facet belongs to: in its plane, or (a strip of a twisted sheet, see
+  // mergeTwisted) close to the mean plane of the sheet
+  const twistCos = Math.cos((TWIST_MAX_DEG * Math.PI) / 180);
   const surfaceOf = (f: Facet): AeroSurface | undefined => {
     const n = canonicalNormal(facetNormal(f));
-    const p = V.sub(facetVertices(f)[0], com);
+    const p = V.sub(facetCentroid(f), com);
     const tag = tags?.get(f.id) ?? -1;
-    return mesh.surfaces.find((s) => s.tag === tag && Math.abs(V.dot(s.normal, n)) > 0.999 && Math.abs(V.dot(s.normal, V.sub(p, s.origin))) < 1e-6);
+    let best: AeroSurface | undefined;
+    let bestD = TOUCH_GAP_M;
+    for (const s of mesh.surfaces) {
+      if (s.tag !== tag || Math.abs(V.dot(s.normal, n)) < twistCos) continue;
+      const d = Math.abs(V.dot(s.normal, V.sub(p, s.origin)));
+      if (d < bestD) {
+        bestD = d;
+        best = s;
+      }
+    }
+    return best;
   };
   for (const l of computeEdges(model).links) {
     if (l.kind !== 'crease') continue;

@@ -188,6 +188,7 @@ export class FlightMode {
 
   exit() {
     this.active = false;
+    $('comp-result').classList.remove('visible');
     this.controls.enabled = false;
     this.sim = null;
     this.setPaused(false);
@@ -265,6 +266,7 @@ export class FlightMode {
     this.plot.clear();
     this.shownImpact = false;
     $('result-card').classList.remove('visible');
+    $('comp-result').classList.remove('visible');
     $('burn-text').classList.remove('visible');
     $('aim-panel').classList.add('visible');
     this.aimArrow.visible = true;
@@ -308,6 +310,7 @@ export class FlightMode {
     this.aimArrow.visible = false;
     $('aim-panel').classList.remove('visible');
     $('result-card').classList.remove('visible');
+    $('comp-result').classList.remove('visible');
     $('burn-text').classList.remove('visible');
     this.burnClock = -1;
     this.stepper.reset();
@@ -635,6 +638,7 @@ export class FlightMode {
       : '';
 
     let modeHtml = '';
+    let finalRank = -1;
     let again = 'Kasta igen (R)';
     if (this.round) {
       const score = scoreFlight(this.round.mode, log, this.round.target);
@@ -663,6 +667,7 @@ export class FlightMode {
           };
           const rank = submit(entry);
           rankHtml = rank >= 0 ? `<br><b>Plats ${rank + 1} på topplistan!</b>` : '';
+          finalRank = rank;
         }
       } else {
         again = 'Nästa kast (R)';
@@ -700,6 +705,39 @@ export class FlightMode {
       </div>
       ${board}`);
     this.updateRefold();
+    if (this.round && isRoundOver(this.round)) this.showFinalResults(this.round, finalRank);
+  }
+
+  /** The competition is over: its throws, best to worst, in a box in the middle of the screen. */
+  private showFinalResults(round: Round, rank: number) {
+    const m = MODES[round.mode];
+    const ranked = rankThrows(round);
+    const rows = ranked
+      .map((t, i) => `<li class="${i === 0 && t.score !== null ? 'best' : ''}"><span>${i + 1}. Kast ${t.throw}</span><b>${formatScore(round.mode, t.score)}</b></li>`)
+      .join('');
+    const box = $('comp-result');
+    box.innerHTML = `
+      <h3>Resultat · ${m.name}</h3>
+      <p class="note">${round.mode === 'precision' ? 'Avstånd från första nedslaget till pricken' : round.mode === 'time' ? 'Tid till första nedslaget' : 'Distans till första nedslaget'}, bäst först.</p>
+      <ol class="podium">${rows}</ol>
+      ${rank >= 0 ? `<p class="rank">Plats ${rank + 1} på topplistan!</p>` : ''}
+      <div class="actions">
+        <button id="cr-new" class="primary">Ny tävling</button>
+        <button id="cr-fold">Till vikningen</button>
+        <button id="cr-close">Stäng</button>
+      </div>`;
+    box.classList.add('visible');
+    const close = () => box.classList.remove('visible');
+    ($('cr-new') as HTMLButtonElement).onclick = () => {
+      close();
+      this.startRound();
+      this.toAim(true);
+    };
+    ($('cr-fold') as HTMLButtonElement).onclick = () => {
+      close();
+      this.onExit();
+    };
+    ($('cr-close') as HTMLButtonElement).onclick = close;
   }
 
   private bestLaunch: LaunchParams | null = null;

@@ -748,3 +748,66 @@ body.mode-flight .burn-text.visible {
   color: var(--text);
   z-index: 100;
 }
+
+/* the competition's results, in the middle of the screen when the third throw is done */
+.comp-result {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  z-index: 20;
+  min-width: 300px;
+  max-width: min(420px, calc(100% - 32px));
+  display: none;
+  flex-direction: column;
+  gap: 10px;
+  padding: 18px 20px;
+  background: var(--panel);
+  border: 1px solid var(--panel-border);
+  border-radius: var(--radius);
+  box-shadow: 0 18px 48px rgba(0, 0, 0, 0.45);
+  font-size: 14px;
+}
+
+.comp-result.visible {
+  display: flex;
+}
+
+.comp-result h3 {
+  margin: 0;
+  font-size: 18px;
+}
+
+.comp-result .podium {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.comp-result .podium li {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 8px 12px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.comp-result .podium li.best {
+  background: rgba(255, 211, 77, 0.22);
+  font-size: 16px;
+}
+
+.comp-result .rank {
+  margin: 0;
+  font-weight: 650;
+}
+
+.comp-result .actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}

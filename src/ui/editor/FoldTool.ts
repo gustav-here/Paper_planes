@@ -14,11 +14,29 @@ import type { Plane } from './Snapping';
 import { rayPlane } from './toolContext';
 import type { Tool, ToolContext } from './toolContext';
 
+/** Where the player takes hold of the paper to fold it: the fold line and plane, the side and the point. */
+interface Grab {
+  p0: Vec3;
+  p1: Vec3;
+  N: Vec3;
+  side: Vec3;
+  pick: Vec3;
+}
+
 type State =
   | { k: 'idle' }
   | { k: 'drawing' }
   | { k: 'p2p'; A: Vec3; plane: Plane }
-  | { k: 'ready'; p0: Vec3; p1: Vec3; N: Vec3; hoverSide: Vec3 | null; hoverPick?: Vec3 | null }
+  | {
+      k: 'ready';
+      p0: Vec3;
+      p1: Vec3;
+      N: Vec3;
+      hoverSide: Vec3 | null;
+      hoverPick?: Vec3 | null;
+      /** The fold as it would be made where the mouse is (the line may move into another plane). */
+      hoverGrab?: Grab | null;
+    }
   | {
       k: 'angling';
       p0: Vec3;
@@ -132,20 +150,17 @@ export class FoldTool implements Tool {
       return;
     }
     if (s.k === 'ready') {
-      const q = rayPlane(this.ctx.ray(e), { point: s.p0, normal: s.N });
-      if (!q) return;
-      const side = this.sideOf(s, q);
-      if (!side) return;
+      const g = this.grab(s, e);
+      if (!g) return;
+      const { side, pick } = g;
       this.clearHover();
-      const hit = this.ctx.hitPaper(e);
-      const pick = hit?.point ?? q;
       const limit: Record<FoldKind, number> = { valley: 180, mountain: 180 };
       const blocked: Record<FoldKind, string | null> = { valley: null, mountain: null };
       const through: Record<FoldKind, boolean> = { valley: false, mountain: false };
       let fatal: string | null = null;
       try {
         for (const kind of ['valley', 'mountain'] as const) {
-          const op = this.makeOp({ ...s, side, pick }, kind, 180, 'limit');
+          const op = this.makeOp(g, kind, 180, 'limit');
           limit[kind] = foldAngleLimit(this.ctx.model(), op);
           if (limit[kind] < 175) through[kind] = canPushThrough(this.ctx.model(), op);
           if (limit[kind] < 5 && !through[kind]) blocked[kind] = BLOCKED;
@@ -153,7 +168,7 @@ export class FoldTool implements Tool {
       } catch (err) {
         fatal = err instanceof PaperError ? ERROR_TEXT[err.code] : String(err);
       }
-      this.s = { k: 'angling', p0: s.p0, p1: s.p1, N: s.N, side, pick, startY: e.clientY, signed: 0, fatal, limit, blocked, stopped: false, through, pushed: false };
+      this.s = { k: 'angling', p0: g.p0, p1: g.p1, N: g.N, side, pick, startY: e.clientY, signed: 0, fatal, limit, blocked, stopped: false, through, pushed: false };
       this.ctx.hint(
         fatal ?? 'Dra uppåt för dalveck (mot dig), nedåt för bergsveck (bort från dig). Släpp för att vika. Esc avbryter.',
       );
@@ -189,9 +204,10 @@ export class FoldTool implements Tool {
       return;
     }
     if (s.k === 'ready') {
-      const q = rayPlane(this.ctx.ray(e), { point: s.p0, normal: s.N });
-      s.hoverSide = q ? this.sideOf(s, q) : null;
-      s.hoverPick = this.ctx.hitPaper(e)?.point ?? q;
+      const g = this.grab(s, e);
+      s.hoverGrab = g;
+      s.hoverSide = g?.side ?? null;
+      s.hoverPick = g?.pick ?? null;
       this.updateHover(s);
       this.drawOverlay();
       return;
@@ -283,12 +299,14 @@ export class FoldTool implements Tool {
       return;
     }
     const o = this.ctx.options;
-    const pickFacet = o.foldScope === 'flap' && s.hoverPick ? (this.ctx.model().facets.find((f) => facetContains(f, s.hoverPick!, -1e-7, 1e-4))?.id ?? -1) : 0;
-    const key = `${Math.sign(V.dot(side, V.cross(s.N, V.sub(s.p1, s.p0))))}|${o.foldScope}|${o.foldMirror}|${pickFacet}`;
+    const g: Grab = s.hoverGrab ?? { p0: s.p0, p1: s.p1, N: s.N, side, pick: s.hoverPick ?? V.lerp(s.p0, s.p1, 0.5) };
+    // the grabbed piece matters for every scope (a cut ending on the line limits the fold to it)
+    const pickFacet = this.ctx.model().facets.find((f) => facetContains(f, g.pick, -1e-7, 1e-4))?.id ?? -1;
+    const key = `${g.N.map((x) => x.toFixed(3)).join(',')}|${Math.sign(V.dot(side, V.cross(g.N, V.sub(g.p1, g.p0))))}|${o.foldScope}|${o.foldMirror}|${pickFacet}`;
     if (key === this.hoverKey) return;
     this.hoverKey = key;
     try {
-      const r = applyOp(this.ctx.model(), this.makeOp({ ...s, side, pick: s.hoverPick ?? V.lerp(s.p0, s.p1, 0.5) }, 'valley', 0, 'hover'), { penetration: 'none' });
+      const r = applyOp(this.ctx.model(), this.makeOp(g, 'valley', 0, 'hover'), { penetration: 'none' });
       const ids = r.model.facets.filter((f) => f.foldPath.some((id) => id.startsWith('hover'))).map((f) => f.id);
       this.ctx.setPreview(r.model);
       this.ctx.setHoverFacets(ids);
@@ -306,6 +324,34 @@ export class FoldTool implements Tool {
     this.hoverKey = '';
     this.ctx.setPreview(null);
     this.ctx.setHoverFacets(null);
+  }
+
+  /**
+   * Where the player takes hold. Normally in the plane the line was drawn in. But a line along a
+   * crease lies in the paper on both sides of it (a wing root is on the keel too): if the paper
+   * under the mouse is another piece whose plane holds the line (within a few mm: the line is
+   * moved into it), the fold is made in that plane, so that piece can be folded (a keel tab).
+   */
+  private grab(s: { p0: Vec3; p1: Vec3; N: Vec3 }, e: PointerEvent): Grab | null {
+    const hit = this.ctx.hitPaper(e);
+    if (hit) {
+      const n = hit.normal;
+      const d = V.normalize(V.sub(s.p1, s.p0));
+      const off0 = V.dot(n, V.sub(s.p0, hit.point));
+      const off1 = V.dot(n, V.sub(s.p1, hit.point));
+      if (Math.abs(V.dot(n, s.N)) < 0.99 && Math.abs(V.dot(n, d)) < 0.02 && Math.abs(off0) < 0.003 && Math.abs(off1) < 0.003) {
+        const p0 = V.addScaled(s.p0, n, -off0);
+        const p1 = V.addScaled(s.p1, n, -off1);
+        const N = this.ctx.towardsViewer(n, hit.point);
+        const side = this.sideOf({ p0, p1, N }, hit.point);
+        if (side) return { p0, p1, N, side, pick: hit.point };
+      }
+    }
+    const q = rayPlane(this.ctx.ray(e), { point: s.p0, normal: s.N });
+    if (!q) return null;
+    const side = this.sideOf(s, q);
+    if (!side) return null;
+    return { p0: s.p0, p1: s.p1, N: s.N, side, pick: hit?.point ?? q };
   }
 
   private sideOf(s: { p0: Vec3; p1: Vec3; N: Vec3 }, q: Vec3): Vec3 | null {

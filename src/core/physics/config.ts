@@ -33,6 +33,15 @@ export interface AeroConfig {
    * should rarely roll over, a lot of anhedral can).
    */
   keelDihedral: { perDepth: number; maxDeg: number };
+  /**
+   * Rotational lift (Kramer effect) as a fraction of thin-airfoil theory: a plate turning about
+   * its span lifts as if its angle of attack were the one at ¾ chord (ΔC_L = a·ω c/(2U) beyond
+   * what the turning already gives at ¼ chord). 1 = the theory value, which also matches the
+   * rotational force on flapping wings (Sane & Dickinson 2002) and on falling, tumbling cards
+   * (Pesavento & Wang 2004). It damps a plane whose centre of lift is behind its centre of mass
+   * and drives one whose centre of lift is ahead of it.
+   */
+  rotationalLift: number;
   /** Oswald span efficiency for induced drag. */
   oswaldE: number;
   /** Centre-of-pressure shift for separated flow: x_cp = 0.5 − Δ·cos α
@@ -220,6 +229,7 @@ export const DEFAULT_CONFIG: PhysicsConfig = {
     CDedge: 0.005,
     airViscosity: 1.8e-5,
     keelDihedral: { perDepth: 25, maxDeg: 10 },
+    rotationalLift: 1,
     oswaldE: 0.8,
     sepCopShift: 0.16,
     elementSizeM: 0.01,
@@ -263,7 +273,9 @@ export const DEFAULT_CONFIG: PhysicsConfig = {
     damage: true,
   },
   logInterval: 1 / 60,
-  scatter: { bankDeg: 4, yawDeg: 3, pitchDeg: 2, rollRateDeg: 40, yawRateDeg: 20, pitchRateDeg: 25, creaseDeg: 1.5 },
+  // doubled at the player's request (the planes flew too alike and too steadily), the roll at
+  // release three times the first guess (more wobble in roll)
+  scatter: { bankDeg: 8, yawDeg: 6, pitchDeg: 4, rollRateDeg: 120, yawRateDeg: 40, pitchRateDeg: 50, creaseDeg: 3 },
   maxTime: 30,
 };
 

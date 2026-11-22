@@ -100,6 +100,13 @@ Webbläsarspel: vik ett pappersflygplan av ett A4 och kasta det. Flygbeteendet s
   `markKeelJunctions`). Den är halvempirisk och vald med användaren.
 - En köl under en vinge får sin sidokraft jämnt fördelad längs sig (slank kroppsteori: vingen är en
   ändplatta som breddas bakåt), inte samlad vid nosen (`AeroSurface.underWing`).
+- Rotationslyft (`aero.rotationalLift`, Kramer-effekten): ett element som roterar kring sin
+  spännvidd får lyft som om anfallsvinkeln togs vid ¾ korda, också när strömningen släppt
+  (Pesavento & Wang). Planet tippar lättare runt när lyftcentrum ligger framför tyngdpunkten.
+  Se PLAN.md §32.
+- Papper som återfjädringen tvinnat vid ett gem (smala remsor) är en yta för luften, med en
+  framkant (`mergeTwisted`). Spelarens egna veck slås aldrig ihop: bitarna måste ha samma
+  vikhistorik, eller skilja högst 3°.
 - Papper på var sin sida om ett skrynkelveck (`dmg-crumple`) är en stel bit, inte ett gångjärn.
 - Ett snitt som slutar på vecklinjen begränsar vikningen till biten man tog tag i (`FoldOp.pick`).
 - Tävlingsläget väljs i vikningens topprad (`comp-mode`). En omgång är tre kast och fortsätter över
