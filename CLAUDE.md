@@ -104,8 +104,9 @@ Webbläsarspel: vik ett pappersflygplan av ett A4 och kasta det. Flygbeteendet s
 - Lyftlutningen per element tar med strimlans pilvinkel mot flödet (DATCOM-form av Helmbold).
 - Vingar ovanpå en köl får ingen extra dihedral i sidglidning (köleffekten är borttagen på
   användarens begäran, se PLAN.md §34).
-- En köl lastas som andra ytor, från sin framkant, också under en vinge. Darten med plana vingar
-  är därför riktningsinstabil och viker av; spetsar som viks upp eller ned är fenor (PLAN.md §36).
+- En köl under en vinge får 60 % av sin sidokraft jämnt fördelad längs sig och resten från framkanten
+  (`aero.keelSideSpread`, halvempiriskt, valt med användaren). Darten med plana vingar är svagt
+  riktningsinstabil; spetsar som viks upp eller ned är fenor (PLAN.md §36, §39).
 - Rotationslyft (`aero.rotationalLift`, Kramer-effekten): ett element som roterar kring sin
   spännvidd får lyft som om anfallsvinkeln togs vid ¾ korda, också när strömningen släppt
   (Pesavento & Wang). Planet tippar lättare runt när lyftcentrum ligger framför tyngdpunkten.

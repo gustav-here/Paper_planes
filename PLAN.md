@@ -1396,3 +1396,36 @@ Resultat med standardkonfigurationen (släpp från 10 m, olika kastfarter):
   nästan utan lyft (trimvinkel 0,2–0,6°), och utan lyft finns ingen rollstabilitet från
   pilvinkeln. En uppböjd bakkant som gav lyft (trim 6–8°) gjorde att den plana darten vred sig
   oftare. Arbetet är pausat.
+
+## 39. Kölens sidokraft delvis utspridd (`aero.keelSideSpread` = 0,6)
+- **Problem efter §36:** med hela kölens sidokraft från framkanten var den plana darten så
+  riktningsinstabil (Cnβ −0,031) att nosen svängde 100–180° på under en sekund. Planet gick snett
+  eller baklänges genom luften och tycktes stanna efter 3–3,5 m. Riktiga plana dartar tippar i
+  stället åt sidan och sjunker medan de fortsätter framåt.
+- **Provmatris** (10 kast per fall, 7–11 m/s, 5° uppåt, flexibelt papper; "tippar" = lutar mer än
+  30° vid landningen, så lutning direkt efter släppet räknas inte): sidokraftens fördelning, sneda
+  veck (§38) och lyft från en uppböjd bakkant prövades i kombination.
+  - Lyft fick plan med uppvikta eller nedvikta spetsar att dras in i en spiral (lutar 30–80° vid
+    landningen, kursen ändras 30–40°), tvärtom mot användarens iakttagelse att de bara vinglar lätt.
+  - Sneda veck fick plana vingar att tippa (6 av 10), men även spets- och W-plan landade lutande.
+  - Ingen kombination gav både plana vingar som tippar och spets- och W-plan som är stabila.
+- **Valt (användarens val):** 60 % av sidokraften på en köl under en vinge fördelas jämnt längs
+  kölen, resten lastas från framkanten. Halvempiriskt, mellan en ensam köl (allt framtill) och §30
+  (allt utspritt).
+
+  | Plan | Förut (0) | Nu (0,6) |
+  |---|---|---|
+  | Plana vingar | vrider sig 10/10, kursen 54°, 5,0 m | vrider sig 5/10, tippar 1/10, kursen 40°, 6,4 m |
+  | Spetsar uppvikta 80° | stabil, 8° | stabil, 6° |
+  | Spetsar nedvikta 80° | stabil, 3° | stabil, 5° |
+  | Djupt W | tippar 5/10, 16° | stabilt, 4° |
+  | Trimmad dart | vrider sig 4/10, tippar 5/10, 7,0 m | tippar 1/10, 11,7 m |
+  | Glidplan | 16,3 m | 15,5 m |
+
+  - Cnβ för den plana darten: −0,031 → −0,008. Med spetsar +0,041/+0,047.
+- **Kvar:** den plana darten tippar fortfarande sällan och vrider sig i stället hälften av gångerna.
+  Modellen saknar något som gör att spets- och W-plan rättar upp en sned vikning mycket bättre
+  än plana vingar.
+- **Rättat i förbigående:** `multibody.ts` hade formaterats om av Prettier med standardinställningar
+  (dubbla citattecken, 793 ändrade rader) i §37. Filen har sin ursprungliga form igen, med samma
+  ändringar som i §37. Steget är uppdelat i `substep` och `afterStep`.

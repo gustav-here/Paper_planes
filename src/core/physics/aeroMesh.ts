@@ -3,7 +3,8 @@ import type { MultiPolygon, Polygon, Ring } from 'polygon-clipping';
 import * as V from '../math/vec3';
 import type { Vec2 } from '../math/vec2';
 import type { Vec3 } from '../math/vec3';
-import { canonicalNormal, facetNormal, facetVertices, parallelNormals } from '../paper/model';
+import { canonicalNormal, facetCentroid, facetNormal, facetVertices, parallelNormals, toModel } from '../paper/model';
+import { computeEdges } from '../paper/edges';
 import type { Facet, PaperModel } from '../paper/model';
 
 /**
@@ -31,6 +32,11 @@ export interface AeroSurface {
   partners: number[];
   /** Grouping tag of its facets (control flap / panel index), −1 if untagged. */
   tag: number;
+  /**
+   * A keel with a wing on top (markKeelJunctions). Its attached-flow side force is spread partly
+   * along it instead of loaded from its leading edge (aero.keelSideSpread).
+   */
+  underWing?: boolean;
 }
 
 export interface AeroElement {
@@ -453,4 +459,60 @@ export function buildAeroMesh(
     s.partners = surfaces.filter((o) => Math.abs(V.dot(o.normal, s.normal)) >= cosLim).map((o) => o.id);
   }
   return { surfaces, elements };
+}
+
+/**
+ * Keels with a wing on top (see AeroSurface.underWing). A wing is a surface within 45° of level,
+ * a keel one within 45° of upright, joined by a crease with the keel hanging below the joint.
+ */
+export function markKeelJunctions(
+  mesh: AeroMesh,
+  model: PaperModel,
+  com: Vec3,
+  up: Vec3,
+  right: Vec3,
+  tags?: Map<number, number>,
+): void {
+  const cos45 = Math.SQRT1_2;
+  const byId = new Map(model.facets.map((f) => [f.id, f]));
+  // the surface a facet belongs to: in its plane, or (a strip of a twisted sheet, see
+  // mergeTwisted) close to the mean plane of the sheet
+  const twistCos = Math.cos((TWIST_MAX_DEG * Math.PI) / 180);
+  const surfaceOf = (f: Facet): AeroSurface | undefined => {
+    const n = canonicalNormal(facetNormal(f));
+    const p = V.sub(facetCentroid(f), com);
+    const tag = tags?.get(f.id) ?? -1;
+    let best: AeroSurface | undefined;
+    let bestD = TOUCH_GAP_M;
+    for (const s of mesh.surfaces) {
+      if (s.tag !== tag || Math.abs(V.dot(s.normal, n)) < twistCos) continue;
+      const d = Math.abs(V.dot(s.normal, V.sub(p, s.origin)));
+      if (d < bestD) {
+        bestD = d;
+        best = s;
+      }
+    }
+    return best;
+  };
+  for (const l of computeEdges(model).links) {
+    if (l.kind !== 'crease') continue;
+    for (const [w, k] of [
+      [l.a, l.b],
+      [l.b, l.a],
+    ]) {
+      const fw = byId.get(w)!;
+      const fk = byId.get(k)!;
+      const nw = facetNormal(fw);
+      const nk = facetNormal(fk);
+      if (Math.abs(V.dot(nw, up)) < cos45 || Math.abs(V.dot(nk, right)) < cos45) continue;
+      const wing = surfaceOf(fw);
+      const keel = surfaceOf(fk);
+      if (!wing || !keel) continue;
+      const point = V.sub(toModel(fw, l.seg[0]), com);
+      // the keel hangs below the joint
+      const depth = Math.max(0, ...keel.outline3.map((v) => V.dot(V.sub(point, v), up)));
+      if (depth < 1e-3) continue;
+      keel.underWing = true;
+    }
+  }
 }

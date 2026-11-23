@@ -204,8 +204,7 @@ describe('validation', { timeout: 240_000 }, () => {
       return n;
     };
     const gentle = stalls(5);
-    // (at 11 m/s it mostly veers off to one side before it can climb: its flat wings with small
-    // turned-up corners are directionally unstable, PLAN.md §36)
+    // (thrown at 13 and 15 m/s: with its flat wings it may veer off to one side before it climbs)
     const firm = stalls(13);
     const hard = stalls(15);
     expect(gentle).toBe(0);

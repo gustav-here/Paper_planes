@@ -26,6 +26,17 @@ export interface AeroConfig {
   /** Dynamic viscosity of air (Pa·s), 20 °C. */
   airViscosity: number;
   /**
+   * A keel under a wing: the share of its attached-flow side force spread evenly along it; the
+   * rest is loaded from its leading edge like any surface. Semi-empirical, chosen with the player.
+   * Slender-body theory puts a bare keel's side force at the nose, where it deepens (0); a wing on
+   * top is an end plate that adds side force where it widens, which on a dart is mostly the front
+   * half (§36). With 0 the flat dart was so directionally unstable that its nose swung 100–180°
+   * round within a second and it all but stopped in the air; real flat darts tip over sideways
+   * and sink while still moving forward. With 1 (§30) it was directionally stable. 0.6 halves
+   * the swinging round and keeps planes with turned-up or turned-down tips or a W steady.
+   */
+  keelSideSpread: number;
+  /**
    * Rotational lift (Kramer effect) as a fraction of thin-airfoil theory: a plate turning about
    * its span lifts as if its angle of attack were the one at ¾ chord (ΔC_L = a·ω c/(2U) beyond
    * what the turning already gives at ¼ chord). 1 = the theory value, which also matches the
@@ -234,6 +245,7 @@ export const DEFAULT_CONFIG: PhysicsConfig = {
     CN90: 1.2,
     CDedge: 0.005,
     airViscosity: 1.8e-5,
+    keelSideSpread: 0.6,
     rotationalLift: 1,
     oswaldE: 0.8,
     sepCopShift: 0.16,

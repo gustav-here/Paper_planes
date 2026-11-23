@@ -169,7 +169,7 @@ export interface AeroOptions {
 }
 
 /** Recompute chord coordinates and aspect ratio of one surface for in-plane flow direction w2. */
-function updateSurfaceCache(af: Airframe, sid: number, w2: Vec2, w3: Vec3, c: SurfaceCache) {
+function updateSurfaceCache(af: Airframe, sid: number, w2: Vec2, w3: Vec3, c: SurfaceCache, keelSpread: number) {
   const s = af.mesh.surfaces[sid];
   const els = af.mesh.elements;
   let sumAG = 0;
@@ -238,7 +238,8 @@ function updateSurfaceCache(af: Airframe, sid: number, w2: Vec2, w3: Vec3, c: Su
       const b = Math.max(a + 1e-6, smax - le);
       c.friction[k] = (Math.sqrt(b) - Math.sqrt(a)) / (b - a);
     }
-    const g = attachedWeight(x1, x2);
+    // a keel under a wing: its side force partly spread along it (aero.keelSideSpread)
+    const g = s.underWing ? (1 - keelSpread) * attachedWeight(x1, x2) + keelSpread : attachedWeight(x1, x2);
     c.gAtt[k] = g;
     const ge = ellipticWeight(x1, x2);
     c.gEll[k] = ge;
@@ -329,7 +330,7 @@ export function evaluateAero(
       // chord geometry is evaluated in the surface's rest frame
       const w3 = P ? M3.mulVec(M3.transpose(P.R), V.scale(inPlane, 1 / ipl)) : V.scale(inPlane, 1 / ipl);
       const w2: Vec2 = [V.dot(w3, s.e1), V.dot(w3, s.e2)];
-      if (!c.dir || c.dir[0] * w2[0] + c.dir[1] * w2[1] < cosCache) updateSurfaceCache(af, s.id, w2, w3, c);
+      if (!c.dir || c.dir[0] * w2[0] + c.dir[1] * w2[1] < cosCache) updateSurfaceCache(af, s.id, w2, w3, c, cfg.keelSideSpread);
     }
     const AR = c.aspect;
     const a = (cfg.a0 * AR) / (2 + Math.sqrt(AR * AR + 4));
