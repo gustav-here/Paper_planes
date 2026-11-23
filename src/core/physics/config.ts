@@ -85,6 +85,14 @@ export interface GroundConfig {
    * weak gravity pole-vaults over its nose. 0 for a hard floor.
    */
   spinDampingPerS: number;
+  /**
+   * Loose ground: depth of the soft top layer the paper sinks into (m), 0 for a hard floor.
+   * Paper in the layer is braked by the loose material whichever way it moves (the same
+   * ρ·A·v² as ploughKgPerM, never reversing it) instead of meeting a rigid surface; firm ground
+   * lies this far down. A hard floor stops a corner dead in one step, and a light plane's speed
+   * then becomes spin about that corner: in the Moon's weak gravity it cartwheeled metres on.
+   */
+  dustDepthM: number;
   /** Rest detection: mean velocity (averaged as a vector over ¼ restTime) below this (m/s) … */
   restSpeed: number;
   /** … and mean spin below this (rad/s) … */
@@ -260,6 +268,7 @@ export const DEFAULT_CONFIG: PhysicsConfig = {
     friction: 0.4,
     ploughKgPerM: 0,
     spinDampingPerS: 0,
+    dustDepthM: 0,
     restSpeed: 0.02,
     restSpin: 0.1,
     restTime: 0.5,

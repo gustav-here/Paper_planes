@@ -1293,7 +1293,7 @@ Resultat med standardkonfigurationen (släpp från 10 m, olika kastfarter):
   högre lokal lyftkoefficient och överstegras först) ändrade nästan ingenting. Planen glider vid
   6–8° anfallsvinkel och minst 4–5 m/s, så spetsarna når aldrig överstegring.
 
-## 35. Månlandningar (inte rättat än; testet är överhoppat tills vidare)
+## 35. Månlandningar (rättat i §41)
 - **Läget:** testet med ett perfekt symmetriskt kast (14 m/s, 45°) klarade sig på tur. Med spelets
   spridning hoppar planen upp till 2–5 m och glider upp till 20–33 m efter nedslaget, både före
   och efter §33–34. Det strider mot användarens val för Månen: dammet ska stoppa papperet, och
@@ -1456,3 +1456,33 @@ Resultat med standardkonfigurationen (släpp från 10 m, olika kastfarter):
     håller nosens veck stängda, och planet får cirka 3,5 % mindre lyft. Vid ett hårt kast stiger
     glidplanet till drygt 4 m, överstegrar, dyker och tar upp dyket bara centimeter över golvet. Med
     lite mindre lyft når det golvet oftare i dyket. Utan återfjädring är skillnaden borta.
+
+## 41. Månlandningar: papperet sjunker in i dammet
+- **Felet (§35):** med spridning hoppade plan upp till 2–5 m och gled upp till 20–33 m efter
+  landningen på Månen. Den stela golvytan stoppade spetsen som slog i på ett steg, planets fart
+  blev snurr kring den (1 300–2 700 °/s), och nästa hörn lyfte planet i den svaga tyngden.
+- **Modell** (`ground.dustDepthM`, Månen 3 cm): det översta lagret regolit är löst (fotspår är
+  ungefär 3 cm djupa). Fast mark ligger 3 cm under ytan.
+  - Papper i lagret som rör sig fortare än 1 m/s plogar genom det åt alla håll, inte bara i
+    sidled (samma ρ·A·v² som `ploughKgPerM`, aldrig så att rörelsen vänds).
+  - Papper som rör sig långsammare än 1 m/s vilar på dammet som på ett golv där det är
+    (`DUST_SINK_SPEED`): löst damm bär ett papper som ligger still, bara ett nedslag sjunker in.
+    Först villkoret på farten nedåt gav tillbaka de långa glidningarna, eftersom papper som rörde
+    sig långsamt nedåt men fort i sidled fick golvets fulla friktion och spetsen grep igen.
+  - Dammet tar upp snurren så länge papper är i lagret (`spinDampingPerS`, som förut).
+  - Båda simulatorerna. Gymnastiksalen och Solen har inget lager.
+- **Utfall** (12 kast med spridning, 14 m/s, 45° uppåt; glider = från första nedslaget till vila):
+
+  | | Typiskt | Längst | Hoppar högst (tyngdpunkt) |
+  |---|---|---|---|
+  | Dart, stelt, förut | 5,4 m | 20,5 m | 3,0 m |
+  | Dart, stelt, nu | 0,22 m | 0,43 m | 0,15 m |
+  | Glidplan, stelt, förut | 3,1 m | 32,8 m | 3,9 m |
+  | Glidplan, stelt, nu | 0,19 m | 0,93 m | 0,28 m |
+  | Dart, flexibelt, nu | 0,11 m | 0,61 m | 0,31 m |
+  | Glidplan, flexibelt, nu | 0,11 m | 0,41 m | 0,29 m |
+
+  - Planen vilar högst ungefär 2 cm nersjunkna i dammet.
+  - Andra lager prövades: 1 cm gav fortfarande kast på 17 m, 2 cm på 5,5 m, 3 cm inga över 1 m.
+- **Testet** för hårda landningar på Månen är påslaget igen och kontrollerar också två kast med
+  spridning (där felet syntes), i stelt och flexibelt papper.

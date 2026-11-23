@@ -23,6 +23,7 @@ import { buildPanels, panelContacts } from './panels';
 import { bendField, bendingContacts, buildPanelModes, deflectionAt, limitStiffness } from './bendModes';
 import type { PanelModes } from './bendModes';
 import type { PanelSet } from './panels';
+import { DUST_SINK_SPEED } from './groundContact';
 import type { DamageEvent, PanelBend, PanelPose, Simulator } from './simulator';
 import type { FlightEvent, FlightLog, FlightPhase } from './simulation';
 
@@ -947,7 +948,8 @@ export class MultiBodySim implements Simulator {
     const { contacts, af } = this.fx;
     const gcfg = this.cfg.ground;
     const com = af.com;
-    type C = { i: number; p: Vec3; J: number[][]; depth: number; target: number; jn: number; jt: Vec3; facet: number; pm: Vec3; n: Vec3; plough: number };
+    // dust: in a loose top layer (dustDepthM), braked by it unless it rests on it (see below)
+    type C = { i: number; p: Vec3; J: number[][]; depth: number; target: number; jn: number; jt: Vec3; facet: number; pm: Vec3; n: Vec3; plough: number; dust: boolean };
     const active: C[] = [];
     const minGap = gcfg.planes.map(() => Infinity);
     // only panels whose bounding sphere reaches a surface need their points checked
@@ -972,10 +974,12 @@ export class MultiBodySim implements Simulator {
       }
       const p = V.add(this.x0, M3.mulVec(K.R0, V.sub(applyRigid(K.M[ct.panel], pBent), com)));
       gcfg.planes.forEach((pl, k) => {
-        const gap = V.dot(pl.n, p) - pl.d;
+        // firm ground lies dustDepthM below the surface
+        const gap = V.dot(pl.n, p) - pl.d + gcfg.dustDepthM;
         minGap[k] = Math.min(minGap[k], gap);
-        if (gap > 1e-5) return;
-        active.push({ i: ct.panel, p, J: this.pointJ(K, ct.panel, p, ct.p), depth: -gap, target: 0, jn: 0, jt: [0, 0, 0], facet: ct.facet, pm: ct.p, n: pl.n, plough: 0 });
+        if (gap > gcfg.dustDepthM + 1e-5) return;
+        const dust = gap > 1e-5;
+        active.push({ i: ct.panel, p, J: this.pointJ(K, ct.panel, p, ct.p), depth: dust ? 0 : -gap, target: 0, jn: 0, jt: [0, 0, 0], facet: ct.facet, pm: ct.p, n: pl.n, plough: 0, dust });
       });
     }
     if (!active.length) return;
@@ -1044,9 +1048,24 @@ export class MultiBodySim implements Simulator {
         hardestVel = v;
       }
     }
+    /*
+     * Paper in the loose layer: fast paper ploughs through it, whichever way it moves (ρ·A·v²,
+     * never reversing it); slow paper rests on it, as on a floor where it is (the dust bears a
+     * light sheet; only an impact sinks into it).
+     */
+    const ploughs = active.map((c) => c.dust && V.length(vel(c)) >= DUST_SINK_SPEED);
+    active.forEach((c, ci) => {
+      if (!ploughs[ci]) return;
+      const v = vel(c);
+      const vl = V.length(v);
+      if (vl < 1e-9) return;
+      const dir = V.scale(v, 1 / vl);
+      apply(ci, V.scale(dir, -Math.min(gcfg.ploughKgPerM * vl * vl * dt, vl / invMass(ci, dir))));
+    });
     const wn = active.map((c, ci) => invMass(ci, c.n));
     for (let it = 0; it < gcfg.iterations; it++) {
       for (const [ci, c] of active.entries()) {
+        if (ploughs[ci]) continue;
         const vn = V.dot(vel(c), c.n);
         let dj = (c.target - vn) / wn[ci];
         const old = c.jn;

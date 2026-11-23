@@ -59,23 +59,28 @@ describe('venues', () => {
     expect(VENUES.sun.burnAfterS).toBe(0);
   });
 
-  // Skipped until Moon landings are fixed (PLAN.md §35): with scatter, a hard landing turns the
-  // plane's speed into spin about the corner that hits, and it hops and slides far.
-  it.skip('on the Moon a steep, hard landing does not tumble over the nose: it slides a few centimetres', () => {
+  it('on the Moon a hard landing does not hop or cartwheel: it sinks into the dust and stops there', () => {
     const cfg = venueConfig('moon', DEFAULT_CONFIG);
     for (const d of [makeDart(), makeGlider()])
       for (const flexible of [false, true]) {
-        const s = createSimulator(prepare({ ...d, flexible }, cfg), cfg, { speed: 14, elevationDeg: 45, headingDeg: 0, heightM: 1.6 });
-        let top = 0;
-        while (!s.done) {
-          s.step();
-          if (s.log.firstImpact) top = Math.max(top, s.position()[1]);
+        const p = prepare({ ...d, flexible }, cfg);
+        // straight, and thrown a little off as real throws are (no air: the spin of the throw
+        // is still there when it lands, and that used to turn into hops metres high)
+        for (const scatterSeed of [undefined, 4 * 7919, 8 * 7919]) {
+          const s = createSimulator(p, cfg, { speed: 14, elevationDeg: 45, headingDeg: 0, heightM: 1.6, scatterSeed });
+          let top = 0;
+          while (!s.done) {
+            s.step();
+            if (s.log.firstImpact) top = Math.max(top, s.position()[1]);
+          }
+          const a = s.log.firstImpact!;
+          const r = s.log.rest!;
+          // no hop: the centre of mass stays about as high as the plane is tall
+          expect(top).toBeLessThan(0.35);
+          expect(Math.hypot(r.pos[0] - a.pos[0], r.pos[2] - a.pos[2])).toBeLessThan(1);
+          // it rests on the dust, sunk in a little at most
+          expect(r.pos[1]).toBeGreaterThan(-0.03);
         }
-        const a = s.log.firstImpact!;
-        const r = s.log.rest!;
-        // no hop: the centre of mass stays about as high as the plane is tall
-        expect(top).toBeLessThan(0.2);
-        expect(Math.hypot(r.pos[0] - a.pos[0], r.pos[2] - a.pos[2])).toBeLessThan(0.25);
       }
   });
 

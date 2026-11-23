@@ -91,8 +91,9 @@ Webbläsarspel: vik ett pappersflygplan av ett A4 och kasta det. Flygbeteendet s
 - Platser (`core/game/venues.ts`: gymnastiksal, Månen, Solen) sätter g, ρ och kontaktytor via
   `venueConfig`. Gymnastiksalen är standard. Inget i fysiken får bero på vilken plats det är,
   utöver de parametrarna. Det gäller också markens friktion, studs och plogning
-  (`ploughKgPerM`: lös regolit på Månen bromsar med ρ·A·v_t², oberoende av g) och dammets
-  dämpning av rotationen (`spinDampingPerS`: inga kullerbyttor på Månen, enligt användarens val).
+  (`ploughKgPerM`: lös regolit på Månen bromsar med ρ·A·v_t², oberoende av g), dammets
+  dämpning av rotationen (`spinDampingPerS`: inga kullerbyttor på Månen, enligt användarens val) och
+  det lösa lagret som papperet sjunker in i vid nedslag (`dustDepthM` = 3 cm, PLAN.md §41).
 - Procedurtexturer i `render/venues` ritas på 2D-canvas utan `filter` (det kraschade
   grafikprocessen).
 - Tejp över en skarv pressar ihop lagren på varje sida för sig, inte de två sidorna till en stel bit,

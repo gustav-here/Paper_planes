@@ -15,6 +15,9 @@ export interface ContactResult {
   hardest: { index: number; velWorld: Vec3 } | null;
 }
 
+/** Paper in a loose layer rests on it when it moves slower than this, and ploughs through it when faster (m/s). */
+export const DUST_SINK_SPEED = 1;
+
 /** Penetration allowed without correction (m) and fraction corrected per step (Baumgarte). */
 const SLOP = 2e-4;
 const BAUMGARTE = 0.2;
@@ -32,16 +35,28 @@ export function resolveGround(s: BodyState, af: Airframe, cfg: GroundConfig, dt:
   const active: { r: Vec3; index: number; depth: number; target: number; jn: number; jt: Vec3; n: Vec3; plough: number }[] = [];
   // deepest penetration per surface (for the safety net)
   const minGap = cfg.planes.map(() => Infinity);
+  // points sunk into a loose top layer (dustDepthM): braked by it, firm ground below
+  const dust: { r: Vec3; index: number; n: Vec3 }[] = [];
+  const firm = cfg.dustDepthM;
   af.contacts.forEach((r, index) => {
     const p = V.add(s.x, Q.rotate(q, r));
     cfg.planes.forEach((pl, k) => {
-      const gap = V.dot(pl.n, p) - pl.d;
+      const gap = V.dot(pl.n, p) - pl.d + firm;
       minGap[k] = Math.min(minGap[k], gap);
-      if (gap > 1e-5) return;
+      if (gap > 1e-5) {
+        if (gap < firm + 1e-5) {
+          // slow paper rests on the dust (it bears a light sheet); only an impact sinks into it
+          const vp = V.length(Q.rotate(q, V.add(s.v, V.cross(s.w, r))));
+          if (vp < DUST_SINK_SPEED) {
+            if (gap < firm - 1e-5) active.push({ r, index, depth: 0, target: 0, jn: 0, jt: [0, 0, 0], n: pl.n, plough: 0 });
+          } else dust.push({ r, index, n: pl.n });
+        }
+        return;
+      }
       active.push({ r, index, depth: -gap, target: 0, jn: 0, jt: [0, 0, 0], n: pl.n, plough: 0 });
     });
   });
-  if (active.length === 0) return { touching: false, impactSpeed: 0, hardest: null };
+  if (active.length === 0 && dust.length === 0) return { touching: false, impactSpeed: 0, hardest: null };
 
   const velAt = (r: Vec3) => Q.rotate(q, V.add(s.v, V.cross(s.w, r)));
   const applyImpulse = (r: Vec3, jWorld: Vec3) => {
@@ -98,6 +113,19 @@ export function resolveGround(s: BodyState, af: Airframe, cfg: GroundConfig, dt:
       c.jt = next;
       applyImpulse(c.r, delta);
     }
+  }
+  // paper in the loose layer ploughs through it, whichever way it moves
+  for (const c of dust) {
+    const vel = velAt(c.r);
+    const vn = -V.dot(vel, c.n);
+    if (vn > impactSpeed) {
+      impactSpeed = vn;
+      hardest = { index: c.index, velWorld: vel };
+    }
+    const vl = V.length(vel);
+    if (vl < 1e-9) continue;
+    const dir = V.scale(vel, 1 / vl);
+    applyImpulse(c.r, V.scale(dir, -Math.min(cfg.ploughKgPerM * vl * vl * dt, vl / invMass(c.r, dir))));
   }
   // loose ground closes round the paper and takes up its spin
   if (cfg.spinDampingPerS > 0) s.w = V.scale(s.w, Math.exp(-cfg.spinDampingPerS * dt));
