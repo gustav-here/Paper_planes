@@ -1429,3 +1429,30 @@ Resultat med standardkonfigurationen (släpp från 10 m, olika kastfarter):
 - **Rättat i förbigående:** `multibody.ts` hade formaterats om av Prettier med standardinställningar
   (dubbla citattecken, 793 ändrade rader) i §37. Filen har sin ursprungliga form igen, med samma
   ändringar som i §37. Steget är uppdelat i `substep` och `afterStep`.
+
+## 40. Tejp över nosen gjorde vingarna stela
+- **Användarens iakttagelse:** ett plan med en tejpbit som håller ihop nosen flög i regel flera
+  meter kortare än samma plan utan tejp, både i hårda och medelhårda kast.
+- **Orsak 1:** tejp över skarven mellan vinghalvorna pressar ihop lagren under sig. Även lagren
+  på båda sidor om skarven slogs ihop till en panel, så båda vingarna och kölen blev en stel kropp.
+  Den kroppen blev rot, eller var inte plan nog, och då fick ingen panel några böjformer. Vingarna
+  kunde varken böja sig eller vrida sig var för sig i vingroten. Den flexibla modellen betedde sig
+  som stelt papper, och i hårda kast flyger flexibla plan längre (§33).
+  - Nu pressar tejpen ihop lagren på varje sida för sig. En 2 cm tejpbit vid nosen håller ihop
+    halvorna där men hindrar inte vingarna från att böja sig längre ut (`buildPanels`).
+- **Orsak 2:** tejpen håller vecken stängda mot återfjädringen, och längre bak öppnar de sig, så
+  papperet vrids 1–2°. De lager som är vikta ovanpå vingen (glidplanets nostriangel och hörn) låg då
+  inte längre exakt i vingens plan och blev en egen panel bredvid vingen, på samma vingrot.
+  - Nu räknas lager inom 3° och 2 mm från varandra, som överlappar, som en ihoppressad bunt
+    (`nearlyStacked`).
+- **Utfall** (16 kast med spridning, flexibelt papper, 5° uppåt, medeldistans):
+
+  | Plan | 6 m/s utan / med tejp förut | nu | 10 m/s utan / med tejp förut | nu |
+  |---|---|---|---|---|
+  | Trimmad dart | 6,6 / 7,0 m | 6,6 / 6,2 m | 12,4 / 9,7–13,1 m | 12,4 / 12,3 m |
+  | Glidplan | 10,1 / 7,9 m | 10,1 / 9,7 m | 17,1 / 10,8 m | 17,1 / 15,6 m |
+
+  - Det som är kvar för glidplanet (cirka 1,5 m vid 10 m/s) finns även i stelt papper. Tejpen
+    håller nosens veck stängda, och planet får cirka 3,5 % mindre lyft. Vid ett hårt kast stiger
+    glidplanet till drygt 4 m, överstegrar, dyker och tar upp dyket bara centimeter över golvet. Med
+    lite mindre lyft når det golvet oftare i dyket. Utan återfjädring är skillnaden borta.

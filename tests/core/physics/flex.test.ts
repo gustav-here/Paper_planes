@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { makeDart, makeGlider, ELEVATOR_TRIM, NO_REFLEX, DART_TRIM } from '../../../src/core/presets';
+import { makeDart, makeGlider, ELEVATOR_TRIM, NO_REFLEX, DART_TRIM, trimmedDart } from '../../../src/core/presets';
+const trimmedDartFlex = () => ({ ...trimmedDart(), flexible: true });
 import { replayDesign } from '../../../src/core/paper/replay';
 import { validateDesign } from '../../../src/core/paper/ops';
 import type { DesignFile, Op } from '../../../src/core/paper/ops';
@@ -10,7 +11,7 @@ import type { PhysicsConfig } from '../../../src/core/physics/config';
 import { FlightSim } from '../../../src/core/physics/simulation';
 import { MultiBodySim, buildFlexAirframe } from '../../../src/core/physics/multibody';
 import { damageOnFolded, damageToOps } from '../../../src/core/physics/damage';
-import { findClipPlacement } from '../../../src/core/paper/clips';
+import { findClipPlacement, findTapeBridge, TAPE_SPEC } from '../../../src/core/paper/clips';
 import { createSimulator, prepare } from '../../../src/core/physics/factory';
 import type { LaunchParams } from '../../../src/core/physics/launch';
 
@@ -92,6 +93,25 @@ describe('flexible paper (hinged panels)', () => {
       return s.log.samples.at(-1)!.pitchDeg;
     };
     expect(pitchAt(1)).toBeGreaterThan(pitchAt(0) + 2);
+  });
+});
+
+describe('tape across the nose', () => {
+  it('holds the wing halves there, but each wing still hinges at its root and bends', () => {
+    for (const d of [trimmedDartFlex(), { ...makeGlider(), flexible: true }]) {
+      const model = replayDesign(d).models.at(-1)!;
+      const keel = d.name.startsWith('Glid') ? 0.015 : 0.025;
+      const pl = findTapeBridge(model, [0.02, 0, keel], 0.03)!;
+      expect(pl.bridge).toBe(true);
+      const taped = { ...d, ops: [...d.ops, { type: 'clip' as const, id: 't1', at: pl.at, edgeDir: pl.edgeDir, massKg: TAPE_SPEC.massKg, kind: 'tape' as const, bridge: true }] };
+      const plain = prepare(d, DEFAULT_CONFIG).flex!;
+      const p = prepare(taped, DEFAULT_CONFIG).flex!;
+      // both wings keep their bending shapes (with the halves as one rigid piece they had none)
+      expect(p.modes.length).toBe(plain.modes.length);
+      // the two wings are still two panels, each on its own crease
+      const wings = (f: typeof p) => f.set.panels.filter((q) => q.mass > 0.001 && q.parent >= 0 && f.set.hinges[q.hinge].length > 0.2);
+      expect(wings(p).length).toBeGreaterThanOrEqual(2);
+    }
   });
 });
 

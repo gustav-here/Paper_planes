@@ -95,6 +95,8 @@ Webbläsarspel: vik ett pappersflygplan av ett A4 och kasta det. Flygbeteendet s
   dämpning av rotationen (`spinDampingPerS`: inga kullerbyttor på Månen, enligt användarens val).
 - Procedurtexturer i `render/venues` ritas på 2D-canvas utan `filter` (det kraschade
   grafikprocessen).
+- Tejp över en skarv pressar ihop lagren på varje sida för sig, inte de två sidorna till en stel bit,
+  och lager inom 3° och 2 mm som överlappar är en ihoppressad bunt (PLAN.md §40).
 - Gem lutar bakåt (`Clip.lean`) så lite som behövs för att inte gå genom papper som lämnar dess plan.
   Tejp är alltid 2 cm. Den läggs platt över skarven mellan vinghalvorna (`bridge`) eller viks över
   en kant, och det som sticker ut utanför pappret klipps bort. Se PLAN.md §27.

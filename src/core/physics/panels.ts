@@ -160,14 +160,20 @@ export function buildPanels(model: PaperModel, af: Airframe, paper: PaperConfig)
       const fa = model.facets[i];
       const fb = model.facets[j];
       if ((control.get(fa.id) ?? -1) !== (control.get(fb.id) ?? -1)) continue;
-      if (coplanar(fa, fb) && facetsOverlap(fa, fb)) uf.union(fa.id, fb.id);
+      if ((coplanar(fa, fb) || nearlyStacked(fa, fb)) && facetsOverlap(fa, fb)) uf.union(fa.id, fb.id);
     }
   }
-  // clips squeeze layers together
+  // clips squeeze layers together. Tape across a seam squeezes the layers on each side, but does
+  // not make the two sides one rigid piece: a 2 cm strip at the nose holds the halves together
+  // there, it does not stop each wing from flexing at its root and bending along its length (as
+  // one panel, both wings lost their hinges and their bending shapes, and a taped glider flew
+  // 6 m shorter in a hard throw)
   for (const clip of model.clips) {
     const rc = resolveClip(model, clip);
     if (!rc) continue;
-    for (let i = 1; i < rc.clamped.length; i++) uf.union(rc.clamped[0], rc.clamped[i]);
+    const across = new Set(rc.across?.clamped ?? []);
+    for (const side of [rc.clamped.filter((id) => !across.has(id)), rc.clamped.filter((id) => across.has(id))])
+      for (let i = 1; i < side.length; i++) uf.union(side[0], side[i]);
   }
 
   // hinges must be straight lines between two panels, and the panel graph must be a tree
@@ -396,6 +402,21 @@ function flatContinuation(fa: Facet, fb: Facet, seg: [Vec2, Vec2]): boolean {
   const wa = V.rejectFrom(V.sub(facetCentroid(fa), A), d);
   const wb = V.rejectFrom(V.sub(facetCentroid(fb), A), d);
   return V.dot(wa, wb) < 0;
+}
+
+/** Layers this close to each other's plane (m) still lie on each other (see nearlyStacked). */
+const STACK_GAP_M = 0.002;
+
+/**
+ * Layers that lie on each other but not exactly in one plane: within 3° and 2 mm. Springback
+ * held by a clip or tape twists the paper a little (a degree or two), and the layers folded onto
+ * a wing then no longer lay exactly on it: they became a panel of their own, hinged at the wing
+ * root beside the wing (a taped glider's wing flapped as two thin wings).
+ */
+function nearlyStacked(fa: Facet, fb: Facet): boolean {
+  const na = facetNormal(fa);
+  if (Math.abs(V.dot(na, facetNormal(fb))) < FLAT_COS) return false;
+  return Math.abs(V.dot(na, V.sub(facetCentroid(fb), facetVertices(fa)[0]))) < STACK_GAP_M;
 }
 
 /** Panels whose facets are this close to parallel at a crease are a (slightly open) stack. */
