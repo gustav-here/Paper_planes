@@ -1376,3 +1376,23 @@ Resultat med standardkonfigurationen (släpp från 10 m, olika kastfarter):
 - **Genomsnitt i resultatet:** rutan efter tävlingens tredje kast, och kastkortet när tävlingen är
   slut, visar genomsnittet av kasten (`averageScore`). Kast utan giltig landning räknas inte, och
   då står det till exempel "(2 av 3 kast)".
+
+## 38. Sneda veck (inbyggda, inte påslagna)
+- **Varför:** ett handvikt plan är aldrig symmetriskt. Ett vingveck som ligger 1° snett ger den
+  vingen ungefär 1° annan anfallsvinkel, och en dart med plana vingar har nästan inget som rätar upp
+  den. Det kan vara det som får riktiga plana dartar att tippa åt sidan inom några meter.
+- **Modell** (`paper/crooked.ts`): varje vikningslinje, och varje spegeltvilling för sig, vrids i
+  sitt plan kring sin mitt (normalfördelat, `scatter.foldLineDeg` = 1°, avskuret vid 2,5σ). Det
+  sneda planet viks sida vid sida med det exakta, och varje senare steg flyttas med papperet under
+  det (stegen är givna i det exakt vikta planets koordinater). Spegelsteg görs som två separata
+  steg. Snedheten bestäms av designens steg, så samma plan är lika snett varje kast och
+  uppspelningar blir exakta. Kan planet inte vikas snett används det exakta.
+- **Inte påslaget:** `prepare(design, cfg, { crooked: true })` används inte av spelet än. Tester och
+  vindtunneln är exakta.
+- **Prov** (10 kast, flexibelt papper): sneda veck ensamt ändrar inte att den plana darten vrider
+  sig runt (Cnβ −0,031). Tillsammans med kölens sidokraft något längre bak (Cnβ ≈ −0,008) tippar den
+  plana darten åt sidan i 6 av 10 kast och flyger 6,5 m, som användaren beskriver. Men plan med
+  uppvikta spetsar och W tippar då också (6–7 av 10), vilket inte stämmer. Alla dessa dartar flyger
+  nästan utan lyft (trimvinkel 0,2–0,6°), och utan lyft finns ingen rollstabilitet från
+  pilvinkeln. En uppböjd bakkant som gav lyft (trim 6–8°) gjorde att den plana darten vred sig
+  oftare. Arbetet är pausat.

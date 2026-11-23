@@ -212,6 +212,11 @@ export interface ScatterConfig {
   pitchRateDeg: number;
   /** Each crease's rest angle (flexible paper), independently left and right. */
   creaseDeg: number;
+  /**
+   * Each fold line turned in its plane, left and right independently (prepare with crooked:
+   * true). Fixed per folded plane, not per throw: a crooked plane veers the same way each time.
+   */
+  foldLineDeg: number;
 }
 
 export const DEFAULT_CONFIG: PhysicsConfig = {
@@ -276,7 +281,7 @@ export const DEFAULT_CONFIG: PhysicsConfig = {
   logInterval: 1 / 60,
   // doubled at the player's request (the planes flew too alike and too steadily), the roll at
   // release three times the first guess (more wobble in roll)
-  scatter: { bankDeg: 8, yawDeg: 6, pitchDeg: 4, rollRateDeg: 120, yawRateDeg: 40, pitchRateDeg: 50, creaseDeg: 3 },
+  scatter: { bankDeg: 8, yawDeg: 6, pitchDeg: 4, rollRateDeg: 120, yawRateDeg: 40, pitchRateDeg: 50, creaseDeg: 3, foldLineDeg: 1 },
   maxTime: 30,
 };
 
