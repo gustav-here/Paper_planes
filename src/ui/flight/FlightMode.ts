@@ -21,6 +21,7 @@ import {
   isRoundOver,
   newRound,
   rankThrows,
+  averageScore,
   recordScore,
   scoreFlight,
 } from '../../core/game/competition';
@@ -681,7 +682,7 @@ export class FlightMode {
       const ranked = isRoundOver(this.round)
         ? `<ol class="board">${rankThrows(this.round)
             .map((t) => `<li>Kast ${t.throw} · <b>${formatScore(this.round!.mode, t.score)}</b></li>`)
-            .join('')}</ol>`
+            .join('')}</ol><p class="muted">Genomsnitt: <b>${formatScore(this.round.mode, averageScore(this.round).mean)}</b></p>`
         : '';
       modeHtml = `<div class="mode-info"><b>${m.name}</b> · kast ${this.round.scores.length} av ${m.attempts}<br>Detta kast: <b>${formatScore(this.round.mode, score)}</b> · bästa: <b>${formatScore(this.round.mode, best)}</b>${isRoundOver(this.round) ? `<br>Tävlingen klar!${rankHtml}` : ''}</div>${ranked}`;
       if (isRoundOver(this.round)) {
@@ -715,11 +716,14 @@ export class FlightMode {
     const rows = ranked
       .map((t, i) => `<li class="${i === 0 && t.score !== null ? 'best' : ''}"><span>${i + 1}. Kast ${t.throw}</span><b>${formatScore(round.mode, t.score)}</b></li>`)
       .join('');
+    const avg = averageScore(round);
+    const avgNote = avg.count < round.scores.length ? ` <span class="muted">(${avg.count} av ${round.scores.length} kast)</span>` : '';
     const box = $('comp-result');
     box.innerHTML = `
       <h3>Resultat · ${m.name}</h3>
       <p class="note">${round.mode === 'precision' ? 'Avstånd från första nedslaget till pricken' : round.mode === 'time' ? 'Tid till första nedslaget' : 'Distans till första nedslaget'}, bäst först.</p>
       <ol class="podium">${rows}</ol>
+      <p class="average">Genomsnitt: <b>${formatScore(round.mode, avg.mean)}</b>${avgNote}</p>
       ${rank >= 0 ? `<p class="rank">Plats ${rank + 1} på topplistan!</p>` : ''}
       <div class="actions">
         <button id="cr-new" class="primary">Ny tävling</button>

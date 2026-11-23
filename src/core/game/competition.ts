@@ -110,6 +110,12 @@ export function rankThrows(r: Round): { throw: number; score: number | null }[] 
     });
 }
 
+/** Mean score of the throws that have one, and how many that is (throws without a landing are left out). */
+export function averageScore(r: Round): { mean: number | null; count: number } {
+  const s = r.scores.filter((x): x is number => x !== null);
+  return { mean: s.length ? s.reduce((a, b) => a + b, 0) / s.length : null, count: s.length };
+}
+
 export function bestScore(r: Round): number | null {
   let best: number | null = null;
   for (const s of r.scores) if (s !== null && (best === null || isBetter(r.mode, s, best))) best = s;

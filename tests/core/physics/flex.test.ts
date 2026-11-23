@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { makeDart, makeGlider, ELEVATOR_TRIM, NO_REFLEX } from '../../../src/core/presets';
+import { makeDart, makeGlider, ELEVATOR_TRIM, NO_REFLEX, DART_TRIM } from '../../../src/core/presets';
 import { replayDesign } from '../../../src/core/paper/replay';
 import { validateDesign } from '../../../src/core/paper/ops';
 import type { DesignFile, Op } from '../../../src/core/paper/ops';
@@ -92,6 +92,18 @@ describe('flexible paper (hinged panels)', () => {
       return s.log.samples.at(-1)!.pitchDeg;
     };
     expect(pitchAt(1)).toBeGreaterThan(pitchAt(0) + 2);
+  });
+});
+
+describe('coming to rest on the floor', () => {
+  it('a turned-up corner pinned under the plane does not keep it buzzing and creeping round', () => {
+    // this throw lands with one corner folded under the wing against the floor: its crease pushed
+    // it down past the bounce threshold every step, it bounced, and the plane crept round for 30 s
+    const p = prepare({ ...makeDart(0.025, 90, DART_TRIM, { size: 0.04, angleDeg: 30 }), flexible: true }, DEFAULT_CONFIG);
+    const s = createSimulator(p, DEFAULT_CONFIG, { speed: 5, elevationDeg: 10, headingDeg: 0, heightM: 1.6, scatterSeed: 16 * 7919 });
+    while (!s.done) s.step();
+    expect(s.phase).toBe('rest');
+    expect(s.t - s.log.firstImpact!.t).toBeLessThan(4);
   });
 });
 

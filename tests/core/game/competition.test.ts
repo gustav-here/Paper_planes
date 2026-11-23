@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  averageScore,
   bestScore,
   insertEntry,
   isRoundOver,
@@ -21,6 +22,15 @@ describe('competition rules', () => {
     for (const seed of [0, 1, 42]) expect(makeTarget(seed)).toEqual({ x: 10, z: 0, rings: [0.1] });
     expect(newRound('precision', 7).target).toEqual({ x: 10, z: 0, rings: [0.1] });
     expect(newRound('distance', 7).target).toBeNull();
+  });
+
+  it('the results give the mean of the throws that landed', () => {
+    const d = recordScore(recordScore(recordScore(newRound('distance', 1), 4), 6.5), 3);
+    expect(averageScore(d).mean).toBeCloseTo(4.5, 9);
+    expect(averageScore(d).count).toBe(3);
+    const p = recordScore(recordScore(recordScore(newRound('precision', 1), 0.2), null), 0.4);
+    expect(averageScore(p)).toEqual({ mean: expect.closeTo(0.3, 9), count: 2 });
+    expect(averageScore(newRound('time', 1)).mean).toBeNull();
   });
 
   it('the results list the three throws best first', () => {

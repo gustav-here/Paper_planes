@@ -82,8 +82,9 @@ export class FlightSim implements Simulator {
   private events: DamageEvent[] = [];
   private restTimer = 0;
   /** Smoothed |v| and |ω| on the ground (contact jitter must not keep the plane "moving"). */
-  private emaV = 1;
-  private emaW = 1;
+  /** Rest detection on the mean motion (velocity and spin averaged as vectors, world frame). */
+  private emaV: Vec3 = [1, 0, 0];
+  private emaW: Vec3 = [1, 0, 0];
   private nextLog = 0;
   private start: Vec3;
 
@@ -149,9 +150,9 @@ export class FlightSim implements Simulator {
 
     if (this.phase === 'ground') {
       const a = Math.min(1, this.cfg.dt / (this.cfg.ground.restTime / 4));
-      this.emaV += a * (this.speed() - this.emaV);
-      this.emaW += a * (V.length(this.state.w) - this.emaW);
-      const still = this.emaV < this.cfg.ground.restSpeed && this.emaW < this.cfg.ground.restSpin;
+      this.emaV = V.lerp(this.emaV, this.worldVelocity(), a);
+      this.emaW = V.lerp(this.emaW, Q.rotate(Q.normalize(this.state.q), this.state.w), a);
+      const still = V.length(this.emaV) < this.cfg.ground.restSpeed && V.length(this.emaW) < this.cfg.ground.restSpin;
       this.restTimer = still ? this.restTimer + this.cfg.dt : 0;
       if (this.restTimer >= this.cfg.ground.restTime) {
         this.phase = 'rest';

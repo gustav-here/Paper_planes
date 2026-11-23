@@ -74,9 +74,9 @@ export interface GroundConfig {
    * weak gravity pole-vaults over its nose. 0 for a hard floor.
    */
   spinDampingPerS: number;
-  /** Rest detection: |v| below this (m/s) … */
+  /** Rest detection: mean velocity (averaged as a vector over ¼ restTime) below this (m/s) … */
   restSpeed: number;
-  /** … and |ω| below this (rad/s) … */
+  /** … and mean spin below this (rad/s) … */
   restSpin: number;
   /** … for this long (s). */
   restTime: number;

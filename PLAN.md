@@ -1350,3 +1350,29 @@ Resultat med standardkonfigurationen (släpp från 10 m, olika kastfarter):
     luften och har släppt strömningen, så de är svaga fenor.
   - Valideringens trimmade dart viker nu av vid 11 m/s (14 av 16 kast) i stället för att stegra
     sig. Testet för överstegring använder därför 13 och 15 m/s (5 och 7 av 16 stegrar sig).
+
+## 37. Plan som aldrig stannade på golvet, och genomsnitt i resultatet
+- **Användarens iakttagelse:** efter flera kast med W-vingar fortsatte planet långsamt snurra på
+  golvet långt efter landningen.
+- **Orsak 1, studs från en fjäder:** ett uppvikt hörn som hamnat under vingen, klämt mot golvet,
+  trycktes ner av sitt veck snabbare än studsgränsen (0,3 m/s) inom ett enda steg. Golvet studsade
+  det, vecket tryckte ner det igen, och svängningen (120 Hz) fick planet att krypa och vrida sig
+  i 30 s (1,7 cm/s, några grader på 10 s).
+  - Nu studsar papper bara mot golvet om det var på väg mot det redan före steget
+    (`MultiBodySim.contact`). Studsens storlek är oförändrad. En variant som också tog studsens
+    storlek från farten före steget gjorde enstaka hårda landningar instabila.
+- **Orsak 2, vila räknad på varje svängning:** en flik klämd mellan vingen och golvet vid sitt
+  stopp vibrerade lite, och planets rotation låg precis över gränsen för vila (0,112 mot
+  0,1 rad/s). Planet stod still men flygningen tog aldrig slut, så resultatet kom först efter 30 s.
+  - Nu räknas vila på planets medelrörelse: hastighet och rotation medelvärdesbildas som vektorer
+    (båda simulatorerna). En vibration fram och tillbaka tar ut sig själv, en verklig glidning
+    eller snurr gör det inte.
+- **Krasch:** "singular matrix" i den flexibla modellen avbröt spelet. Nu avslutas flygningen i
+  senaste goda läge, som vid andra numeriska haverier.
+- **Utfall** (120 kast med W-vingar, uppvikta spetsar, uppvikta hörn och glidplanet, flexibelt
+  papper, 5–14 m/s): alla utom två kommer till vila 1,1–2,6 s efter landningen. Förut stannade
+  två kast aldrig och ett kraschade. De två som återstår avbryts av skyddet mot orimliga värden
+  strax efter ett hårt nedslag, och planet stannar där det är.
+- **Genomsnitt i resultatet:** rutan efter tävlingens tredje kast, och kastkortet när tävlingen är
+  slut, visar genomsnittet av kasten (`averageScore`). Kast utan giltig landning räknas inte, och
+  då står det till exempel "(2 av 3 kast)".

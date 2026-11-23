@@ -1,30 +1,46 @@
-import * as V from '../math/vec3';
-import * as Q from '../math/quat';
-import * as M3 from '../math/mat3';
-import type { Vec3 } from '../math/vec3';
-import type { Quat } from '../math/quat';
-import type { Mat3 } from '../math/mat3';
-import { invert } from '../math/linalg';
-import { applyRigid, composeRigid, rigidIdentity, rotationAbout } from '../math/transform';
-import type { RigidTransform } from '../math/transform';
-import { facetVertices } from '../paper/model';
-import type { PaperModel } from '../paper/model';
-import type { Airframe } from './airframe';
-import { buildAeroMesh } from './aeroMesh';
-import { createAeroCache, evaluateAero } from './aeroModel';
-import type { AeroCache, AeroDebug, ElementDeform, SurfacePose } from './aeroModel';
-import { computeAddedMass } from './addedMass';
-import type { PhysicsConfig } from './config';
-import { ControlTrack, DEFAULT_CONTROLS } from './controls';
-import type { ControlConfig, ControlInput } from './controls';
-import { launchState, scatterNumbers } from './launch';
-import type { LaunchParams } from './launch';
-import { buildPanels, panelContacts } from './panels';
-import { bendField, bendingContacts, buildPanelModes, deflectionAt, limitStiffness } from './bendModes';
-import type { PanelModes } from './bendModes';
-import type { PanelSet } from './panels';
-import type { DamageEvent, PanelBend, PanelPose, Simulator } from './simulator';
-import type { FlightEvent, FlightLog, FlightPhase } from './simulation';
+import * as V from "../math/vec3";
+import * as Q from "../math/quat";
+import * as M3 from "../math/mat3";
+import type { Vec3 } from "../math/vec3";
+import type { Quat } from "../math/quat";
+import type { Mat3 } from "../math/mat3";
+import { invert } from "../math/linalg";
+import {
+  applyRigid,
+  composeRigid,
+  rigidIdentity,
+  rotationAbout,
+} from "../math/transform";
+import type { RigidTransform } from "../math/transform";
+import { facetVertices } from "../paper/model";
+import type { PaperModel } from "../paper/model";
+import type { Airframe } from "./airframe";
+import { buildAeroMesh } from "./aeroMesh";
+import { createAeroCache, evaluateAero } from "./aeroModel";
+import type {
+  AeroCache,
+  AeroDebug,
+  ElementDeform,
+  SurfacePose,
+} from "./aeroModel";
+import { computeAddedMass } from "./addedMass";
+import type { PhysicsConfig } from "./config";
+import { ControlTrack, DEFAULT_CONTROLS } from "./controls";
+import type { ControlConfig, ControlInput } from "./controls";
+import { launchState, scatterNumbers } from "./launch";
+import type { LaunchParams } from "./launch";
+import { buildPanels, panelContacts } from "./panels";
+import {
+  bendField,
+  bendingContacts,
+  buildPanelModes,
+  deflectionAt,
+  limitStiffness,
+} from "./bendModes";
+import type { PanelModes } from "./bendModes";
+import type { PanelSet } from "./panels";
+import type { DamageEvent, PanelBend, PanelPose, Simulator } from "./simulator";
+import type { FlightEvent, FlightLog, FlightPhase } from "./simulation";
 
 /*
  * Flexible paper: hinged rigid panels in reduced coordinates.
@@ -54,24 +70,64 @@ export interface FlexAirframe {
   modes: PanelModes[];
 }
 
-export function buildFlexAirframe(model: PaperModel, rigid: Airframe, cfg: PhysicsConfig): FlexAirframe {
+export function buildFlexAirframe(
+  model: PaperModel,
+  rigid: Airframe,
+  cfg: PhysicsConfig,
+): FlexAirframe {
   const set = buildPanels(model, rigid, cfg.paper);
-  const mesh = buildAeroMesh(model, rigid.com, cfg.aero.elementSizeM, cfg.aero.liftingSystemAngleDeg, set.panelOf);
+  const mesh = buildAeroMesh(
+    model,
+    rigid.com,
+    cfg.aero.elementSizeM,
+    cfg.aero.liftingSystemAngleDeg,
+    set.panelOf,
+  );
   const af: Airframe = { ...rigid, mesh };
   // control surfaces of the rigid airframe refer to its own mesh; remap by facet tags
-  af.controls = rigid.controls.map((g) => ({ ...g, surfaces: mesh.surfaces.filter((s) => g.facets.includes(firstFacetOf(model, set, s.tag))).map((s) => s.id) }));
-  const panelSurfaces = set.panels.map((_, i) => mesh.surfaces.filter((s) => s.tag === i).map((s) => s.id));
+  af.controls = rigid.controls.map((g) => ({
+    ...g,
+    surfaces: mesh.surfaces
+      .filter((s) => g.facets.includes(firstFacetOf(model, set, s.tag)))
+      .map((s) => s.id),
+  }));
+  const panelSurfaces = set.panels.map((_, i) =>
+    mesh.surfaces.filter((s) => s.tag === i).map((s) => s.id),
+  );
   const panelMA = set.panels.map((p, i) =>
     cfg.addedMass
-      ? computeAddedMass(mesh, cfg.rho, cfg.addedMassScale, cfg.aero.elementSizeM, new Set(panelSurfaces[i]), V.sub(p.com, rigid.com)).MA
+      ? computeAddedMass(
+          mesh,
+          cfg.rho,
+          cfg.addedMassScale,
+          cfg.aero.elementSizeM,
+          new Set(panelSurfaces[i]),
+          V.sub(p.com, rigid.com),
+        ).MA
       : new Array<number>(36).fill(0),
   );
-  const controlPanels = new Set(set.hinges.filter((h) => h.control >= 0).map((h) => h.child));
+  const controlPanels = new Set(
+    set.hinges.filter((h) => h.control >= 0).map((h) => h.child),
+  );
   const modes = cfg.paper.bendingModes
-    ? buildPanelModes(model, set, mesh, panelSurfaces, rigid.com, controlPanels, cfg.paper, cfg.addedMass ? cfg.rho : 0, cfg.addedMassScale, cfg.aero.elementSizeM)
+    ? buildPanelModes(
+        model,
+        set,
+        mesh,
+        panelSurfaces,
+        rigid.com,
+        controlPanels,
+        cfg.paper,
+        cfg.addedMass ? cfg.rho : 0,
+        cfg.addedMassScale,
+        cfg.aero.elementSizeM,
+      )
     : [];
   // corners of every facet, and on bending panels points along the edges and over the inside
-  const contacts = [...panelContacts(model, set), ...bendingContacts(model, set, modes, BEND_CONTACT_SPACING)];
+  const contacts = [
+    ...panelContacts(model, set),
+    ...bendingContacts(model, set, modes, BEND_CONTACT_SPACING),
+  ];
   return { af, set, panelSurfaces, panelMA, contacts, model, modes };
 }
 
@@ -89,7 +145,17 @@ const D_REFRESH = 6;
 const MAX_PLAUSIBLE_SPEED = 60;
 /** Spacing of the floor-contact points over a bending panel (m). */
 const BEND_CONTACT_SPACING = 0.04;
-const skew = (a: Vec3): Mat3 => [0, -a[2], a[1], a[2], 0, -a[0], -a[1], a[0], 0];
+const skew = (a: Vec3): Mat3 => [
+  0,
+  -a[2],
+  a[1],
+  a[2],
+  0,
+  -a[0],
+  -a[1],
+  a[0],
+  0,
+];
 
 /**
  * A degree of freedom that moves a panel and everything beyond it: a crease hinge (rotation
@@ -130,7 +196,7 @@ interface Kin {
 export class MultiBodySim implements Simulator {
   t = 0;
   stepIndex = 0;
-  phase: FlightPhase = 'flight';
+  phase: FlightPhase = "flight";
   readonly log: FlightLog;
   readonly controls: ControlTrack;
   readonly panels: number[][];
@@ -161,8 +227,12 @@ export class MultiBodySim implements Simulator {
   private events: DamageEvent[] = [];
   private tornHinges = new Set<number>();
   private restTimer = 0;
-  private emaV = 1;
-  private emaW = 1;
+  /**
+   * Rest detection on the plane's mean motion (velocity and spin averaged as vectors): a flap
+   * buzzing against the floor averages out, a plane that really slides or turns does not.
+   */
+  private emaV: Vec3 = [1, 0, 0];
+  private emaW: Vec3 = [1, 0, 0];
   private nextLog = 0;
   private start: Vec3;
 
@@ -178,10 +248,22 @@ export class MultiBodySim implements Simulator {
     this.nm = fx.modes.reduce((s, m) => s + m.shapes.length, 0);
     this.n = 6 + this.k + this.nm;
     this.qm = new Array<number>(this.nm).fill(0);
-    this.modesOf = set.panels.map((_, i) => fx.modes.find((m) => m.panel === i) ?? null);
-    this.hingeMid = set.hinges.map((hg) => V.addScaled(hg.point, hg.axis, V.dot(V.sub(set.panels[hg.child].com, hg.point), hg.axis)));
+    this.modesOf = set.panels.map(
+      (_, i) => fx.modes.find((m) => m.panel === i) ?? null,
+    );
+    this.hingeMid = set.hinges.map((hg) =>
+      V.addScaled(
+        hg.point,
+        hg.axis,
+        V.dot(V.sub(set.panels[hg.child].com, hg.point), hg.axis),
+      ),
+    );
     const nel = fx.af.mesh.elements.length;
-    this.deform = { disp: new Float64Array(nel), slope: new Float64Array(nel * 3), vel: new Float64Array(nel) };
+    this.deform = {
+      disp: new Float64Array(nel),
+      slope: new Float64Array(nel * 3),
+      vel: new Float64Array(nel),
+    };
     this.buildJoints();
     this.buildBendTables();
     this.buildContactBounds();
@@ -215,12 +297,19 @@ export class MultiBodySim implements Simulator {
     this.cache = createAeroCache(fx.af);
     this.start = [...this.x0];
     this.substeps = this.chooseSubsteps();
-    this.log = { launch, samples: [], firstImpact: null, rest: null, maxHeight: this.x0[1], phase: 'flight' };
+    this.log = {
+      launch,
+      samples: [],
+      firstImpact: null,
+      rest: null,
+      maxHeight: this.x0[1],
+      phase: "flight",
+    };
     this.record();
   }
 
   get done(): boolean {
-    return this.phase === 'rest' || this.phase === 'timeout';
+    return this.phase === "rest" || this.phase === "timeout";
   }
 
   // ---------------------------------------------------------------- kinematics
@@ -228,7 +317,9 @@ export class MultiBodySim implements Simulator {
   /** Joint list and each panel's joints from the root (static structure). */
   private buildJoints() {
     const { set } = this.fx;
-    set.hinges.forEach((hg, j) => this.joints.push({ col: 6 + j, carrier: hg.parent, hinge: j }));
+    set.hinges.forEach((hg, j) =>
+      this.joints.push({ col: 6 + j, carrier: hg.parent, hinge: j }),
+    );
     this.jpath = set.panels.map(() => []);
     for (const i of this.order()) {
       const p = set.panels[i];
@@ -238,7 +329,14 @@ export class MultiBodySim implements Simulator {
       if (pm) {
         pm.shapes.forEach((_, k) => {
           path.push(this.joints.length);
-          this.joints.push({ col: 6 + this.k + pm.first + k, carrier: p.parent, hinge: p.hinge, modes: pm, shape: k, at: this.hingeMid[p.hinge] });
+          this.joints.push({
+            col: 6 + this.k + pm.first + k,
+            carrier: p.parent,
+            hinge: p.hinge,
+            modes: pm,
+            shape: k,
+            at: this.hingeMid[p.hinge],
+          });
         });
       }
       path.push(p.hinge);
@@ -253,14 +351,23 @@ export class MultiBodySim implements Simulator {
     const { w, grad } = deflectionAt(pm, this.qmFor, x);
     const Om = V.cross(grad, pm.normal);
     const ang = V.length(Om);
-    const rot = ang > 1e-12 ? rotationAbout(x, V.scale(Om, 1 / ang), ang) : rigidIdentity();
+    const rot =
+      ang > 1e-12
+        ? rotationAbout(x, V.scale(Om, 1 / ang), ang)
+        : rigidIdentity();
     return composeRigid({ q: [0, 0, 0, 1], t: V.scale(pm.normal, w) }, rot);
   }
 
   /** Bending amplitudes in use while building kinematics (positions). */
   private qmFor: number[] = [];
 
-  private kin(x0: Vec3, q0: Quat, theta: number[], u: number[], qm: number[] = this.qm): Kin {
+  private kin(
+    x0: Vec3,
+    q0: Quat,
+    theta: number[],
+    u: number[],
+    qm: number[] = this.qm,
+  ): Kin {
     const { set, af } = this.fx;
     const com = af.com;
     this.qmFor = qm;
@@ -271,8 +378,10 @@ export class MultiBodySim implements Simulator {
     const a: Vec3[] = new Array(nj);
     const h: Vec3[] = new Array(nj);
     const t: Vec3[] = new Array(nj).fill([0, 0, 0]);
-    const toWorld = (T: RigidTransform, pm: Vec3): Vec3 => V.add(x0, M3.mulVec(R0, V.sub(applyRigid(T, pm), com)));
-    const dirWorld = (T: RigidTransform, d: Vec3): Vec3 => M3.mulVec(R0, Q.rotate(T.q, d));
+    const toWorld = (T: RigidTransform, pm: Vec3): Vec3 =>
+      V.add(x0, M3.mulVec(R0, V.sub(applyRigid(T, pm), com)));
+    const dirWorld = (T: RigidTransform, d: Vec3): Vec3 =>
+      M3.mulVec(R0, Q.rotate(T.q, d));
     for (const i of order) {
       const p = set.panels[i];
       if (p.parent < 0) {
@@ -281,7 +390,10 @@ export class MultiBodySim implements Simulator {
       }
       const hg = set.hinges[p.hinge];
       // the parent's paper at the crease may be bent: the child hangs on the bent paper
-      const Mp = composeRigid(M[p.parent], this.bendAt(p.parent, this.hingeMid[p.hinge]));
+      const Mp = composeRigid(
+        M[p.parent],
+        this.bendAt(p.parent, this.hingeMid[p.hinge]),
+      );
       M[i] = composeRigid(Mp, rotationAbout(hg.point, hg.axis, theta[p.hinge]));
       a[p.hinge] = dirWorld(Mp, hg.axis);
       h[p.hinge] = toWorld(Mp, hg.point);
@@ -295,7 +407,10 @@ export class MultiBodySim implements Simulator {
       const uu = V.dot(r, pm.eu);
       const vv = V.dot(r, pm.ev);
       const P = pm.shapes[js.shape!];
-      const grad = V.add(V.scale(pm.eu, P.wu(uu, vv)), V.scale(pm.ev, P.wv(uu, vv)));
+      const grad = V.add(
+        V.scale(pm.eu, P.wu(uu, vv)),
+        V.scale(pm.ev, P.wv(uu, vv)),
+      );
       const T = composeRigid(M[js.carrier], this.bendAt(js.carrier, x));
       a[j] = dirWorld(T, V.cross(grad, pm.normal));
       h[j] = toWorld(T, x);
@@ -315,7 +430,10 @@ export class MultiBodySim implements Simulator {
       for (const j of this.jpath[i]) {
         const col = this.joints[j].col;
         wi = V.addScaled(wi, a[j], u[col]);
-        vi = V.add(vi, V.scale(V.add(V.cross(a[j], V.sub(c[i], h[j])), t[j]), u[col]));
+        vi = V.add(
+          vi,
+          V.scale(V.add(V.cross(a[j], V.sub(c[i], h[j])), t[j]), u[col]),
+        );
       }
       w[i] = wi;
       v[i] = vi;
@@ -341,8 +459,18 @@ export class MultiBodySim implements Simulator {
 
   /** Velocity of a world point carried rigidly by panel i (its own bending not included). */
   private pointVel(K: Kin, i: number, p: Vec3, u: number[]): Vec3 {
-    let vel = V.add([u[0], u[1], u[2]], V.cross([u[3], u[4], u[5]], V.sub(p, this.x0)));
-    for (const j of this.jpath[i]) vel = V.add(vel, V.scale(V.add(V.cross(K.a[j], V.sub(p, K.h[j])), K.t[j]), u[this.joints[j].col]));
+    let vel = V.add(
+      [u[0], u[1], u[2]],
+      V.cross([u[3], u[4], u[5]], V.sub(p, this.x0)),
+    );
+    for (const j of this.jpath[i])
+      vel = V.add(
+        vel,
+        V.scale(
+          V.add(V.cross(K.a[j], V.sub(p, K.h[j])), K.t[j]),
+          u[this.joints[j].col],
+        ),
+      );
     return vel;
   }
 
@@ -352,7 +480,11 @@ export class MultiBodySim implements Simulator {
    */
   private pointJ(K: Kin, i: number, p: Vec3, own?: Vec3): number[][] {
     const n = this.n;
-    const J = [new Array<number>(n).fill(0), new Array<number>(n).fill(0), new Array<number>(n).fill(0)];
+    const J = [
+      new Array<number>(n).fill(0),
+      new Array<number>(n).fill(0),
+      new Array<number>(n).fill(0),
+    ];
     const r = V.sub(p, this.x0);
     const S = skew(r);
     for (let row = 0; row < 3; row++) {
@@ -372,20 +504,26 @@ export class MultiBodySim implements Simulator {
       const vv = V.dot(rr, pm.ev);
       pm.shapes.forEach((P, k) => {
         const phi = P.w(uu, vv);
-        for (let row = 0; row < 3; row++) J[row][6 + this.k + pm.first + k] += nW[row] * phi;
+        for (let row = 0; row < 3; row++)
+          J[row][6 + this.k + pm.first + k] += nW[row] * phi;
       });
     }
     return J;
   }
 
   /** Inertia of a bending panel in the world: rigid block (6×6), coupling columns (m × 6), bending block (m × m). */
-  private augmentedInertia(K: Kin, i: number, pm: PanelModes): { rigid: number[]; coupling: number[][]; bend: number[] } {
+  private augmentedInertia(
+    K: Kin,
+    i: number,
+    pm: PanelModes,
+  ): { rigid: number[]; coupling: number[][]; bend: number[] } {
     const m = pm.shapes.length;
     const N = 6 + m;
     const R = K.Rp[i];
     const A = pm.Maug;
     const at = (r: number, c: number) => A[r * N + c];
-    const block = (r0: number, c0: number): Mat3 => [0, 1, 2].flatMap((r) => [0, 1, 2].map((c) => at(r0 + r, c0 + c)));
+    const block = (r0: number, c0: number): Mat3 =>
+      [0, 1, 2].flatMap((r) => [0, 1, 2].map((c) => at(r0 + r, c0 + c)));
     const rot = (B: Mat3) => M3.mul(M3.mul(R, B), M3.transpose(R));
     const rigid = new Array<number>(36).fill(0);
     for (const [r0, c0] of [
@@ -395,14 +533,16 @@ export class MultiBodySim implements Simulator {
       [3, 3],
     ] as const) {
       const B = rot(block(r0, c0));
-      for (let r = 0; r < 3; r++) for (let c = 0; c < 3; c++) rigid[(r0 + r) * 6 + c0 + c] = B[r * 3 + c];
+      for (let r = 0; r < 3; r++)
+        for (let c = 0; c < 3; c++) rigid[(r0 + r) * 6 + c0 + c] = B[r * 3 + c];
     }
     const coupling = Array.from({ length: m }, (_, k) => [
       ...M3.mulVec(R, [at(0, 6 + k), at(1, 6 + k), at(2, 6 + k)]),
       ...M3.mulVec(R, [at(3, 6 + k), at(4, 6 + k), at(5, 6 + k)]),
     ]);
     const bend = new Array<number>(m * m);
-    for (let k = 0; k < m; k++) for (let l = 0; l < m; l++) bend[k * m + l] = at(6 + k, 6 + l);
+    for (let k = 0; k < m; k++)
+      for (let l = 0; l < m; l++) bend[k * m + l] = at(6 + k, 6 + l);
     return { rigid, coupling, bend };
   }
 
@@ -412,7 +552,8 @@ export class MultiBodySim implements Simulator {
     const R = K.Rp[i];
     const Rt = M3.transpose(R);
     const MA = this.fx.panelMA[i];
-    const block = (r0: number, c0: number): Mat3 => [0, 1, 2].flatMap((r) => [0, 1, 2].map((c) => MA[(r0 + r) * 6 + c0 + c]));
+    const block = (r0: number, c0: number): Mat3 =>
+      [0, 1, 2].flatMap((r) => [0, 1, 2].map((c) => MA[(r0 + r) * 6 + c0 + c]));
     const rot = (B: Mat3) => M3.mul(M3.mul(R, B), Rt);
     const A11 = rot(block(0, 0));
     const A12 = rot(block(0, 3));
@@ -435,22 +576,42 @@ export class MultiBodySim implements Simulator {
     const n = this.n;
     return this.fx.set.panels.map((_, i) => {
       const Jl = this.pointJ(K, i, K.c[i]);
-      const Ja = [new Array<number>(n).fill(0), new Array<number>(n).fill(0), new Array<number>(n).fill(0)];
+      const Ja = [
+        new Array<number>(n).fill(0),
+        new Array<number>(n).fill(0),
+        new Array<number>(n).fill(0),
+      ];
       for (let r = 0; r < 3; r++) Ja[r][3 + r] = 1;
-      for (const j of this.jpath[i]) for (let r = 0; r < 3; r++) Ja[r][this.joints[j].col] += K.a[j][r];
+      for (const j of this.jpath[i])
+        for (let r = 0; r < 3; r++) Ja[r][this.joints[j].col] += K.a[j][r];
       return [...Jl, ...Ja];
     });
   }
 
   /** Raw aerodynamics: per-surface force and moment (body frame, about the body origin) and per-element forces. */
-  private aeroRaw(K: Kin, u: number[], only?: Set<number>, base?: AeroRaw, debug?: AeroDebug): AeroRaw {
+  private aeroRaw(
+    K: Kin,
+    u: number[],
+    only?: Set<number>,
+    base?: AeroRaw,
+    debug?: AeroDebug,
+  ): AeroRaw {
     const { af } = this.fx;
     const { poses, vb, wb } = this.surfacePoses(K, u);
     const per: { F: Vec3; T: Vec3 }[] = base ? [...base.per] : [];
-    const elemF = base ? Float64Array.from(base.elemF) : new Float64Array(af.mesh.elements.length * 3);
+    const elemF = base
+      ? Float64Array.from(base.elemF)
+      : new Float64Array(af.mesh.elements.length * 3);
     // the shape is set once per step; only the rates change between evaluations
     this.fillDeformRates(u);
-    evaluateAero(af, vb, wb, this.cfg.aero, this.cfg.rho, this.cache, { poses, perSurface: per, debug, deform: this.deform, elementForces: elemF, only });
+    evaluateAero(af, vb, wb, this.cfg.aero, this.cfg.rho, this.cache, {
+      poses,
+      perSurface: per,
+      debug,
+      deform: this.deform,
+      elementForces: elemF,
+      only,
+    });
     return { per, elemF };
   }
 
@@ -459,7 +620,12 @@ export class MultiBodySim implements Simulator {
    * shape Qₖ = Σₑ (Fₑ · n) φₖ(e) (the virtual work of the element forces). With `only`, just
    * the contribution of those surfaces.
    */
-  private genForce(K: Kin, Js: number[][][], raw: AeroRaw, only?: Set<number>): number[] {
+  private genForce(
+    K: Kin,
+    Js: number[][][],
+    raw: AeroRaw,
+    only?: Set<number>,
+  ): number[] {
     const { set, panelSurfaces, af } = this.fx;
     const out = new Array<number>(this.n).fill(0);
     const R0t = M3.transpose(K.R0);
@@ -478,7 +644,10 @@ export class MultiBodySim implements Simulator {
       if (!any) return;
       // moment about the panel CoM, then to the world
       const cb = M3.mulVec(R0t, V.sub(K.c[i], this.x0));
-      const f = [...M3.mulVec(K.R0, F), ...M3.mulVec(K.R0, V.sub(T, V.cross(cb, F)))];
+      const f = [
+        ...M3.mulVec(K.R0, F),
+        ...M3.mulVec(K.R0, V.sub(T, V.cross(cb, F))),
+      ];
       const J = Js[i];
       for (let a = 0; a < this.n; a++) {
         let sum = 0;
@@ -492,7 +661,10 @@ export class MultiBodySim implements Simulator {
       for (let j = 0; j < t.index.length; j++) {
         const i = t.index[j];
         if (only && !only.has(af.mesh.elements[i].surface)) continue;
-        const fn = raw.elemF[i * 3] * nb[0] + raw.elemF[i * 3 + 1] * nb[1] + raw.elemF[i * 3 + 2] * nb[2];
+        const fn =
+          raw.elemF[i * 3] * nb[0] +
+          raw.elemF[i * 3 + 1] * nb[1] +
+          raw.elemF[i * 3 + 2] * nb[2];
         for (let k = 0; k < t.m; k++) out[t.col + k] += fn * t.phi[j * t.m + k];
       }
     });
@@ -500,17 +672,39 @@ export class MultiBodySim implements Simulator {
   }
 
   /** Flat tables of the bending panels' aero elements (built once). */
-  private bendEls: { index: Int32Array; sign: Float64Array; phi: Float64Array; grad: Float64Array; m: number; col: number; first: number }[] = [];
+  private bendEls: {
+    index: Int32Array;
+    sign: Float64Array;
+    phi: Float64Array;
+    grad: Float64Array;
+    m: number;
+    col: number;
+    first: number;
+  }[] = [];
 
   private buildBendTables() {
     const { af } = this.fx;
     this.bendEls = this.fx.modes.map((pm) => {
       const m = pm.shapes.length;
       const ne = pm.elements.length;
-      const t = { index: new Int32Array(ne), sign: new Float64Array(ne), phi: new Float64Array(ne * m), grad: new Float64Array(ne * m * 3), m, col: 6 + this.k + pm.first, first: pm.first };
+      const t = {
+        index: new Int32Array(ne),
+        sign: new Float64Array(ne),
+        phi: new Float64Array(ne * m),
+        grad: new Float64Array(ne * m * 3),
+        m,
+        col: 6 + this.k + pm.first,
+        first: pm.first,
+      };
       pm.elements.forEach((e, j) => {
         t.index[j] = e.index;
-        t.sign[j] = Math.sign(V.dot(af.mesh.surfaces[af.mesh.elements[e.index].surface].normal, pm.normal)) || 1;
+        t.sign[j] =
+          Math.sign(
+            V.dot(
+              af.mesh.surfaces[af.mesh.elements[e.index].surface].normal,
+              pm.normal,
+            ),
+          ) || 1;
         for (let k = 0; k < m; k++) {
           t.phi[j * m + k] = e.phi[k];
           t.grad.set(e.grad[k], (j * m + k) * 3);
@@ -608,7 +802,19 @@ export class MultiBodySim implements Simulator {
         const tdot = V.cross(wp, K.t[j]);
         const vh = this.pointVel(K, js.carrier, K.h[j], u);
         const uj = u[js.col];
-        ab = V.add(ab, V.scale(V.add(V.add(V.cross(adot, V.sub(K.c[i], K.h[j])), V.cross(K.a[j], V.sub(K.v[i], vh))), tdot), uj));
+        ab = V.add(
+          ab,
+          V.scale(
+            V.add(
+              V.add(
+                V.cross(adot, V.sub(K.c[i], K.h[j])),
+                V.cross(K.a[j], V.sub(K.v[i], vh)),
+              ),
+              tdot,
+            ),
+            uj,
+          ),
+        );
         alb = V.addScaled(alb, adot, uj);
       }
       const nu = [...K.v[i], ...K.w[i]];
@@ -659,21 +865,32 @@ export class MultiBodySim implements Simulator {
             M[a * n + base + k] += sum;
             M[(base + k) * n + a] += sum;
           }
-          for (let l = 0; l < m; l++) M[(base + k) * n + base + l] += aug.bend[k * m + l];
+          for (let l = 0; l < m; l++)
+            M[(base + k) * n + base + l] += aug.bend[k * m + l];
           // gravity on the bent paper; the elastic restoring force of the plate
           rhs[base + k] += pm.Spaper[k] * V.dot(g, nW);
-          for (let l = 0; l < m; l++) rhs[base + k] -= pm.K[k * m + l] * (this.qm[pm.first + l] + this.cfg.paper.creaseDampingS * u[base + l]);
+          for (let l = 0; l < m; l++)
+            rhs[base + k] -=
+              pm.K[k * m + l] *
+              (this.qm[pm.first + l] +
+                this.cfg.paper.creaseDampingS * u[base + l]);
           // beyond the linear range the shape stiffens (the paper cannot stretch)
-          rhs[base + k] -= limitStiffness(pm, k, this.qm[pm.first + k], this.cfg.paper) * this.qm[pm.first + k];
+          rhs[base + k] -=
+            limitStiffness(pm, k, this.qm[pm.first + k], this.cfg.paper) *
+            this.qm[pm.first + k];
         }
       }
     });
     // crease springs (and control servos); damping is handled implicitly in step()
     set.hinges.forEach((hg, j) => {
-      rhs[6 + j] += -hg.stiffness * (this.theta[j] - this.rest[j]) - hg.damping * u[6 + j];
+      rhs[6 + j] +=
+        -hg.stiffness * (this.theta[j] - this.rest[j]) - hg.damping * u[6 + j];
       // folded layers meeting: a stiff contact spring stops paper passing through paper
       const kc = this.contactK(j);
-      if (kc) rhs[6 + j] += -kc * (this.theta[j] - hg.closeAt) - kc * this.cfg.paper.creaseDampingS * u[6 + j];
+      if (kc)
+        rhs[6 + j] +=
+          -kc * (this.theta[j] - hg.closeAt) -
+          kc * this.cfg.paper.creaseDampingS * u[6 + j];
     });
     return { M, rhs };
   }
@@ -682,7 +899,9 @@ export class MultiBodySim implements Simulator {
   private contactK(j: number): number {
     const hg = this.fx.set.hinges[j];
     if (hg.control >= 0) return 0;
-    return (this.theta[j] - hg.closeAt) * hg.closeDir > 0 ? hg.creaseStiffness * this.cfg.paper.contactStiffnessFactor : 0;
+    return (this.theta[j] - hg.closeAt) * hg.closeDir > 0
+      ? hg.creaseStiffness * this.cfg.paper.contactStiffnessFactor
+      : 0;
   }
 
   /**
@@ -701,14 +920,19 @@ export class MultiBodySim implements Simulator {
     // with the bending shapes held (rigid panels), as for the creases alone
     const nr = 6 + this.k;
     const Mr = new Array<number>(nr * nr);
-    for (let a = 0; a < nr; a++) for (let b = 0; b < nr; b++) Mr[a * nr + b] = M[a * this.n + b];
+    for (let a = 0; a < nr; a++)
+      for (let b = 0; b < nr; b++) Mr[a * nr + b] = M[a * this.n + b];
     const MrInv = invert(Mr, nr);
     const Minv = { at: (a: number, b: number) => MrInv[a * nr + b] };
     const stiff = this.stiffness();
     // a servo-driven flap is held at its commanded angle by a stiff spring that is integrated
     // implicitly; how it rings at that stiffness does not matter, so it sets no sub-steps
     this.fx.set.hinges.forEach((hg, j) => {
-      if (hg.control >= 0) for (let b = 0; b < this.k + this.nm; b++) stiff[j * (this.k + this.nm) + b] = stiff[b * (this.k + this.nm) + j] = 0;
+      if (hg.control >= 0)
+        for (let b = 0; b < this.k + this.nm; b++)
+          stiff[j * (this.k + this.nm) + b] = stiff[
+            b * (this.k + this.nm) + j
+          ] = 0;
     });
     // power iteration on Minv_dd·K_dd for the highest elastic frequency
     let x = new Array<number>(nd).fill(1);
@@ -716,9 +940,11 @@ export class MultiBodySim implements Simulator {
     for (let it = 0; it < 40; it++) {
       const kx = new Array<number>(nd).fill(0);
       const ns = this.k + this.nm;
-      for (let a = 0; a < nd; a++) for (let b = 0; b < nd; b++) kx[a] += stiff[a * ns + b] * x[b];
+      for (let a = 0; a < nd; a++)
+        for (let b = 0; b < nd; b++) kx[a] += stiff[a * ns + b] * x[b];
       const y = new Array<number>(nd).fill(0);
-      for (let a = 0; a < nd; a++) for (let b = 0; b < nd; b++) y[a] += Minv.at(6 + a, 6 + b) * kx[b];
+      for (let a = 0; a < nd; a++)
+        for (let b = 0; b < nd; b++) y[a] += Minv.at(6 + a, 6 + b) * kx[b];
       lambda = Math.hypot(...y);
       if (lambda === 0) break;
       x = y.map((v) => v / lambda);
@@ -735,14 +961,19 @@ export class MultiBodySim implements Simulator {
     for (const pm of this.fx.modes) {
       const m = pm.shapes.length;
       for (let a = 0; a < m; a++)
-        for (let b = 0; b < m; b++) out[(this.k + pm.first + a) * nd + this.k + pm.first + b] = pm.K[a * m + b];
+        for (let b = 0; b < m; b++)
+          out[(this.k + pm.first + a) * nd + this.k + pm.first + b] =
+            pm.K[a * m + b];
     }
     return out;
   }
 
   // ---------------------------------------------------------------- aero
 
-  private surfacePoses(K: Kin, u: number[] = this.u): { poses: (SurfacePose | null)[]; vb: Vec3; wb: Vec3 } {
+  private surfacePoses(
+    K: Kin,
+    u: number[] = this.u,
+  ): { poses: (SurfacePose | null)[]; vb: Vec3; wb: Vec3 } {
     const { set, af, panelSurfaces } = this.fx;
     const com = af.com;
     const R0t = M3.transpose(K.R0);
@@ -759,7 +990,10 @@ export class MultiBodySim implements Simulator {
         const ab = M3.mulVec(R0t, K.a[j]);
         const hb = M3.mulVec(R0t, V.sub(K.h[j], this.x0));
         W = V.addScaled(W, ab, uj);
-        v0 = V.add(v0, V.scale(V.sub(M3.mulVec(R0t, K.t[j]), V.cross(ab, hb)), uj));
+        v0 = V.add(
+          v0,
+          V.scale(V.sub(M3.mulVec(R0t, K.t[j]), V.cross(ab, hb)), uj),
+        );
       }
       const pose: SurfacePose = { R, t, w: W, v0 };
       for (const sid of panelSurfaces[i]) poses[sid] = pose;
@@ -778,8 +1012,16 @@ export class MultiBodySim implements Simulator {
     const max = this.controlCfg.maxDeflectionDeg;
     const dmax = this.controlCfg.rateDegPerS * this.cfg.dt;
     af.controls.forEach((g, i) => {
-      const target = max * Math.max(-1, Math.min(1, cmd.pitch * g.pitchSign + cmd.roll * g.rollSign));
-      this.deflection[i] += Math.max(-dmax, Math.min(dmax, target - this.deflection[i]));
+      const target =
+        max *
+        Math.max(
+          -1,
+          Math.min(1, cmd.pitch * g.pitchSign + cmd.roll * g.rollSign),
+        );
+      this.deflection[i] += Math.max(
+        -dmax,
+        Math.min(dmax, target - this.deflection[i]),
+      );
     });
     set.hinges.forEach((hg, j) => {
       if (hg.control >= 0) this.rest[j] = this.deflection[hg.control] / RAD;
@@ -822,80 +1064,112 @@ export class MultiBodySim implements Simulator {
     }
     this.Dcache = D;
     this.fillDeform(u0);
-    const saved = { x0: this.x0, q0: this.q0, u: [...this.u], theta: [...this.theta], qm: [...this.qm], rest: [...this.rest] };
+    const saved = {
+      x0: this.x0,
+      q0: this.q0,
+      u: [...this.u],
+      theta: [...this.theta],
+      qm: [...this.qm],
+      rest: [...this.rest],
+    };
     const h = this.cfg.dt / this.substeps;
-    for (let s = 0; s < this.substeps; s++) {
-      const K = this.kin(this.x0, this.q0, this.theta, this.u);
-      const Js = this.panelJ(K);
-      const { M, rhs } = this.dynamics(K, Js);
-      const f = rhs.map((x, r) => {
-        let qa = Q0[r];
-        for (let c = 0; c < n; c++) qa += D[r * n + c] * (this.u[c] - u0[c]);
-        return x + qa;
-      });
-      const A = M.map((x, idx) => x - h * D[idx]);
-      this.fx.set.hinges.forEach((hg, j) => {
-        const kc = this.contactK(j);
-        const k = hg.stiffness + kc;
-        A[(6 + j) * n + 6 + j] += h * (hg.damping + kc * this.cfg.paper.creaseDampingS) + h * h * k;
-        // backward Euler for the spring: −k(θ + h·θ̇_new) → extra −h·k·θ̇ on the right
-        f[6 + j] -= h * k * this.u[6 + j];
-      });
-      // the plate's bending stiffness and damping, implicitly in the same way
-      const tau = this.cfg.paper.creaseDampingS;
-      for (const pm of this.fx.modes) {
-        const m = pm.shapes.length;
-        const b = 6 + this.k + pm.first;
-        for (let a = 0; a < m; a++)
-          for (let c = 0; c < m; c++) {
-            const kk = pm.K[a * m + c];
-            A[(b + a) * n + b + c] += h * tau * kk + h * h * kk;
-            f[b + a] -= h * kk * this.u[b + c];
+    try {
+      for (let s = 0; s < this.substeps; s++) {
+        const K = this.kin(this.x0, this.q0, this.theta, this.u);
+        const Js = this.panelJ(K);
+        const { M, rhs } = this.dynamics(K, Js);
+        const f = rhs.map((x, r) => {
+          let qa = Q0[r];
+          for (let c = 0; c < n; c++) qa += D[r * n + c] * (this.u[c] - u0[c]);
+          return x + qa;
+        });
+        const A = M.map((x, idx) => x - h * D[idx]);
+        this.fx.set.hinges.forEach((hg, j) => {
+          const kc = this.contactK(j);
+          const k = hg.stiffness + kc;
+          A[(6 + j) * n + 6 + j] +=
+            h * (hg.damping + kc * this.cfg.paper.creaseDampingS) + h * h * k;
+          // backward Euler for the spring: −k(θ + h·θ̇_new) → extra −h·k·θ̇ on the right
+          f[6 + j] -= h * k * this.u[6 + j];
+        });
+        // the plate's bending stiffness and damping, implicitly in the same way
+        const tau = this.cfg.paper.creaseDampingS;
+        for (const pm of this.fx.modes) {
+          const m = pm.shapes.length;
+          const b = 6 + this.k + pm.first;
+          for (let a = 0; a < m; a++)
+            for (let c = 0; c < m; c++) {
+              const kk = pm.K[a * m + c];
+              A[(b + a) * n + b + c] += h * tau * kk + h * h * kk;
+              f[b + a] -= h * kk * this.u[b + c];
+            }
+          for (let a = 0; a < m; a++) {
+            const q = this.qm[pm.first + a];
+            // the tangent stiffness of the limit, 7·k_extra (force ∝ q⁷), implicitly for stability
+            const kl = 7 * limitStiffness(pm, a, q, this.cfg.paper);
+            A[(b + a) * n + b + a] += h * h * kl;
+            f[b + a] -= h * kl * this.u[b + a];
           }
-        for (let a = 0; a < m; a++) {
-          const q = this.qm[pm.first + a];
-          // the tangent stiffness of the limit, 7·k_extra (force ∝ q⁷), implicitly for stability
-          const kl = 7 * limitStiffness(pm, a, q, this.cfg.paper);
-          A[(b + a) * n + b + a] += h * h * kl;
-          f[b + a] -= h * kl * this.u[b + a];
         }
+        const du = mulVecN(invert(A, n), f, n);
+        const uBefore = [...this.u];
+        for (let i = 0; i < n; i++) this.u[i] += h * du[i];
+        // floor impulses act on the new velocities, before the positions move
+        this.contact(h, M, K, uBefore);
+        // positions with the new velocities (semi-implicit Euler)
+        this.x0 = V.add(this.x0, V.scale([this.u[0], this.u[1], this.u[2]], h));
+        const wq: Quat = [this.u[3], this.u[4], this.u[5], 0];
+        const dq = Q.mul(wq, this.q0);
+        this.q0 = Q.normalize([
+          this.q0[0] + 0.5 * h * dq[0],
+          this.q0[1] + 0.5 * h * dq[1],
+          this.q0[2] + 0.5 * h * dq[2],
+          this.q0[3] + 0.5 * h * dq[3],
+        ]);
+        for (let j = 0; j < this.k; j++) this.theta[j] += h * this.u[6 + j];
+        for (let j = 0; j < this.nm; j++)
+          this.qm[j] += h * this.u[6 + this.k + j];
+        this.plasticity();
       }
-      const du = mulVecN(invert(A, n), f, n);
-      for (let i = 0; i < n; i++) this.u[i] += h * du[i];
-      // floor impulses act on the new velocities, before the positions move
-      this.contact(h, M, K);
-      // positions with the new velocities (semi-implicit Euler)
-      this.x0 = V.add(this.x0, V.scale([this.u[0], this.u[1], this.u[2]], h));
-      const wq: Quat = [this.u[3], this.u[4], this.u[5], 0];
-      const dq = Q.mul(wq, this.q0);
-      this.q0 = Q.normalize([this.q0[0] + 0.5 * h * dq[0], this.q0[1] + 0.5 * h * dq[1], this.q0[2] + 0.5 * h * dq[2], this.q0[3] + 0.5 * h * dq[3]]);
-      for (let j = 0; j < this.k; j++) this.theta[j] += h * this.u[6 + j];
-      for (let j = 0; j < this.nm; j++) this.qm[j] += h * this.u[6 + this.k + j];
-      this.plasticity();
+    } catch {
+      // a singular system (paper pinned between paper and floor at a degenerate pose)
+      this.u = [NaN];
     }
     // a step the integrator could not take (it should not happen): keep the last good state and
     // end the flight there, rather than going on with numbers that mean nothing
-    if (![...this.x0, ...this.u, ...this.qm].every(Number.isFinite) || Math.hypot(this.u[0], this.u[1], this.u[2]) > MAX_PLAUSIBLE_SPEED) {
-      Object.assign(this, { x0: saved.x0, q0: saved.q0, u: saved.u, theta: saved.theta, qm: saved.qm, rest: saved.rest });
-      this.phase = 'timeout';
+    if (
+      ![...this.x0, ...this.u, ...this.qm].every(Number.isFinite) ||
+      Math.hypot(this.u[0], this.u[1], this.u[2]) > MAX_PLAUSIBLE_SPEED
+    ) {
+      Object.assign(this, {
+        x0: saved.x0,
+        q0: saved.q0,
+        u: saved.u,
+        theta: saved.theta,
+        qm: saved.qm,
+        rest: saved.rest,
+      });
+      this.phase = "timeout";
       return;
     }
     this.stepIndex++;
     this.t += this.cfg.dt;
     this.log.maxHeight = Math.max(this.log.maxHeight, this.x0[1]);
     this.checkTears();
-    if (this.phase === 'ground') {
+    if (this.phase === "ground") {
       const a = Math.min(1, this.cfg.dt / (this.cfg.ground.restTime / 4));
-      this.emaV += a * (this.speed() - this.emaV);
-      this.emaW += a * (V.length([this.u[3], this.u[4], this.u[5]]) - this.emaW);
-      const still = this.emaV < this.cfg.ground.restSpeed && this.emaW < this.cfg.ground.restSpin;
+      this.emaV = V.lerp(this.emaV, this.worldVelocity(), a);
+      this.emaW = V.lerp(this.emaW, [this.u[3], this.u[4], this.u[5]], a);
+      const still =
+        V.length(this.emaV) < this.cfg.ground.restSpeed &&
+        V.length(this.emaW) < this.cfg.ground.restSpin;
       this.restTimer = still ? this.restTimer + this.cfg.dt : 0;
       if (this.restTimer >= this.cfg.ground.restTime) {
-        this.phase = 'rest';
+        this.phase = "rest";
         this.log.rest = this.event(this.speed());
       }
     }
-    if (this.t >= this.cfg.maxTime && !this.done) this.phase = 'timeout';
+    if (this.t >= this.cfg.maxTime && !this.done) this.phase = "timeout";
     this.log.phase = this.phase;
     if (this.t + 1e-12 >= this.nextLog || this.done) this.record();
   }
@@ -912,29 +1186,53 @@ export class MultiBodySim implements Simulator {
 
   private buildContactBounds() {
     this.contactBounds = this.fx.set.panels.map((_, i) => {
-      const ids = this.fx.contacts.flatMap((c, j) => (c.panel === i ? [j] : []));
+      const ids = this.fx.contacts.flatMap((c, j) =>
+        c.panel === i ? [j] : [],
+      );
       if (!ids.length) return { center: [0, 0, 0] as Vec3, radius: 0, ids };
-      const center = V.scale(ids.reduce((a, j) => V.add(a, this.fx.contacts[j].p), [0, 0, 0] as Vec3), 1 / ids.length);
+      const center = V.scale(
+        ids.reduce((a, j) => V.add(a, this.fx.contacts[j].p), [
+          0, 0, 0,
+        ] as Vec3),
+        1 / ids.length,
+      );
       let r = 0;
-      for (const j of ids) r = Math.max(r, V.dist(center, this.fx.contacts[j].p));
+      for (const j of ids)
+        r = Math.max(r, V.dist(center, this.fx.contacts[j].p));
       // bending moves points along the normal by at most about the panel's size (see the limit)
       return { center, radius: (this.modesOf[i] ? 1.5 : 1) * r + 0.005, ids };
     });
   }
 
-  private contact(dt: number, Mfull: number[], K: Kin) {
+  private contact(dt: number, Mfull: number[], K: Kin, uBefore: number[]) {
     const { contacts, af } = this.fx;
     const gcfg = this.cfg.ground;
     const com = af.com;
-    type C = { i: number; p: Vec3; J: number[][]; depth: number; target: number; jn: number; jt: Vec3; facet: number; pm: Vec3; n: Vec3; plough: number };
+    type C = {
+      i: number;
+      p: Vec3;
+      J: number[][];
+      depth: number;
+      target: number;
+      jn: number;
+      jt: Vec3;
+      facet: number;
+      pm: Vec3;
+      n: Vec3;
+      plough: number;
+    };
     const active: C[] = [];
     const minGap = gcfg.planes.map(() => Infinity);
     // only panels whose bounding sphere reaches a surface need their points checked
     const near: number[] = [];
     this.contactBounds.forEach((b, i) => {
       if (!b.ids.length) return;
-      const c = V.add(this.x0, M3.mulVec(K.R0, V.sub(applyRigid(K.M[i], b.center), com)));
-      if (gcfg.planes.some((pl) => V.dot(pl.n, c) - pl.d < b.radius)) near.push(...b.ids);
+      const c = V.add(
+        this.x0,
+        M3.mulVec(K.R0, V.sub(applyRigid(K.M[i], b.center), com)),
+      );
+      if (gcfg.planes.some((pl) => V.dot(pl.n, c) - pl.d < b.radius))
+        near.push(...b.ids);
     });
     const fields = new Map<number, PanelBend>();
     const wOut = new Float64Array(4);
@@ -949,12 +1247,27 @@ export class MultiBodySim implements Simulator {
         fld.evalInto(ct.p[0], ct.p[1], ct.p[2], wOut);
         pBent = V.addScaled(ct.p, pm.normal, wOut[0]);
       }
-      const p = V.add(this.x0, M3.mulVec(K.R0, V.sub(applyRigid(K.M[ct.panel], pBent), com)));
+      const p = V.add(
+        this.x0,
+        M3.mulVec(K.R0, V.sub(applyRigid(K.M[ct.panel], pBent), com)),
+      );
       gcfg.planes.forEach((pl, k) => {
         const gap = V.dot(pl.n, p) - pl.d;
         minGap[k] = Math.min(minGap[k], gap);
         if (gap > 1e-5) return;
-        active.push({ i: ct.panel, p, J: this.pointJ(K, ct.panel, p, ct.p), depth: -gap, target: 0, jn: 0, jt: [0, 0, 0], facet: ct.facet, pm: ct.p, n: pl.n, plough: 0 });
+        active.push({
+          i: ct.panel,
+          p,
+          J: this.pointJ(K, ct.panel, p, ct.p),
+          depth: -gap,
+          target: 0,
+          jn: 0,
+          jt: [0, 0, 0],
+          facet: ct.facet,
+          pm: ct.p,
+          n: pl.n,
+          plough: 0,
+        });
       });
     }
     if (!active.length) return;
@@ -967,11 +1280,13 @@ export class MultiBodySim implements Simulator {
      */
     const pre = active.map((c) => {
       const W = c.J.map((row) => mulVecN(Minv, row, n));
-      const Kc = [0, 1, 2].map((r) => [0, 1, 2].map((q) => {
-        let sum = 0;
-        for (let k = 0; k < n; k++) sum += c.J[r][k] * W[q][k];
-        return sum;
-      }));
+      const Kc = [0, 1, 2].map((r) =>
+        [0, 1, 2].map((q) => {
+          let sum = 0;
+          for (let k = 0; k < n; k++) sum += c.J[r][k] * W[q][k];
+          return sum;
+        }),
+      );
       return { W, Kc };
     });
     const vel = (c: C): Vec3 => {
@@ -987,12 +1302,14 @@ export class MultiBodySim implements Simulator {
     /** Apply the world impulse P at point ci. */
     const apply = (ci: number, P: Vec3) => {
       const W = pre[ci].W;
-      for (let k = 0; k < n; k++) u[k] += W[0][k] * P[0] + W[1][k] * P[1] + W[2][k] * P[2];
+      for (let k = 0; k < n; k++)
+        u[k] += W[0][k] * P[0] + W[1][k] * P[1] + W[2][k] * P[2];
     };
     const invMass = (ci: number, d: Vec3) => {
       const Kc = pre[ci].Kc;
       let sum = 0;
-      for (let r = 0; r < 3; r++) for (let q = 0; q < 3; q++) sum += d[r] * Kc[r][q] * d[q];
+      for (let r = 0; r < 3; r++)
+        for (let q = 0; q < 3; q++) sum += d[r] * Kc[r][q] * d[q];
       return sum;
     };
     let impact = 0;
@@ -1001,7 +1318,24 @@ export class MultiBodySim implements Simulator {
     for (const c of active) {
       const v = vel(c);
       const vn = V.dot(v, c.n);
-      const bounce = vn < 0 && -vn > gcfg.restitutionThreshold ? -gcfg.restitution * vn : 0;
+      /*
+       * Paper bounces only off the floor it was already moving into before this step. A light
+       * flap pressed down by its crease reaches the threshold within one step from the spring
+       * alone; bouncing that back each step kept a resting plane buzzing and creeping round
+       * on the floor for half a minute.
+       */
+      let vnBefore = 0;
+      for (let r = 0; r < 3; r++) {
+        let sum = 0;
+        for (let k = 0; k < n; k++) sum += c.J[r][k] * uBefore[k];
+        vnBefore += sum * c.n[r];
+      }
+      const bounce =
+        vn < 0 &&
+        -vnBefore > gcfg.restitutionThreshold &&
+        -vn > gcfg.restitutionThreshold
+          ? -gcfg.restitution * vn
+          : 0;
       c.target = Math.max(bounce, (0.2 * Math.max(0, c.depth - 2e-4)) / dt);
       // loose ground ploughed ahead of the point during this step
       c.plough = gcfg.ploughKgPerM * V.lengthSq(V.rejectFrom(v, c.n)) * dt;
@@ -1040,19 +1374,39 @@ export class MultiBodySim implements Simulator {
       for (let k = 3; k < 6; k++) this.u[k] *= f;
     }
     gcfg.planes.forEach((pl, k) => {
-      if (minGap[k] < -0.001) this.x0 = V.addScaled(this.x0, pl.n, -minGap[k] - 0.001);
+      if (minGap[k] < -0.001)
+        this.x0 = V.addScaled(this.x0, pl.n, -minGap[k] - 0.001);
     });
     if (!this.log.firstImpact) {
       this.log.firstImpact = this.event(impact || this.speed());
-      this.phase = 'ground';
+      this.phase = "ground";
     }
-    if (hardest && impact >= this.cfg.paper.crumpleSpeed && this.cfg.paper.damage) {
-      const dirModel = V.normalize(Q.rotate(Q.conjugate(Q.normalize(this.q0)), hardestVel));
-      const prev = this.events.find((e) => e.kind === 'crumple' && V.dist(e.point, hardest!.pm) < 0.03);
-      if (prev && prev.kind === 'crumple') {
-        if (impact > prev.speed) Object.assign(prev, { point: hardest.pm, dir: dirModel, speed: impact });
-      } else if (this.events.filter((e) => e.kind === 'crumple').length < 2) {
-        this.events.push({ kind: 'crumple', facet: hardest.facet, point: hardest.pm, dir: dirModel, speed: impact });
+    if (
+      hardest &&
+      impact >= this.cfg.paper.crumpleSpeed &&
+      this.cfg.paper.damage
+    ) {
+      const dirModel = V.normalize(
+        Q.rotate(Q.conjugate(Q.normalize(this.q0)), hardestVel),
+      );
+      const prev = this.events.find(
+        (e) => e.kind === "crumple" && V.dist(e.point, hardest!.pm) < 0.03,
+      );
+      if (prev && prev.kind === "crumple") {
+        if (impact > prev.speed)
+          Object.assign(prev, {
+            point: hardest.pm,
+            dir: dirModel,
+            speed: impact,
+          });
+      } else if (this.events.filter((e) => e.kind === "crumple").length < 2) {
+        this.events.push({
+          kind: "crumple",
+          facet: hardest.facet,
+          point: hardest.pm,
+          dir: dirModel,
+          speed: impact,
+        });
       }
     }
   }
@@ -1065,11 +1419,12 @@ export class MultiBodySim implements Simulator {
     const y = this.cfg.paper.creaseYieldDeg / RAD;
     this.fx.set.hinges.forEach((hg, j) => {
       // flat paper bending over a whole tab stays elastic; only creases yield
-      if (hg.control >= 0 || hg.kind === 'slit') return;
+      if (hg.control >= 0 || hg.kind === "slit") return;
       // the hinge is the crease in series with elastic paper: only the crease's share yields
       const dev = this.theta[j] - this.rest[j];
       const share = hg.stiffness / hg.creaseStiffness;
-      if (Math.abs(dev * share) > y) this.rest[j] = this.theta[j] - (Math.sign(dev) * y) / share;
+      if (Math.abs(dev * share) > y)
+        this.rest[j] = this.theta[j] - (Math.sign(dev) * y) / share;
     });
   }
 
@@ -1080,12 +1435,27 @@ export class MultiBodySim implements Simulator {
     this.fx.set.hinges.forEach((hg, j) => {
       if (!hg.cutEnds.length || this.tornHinges.has(j)) return;
       // the paper's own moment: a flap's servo spring stands in for the player's hand, not paper
-      const k = hg.control >= 0 ? hg.stiffness / this.cfg.paper.servoStiffnessFactor : hg.stiffness;
-      const moment = Math.abs(k * (this.theta[j] - this.rest[j])) / Math.max(hg.length, 1e-3);
+      const k =
+        hg.control >= 0
+          ? hg.stiffness / this.cfg.paper.servoStiffnessFactor
+          : hg.stiffness;
+      const moment =
+        Math.abs(k * (this.theta[j] - this.rest[j])) /
+        Math.max(hg.length, 1e-3);
       if (moment <= P.tearMomentPerM) return;
       this.tornHinges.add(j);
-      const length = Math.min(P.tearMaxLength, P.tearLengthGain * (moment / P.tearMomentPerM - 1) + 0.002);
-      for (const e of hg.cutEnds) this.events.push({ kind: 'tear', facet: e.facet, at: e.at, dir: e.dir, length });
+      const length = Math.min(
+        P.tearMaxLength,
+        P.tearLengthGain * (moment / P.tearMomentPerM - 1) + 0.002,
+      );
+      for (const e of hg.cutEnds)
+        this.events.push({
+          kind: "tear",
+          facet: e.facet,
+          at: e.at,
+          dir: e.dir,
+          length,
+        });
     });
   }
 
@@ -1094,7 +1464,14 @@ export class MultiBodySim implements Simulator {
     this.fx.set.hinges.forEach((hg, j) => {
       const d = (this.rest[j] - this.rest0[j]) * RAD;
       if (hg.control >= 0 || Math.abs(d) < 1) return;
-      bends.push({ kind: 'bend', point: hg.point, axis: hg.axis, deltaDeg: d, parentFacet: hg.parentFacet, childFacet: hg.childFacet });
+      bends.push({
+        kind: "bend",
+        point: hg.point,
+        axis: hg.axis,
+        deltaDeg: d,
+        parentFacet: hg.parentFacet,
+        childFacet: hg.childFacet,
+      });
     });
     return [...this.events, ...bends];
   }
@@ -1127,11 +1504,13 @@ export class MultiBodySim implements Simulator {
     const q = [...this.qm];
     const { set } = this.fx;
     const K = this.kin(this.x0, this.q0, this.theta, this.u);
-    const flat = (_x: number, _y: number, _z: number, out: Float64Array) => out.fill(0);
+    const flat = (_x: number, _y: number, _z: number, out: Float64Array) =>
+      out.fill(0);
     return set.panels.map((p, i) => {
       const pm = this.modesOf[i];
       const own = pm ? bendField(pm, q) : null;
-      const seam = p.parent >= 0 && this.modesOf[p.parent] ? this.seamFix(K, i, q) : null;
+      const seam =
+        p.parent >= 0 && this.modesOf[p.parent] ? this.seamFix(K, i, q) : null;
       if (!seam) return own;
       return {
         normal: own?.normal ?? [0, 1, 0],
@@ -1143,7 +1522,8 @@ export class MultiBodySim implements Simulator {
   }
 
   /** Where each panel meets its parent along the crease: the span (m along the axis) and its depth. */
-  private creaseSpans: ({ s0: number; s1: number; depth: number } | null)[] | null = null;
+  private creaseSpans:
+    ({ s0: number; s1: number; depth: number } | null)[] | null = null;
 
   private creaseSpan(i: number) {
     if (!this.creaseSpans) {
@@ -1152,11 +1532,20 @@ export class MultiBodySim implements Simulator {
       this.creaseSpans = set.panels.map((p) => {
         if (p.parent < 0) return null;
         const hg = set.hinges[p.hinge];
-        const vs = p.facets.flatMap((id) => (byId.get(id) ? facetVertices(byId.get(id)!) : []));
-        const off = (v: Vec3) => V.length(V.rejectFrom(V.sub(v, hg.point), hg.axis));
-        const on = vs.filter((v) => off(v) < 1e-3).map((v) => V.dot(V.sub(v, hg.point), hg.axis));
+        const vs = p.facets.flatMap((id) =>
+          byId.get(id) ? facetVertices(byId.get(id)!) : [],
+        );
+        const off = (v: Vec3) =>
+          V.length(V.rejectFrom(V.sub(v, hg.point), hg.axis));
+        const on = vs
+          .filter((v) => off(v) < 1e-3)
+          .map((v) => V.dot(V.sub(v, hg.point), hg.axis));
         if (on.length < 2) return null;
-        return { s0: Math.min(...on), s1: Math.max(...on), depth: Math.max(1e-3, ...vs.map(off)) };
+        return {
+          s0: Math.min(...on),
+          s1: Math.max(...on),
+          depth: Math.max(1e-3, ...vs.map(off)),
+        };
       });
     }
     return this.creaseSpans[i];
@@ -1167,7 +1556,11 @@ export class MultiBodySim implements Simulator {
    * model space), sampled at both ends and the middle of the crease and interpolated along it,
    * fading out quadratically across the panel.
    */
-  private seamFix(K: Kin, i: number, q: number[]): ((x: number, y: number, z: number, out: Float64Array) => void) | null {
+  private seamFix(
+    K: Kin,
+    i: number,
+    q: number[],
+  ): ((x: number, y: number, z: number, out: Float64Array) => void) | null {
     const { set } = this.fx;
     const span = this.creaseSpan(i);
     const pp = set.panels[i].parent;
@@ -1191,14 +1584,19 @@ export class MultiBodySim implements Simulator {
     return (x, y, z, out) => {
       const r: Vec3 = [x - point[0], y - point[1], z - point[2]];
       const s = r[0] * axis[0] + r[1] * axis[1] + r[2] * axis[2];
-      const d = Math.hypot(r[0] - s * axis[0], r[1] - s * axis[1], r[2] - s * axis[2]);
+      const d = Math.hypot(
+        r[0] - s * axis[0],
+        r[1] - s * axis[1],
+        r[2] - s * axis[2],
+      );
       const fade = Math.max(0, 1 - d / D) ** 2;
       if (fade === 0 || b - a < 1e-9) return out.fill(0, 0, 3);
       // quadratic through the three samples
       const la = ((s - m) * (s - b)) / ((a - m) * (a - b));
       const lm = ((s - a) * (s - b)) / ((m - a) * (m - b));
       const lb = ((s - a) * (s - m)) / ((b - a) * (b - m));
-      for (let k = 0; k < 3; k++) out[k] = fade * (la * gaps[0][k] + lm * gaps[1][k] + lb * gaps[2][k]);
+      for (let k = 0; k < 3; k++)
+        out[k] = fade * (la * gaps[0][k] + lm * gaps[1][k] + lb * gaps[2][k]);
     };
   }
 
@@ -1230,8 +1628,17 @@ export class MultiBodySim implements Simulator {
     const d: AeroDebug = { pos: [], lift: [], drag: [], alpha: [] };
     const { poses, vb, wb } = this.surfacePoses(K);
     this.fillDeform(this.u);
-    evaluateAero(this.fx.af, vb, wb, this.cfg.aero, this.cfg.rho, createAeroCache(this.fx.af), { poses, debug: d, deform: this.deform });
-    const toW = (v: Vec3 | undefined): Vec3 => (v ? M3.mulVec(K.R0, v) : [0, 0, 0]);
+    evaluateAero(
+      this.fx.af,
+      vb,
+      wb,
+      this.cfg.aero,
+      this.cfg.rho,
+      createAeroCache(this.fx.af),
+      { poses, debug: d, deform: this.deform },
+    );
+    const toW = (v: Vec3 | undefined): Vec3 =>
+      v ? M3.mulVec(K.R0, v) : [0, 0, 0];
     return {
       pos: (d.pos ?? []).map((p) => V.add(this.x0, M3.mulVec(K.R0, p))),
       lift: d.lift.map(toW),
@@ -1241,7 +1648,12 @@ export class MultiBodySim implements Simulator {
 
   private event(speed: number): FlightEvent {
     const p = this.x0;
-    return { t: this.t, pos: [...p], speed, distance: Math.hypot(p[0] - this.start[0], p[2] - this.start[2]) };
+    return {
+      t: this.t,
+      pos: [...p],
+      speed,
+      distance: Math.hypot(p[0] - this.start[0], p[2] - this.start[2]),
+    };
   }
 
   private record() {

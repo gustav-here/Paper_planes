@@ -78,6 +78,8 @@ Webbläsarspel: vik ett pappersflygplan av ett A4 och kasta det. Flygbeteendet s
   följer den böjda kanten.
 - Snittändar rivs inte av böjning eller luft (`tearMomentPerM` ligger över vad ett helt vikt veck
   bär), bara av hårda nedslag. Servofjädern räknas aldrig som moment i pappret.
+- Papper studsar bara mot golvet om det var på väg mot det före steget, och vila räknas på planets
+  medelrörelse (vektorer), så en klämd flik som vibrerar inte håller planet igång (PLAN.md §37).
 - Spelloopen räknar fysik i högst 12 ms per bildruta och släpper resten (långsammare spel i
   stället för låg bildfrekvens).
 - Böjformer (`physics/bendModes.ts`): stora plana paneler böjer sig själva med några släta former
