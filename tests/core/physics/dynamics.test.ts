@@ -204,7 +204,7 @@ describe('swept wings', () => {
 });
 
 describe('a keel under flat wings', () => {
-  it('leaves the flat dart a little directionally unstable; tips turned up make it weathervane', () => {
+  it('leaves the flat dart a little directionally stable; front-loaded it would swing round', () => {
     const cnb = (af: ReturnType<typeof airframeFromDesign>) => {
       const k = 0.5 * DEFAULT_CONFIG.rho * 25 * af.refArea * af.refSpan;
       const yaw = (b: number) => -V.dot(tunnelPoint(af, DEFAULT_CONFIG, 5, 6, b).torque, af.up) / k;
@@ -212,14 +212,14 @@ describe('a keel under flat wings', () => {
     };
     const flat = airframeFromDesign(makeDart(), DEFAULT_CONFIG);
     expect(flat.mesh.surfaces.some((s) => s.underWing)).toBe(true);
-    // nose-right moment falls with sideslip to the right: it turns away from the wind, but only a little
-    expect(cnb(flat)).toBeLessThan(0);
-    expect(cnb(flat)).toBeGreaterThan(-0.02);
-    // with all of the keel's side force at its leading edge it was far more unstable
+    // it turns into the wind, but only a little (fins or dihedral weathervane more)
+    expect(cnb(flat)).toBeGreaterThan(0);
+    expect(cnb(flat)).toBeLessThan(0.02);
+    // with all of the keel's side force at its leading edge it turned away from the wind
     const front = { ...DEFAULT_CONFIG, aero: { ...DEFAULT_CONFIG.aero, keelSideSpread: 0 } };
     const k0 = 0.5 * front.rho * 25 * flat.refArea * flat.refSpan;
     const yaw0 = (b: number) => -V.dot(tunnelPoint(airframeFromDesign(makeDart(), front), front, 5, 6, b).torque, flat.up) / k0;
-    expect((yaw0(4) - yaw0(-4)) / ((8 * Math.PI) / 180)).toBeLessThan(cnb(flat) - 0.01);
+    expect((yaw0(4) - yaw0(-4)) / ((8 * Math.PI) / 180)).toBeLessThan(Math.min(0, cnb(flat) - 0.01));
   });
 });
 

@@ -833,15 +833,17 @@ Resultat med standardkonfigurationen (släpp från 10 m, olika kastfarter):
 
 ## 25. Platser att kasta på
 - **Platser** (`core/game/venues.ts`) bestämmer bara världen runt planet: tyngdkraft, luft och fasta
-  ytor. Planet och fysiken är desamma överallt. Gymnastiksalen är alltid vald när spelet startar.
-  - **Gymnastiksal:** 30 × 16 m med 7 m i takhöjd, g = 9,81, luft. Planet kastas 3 m från ena
-    kortväggen.
+  ytor. Planet och fysiken är desamma överallt. Sporthallen är alltid vald när spelet startar.
+  - **Sporthall** (hette tidigare gymnastiksal och var 30 × 16 × 7 m): 46 × 26 m med 9 m i
+    takhöjd, som en fullstor kommunal hall med en handbollsplan på 40 × 20 m. g = 9,81, luft.
+    Planet kastas 3 m från ena kortväggen, alltså på handbollsplanens ena mållinje.
     - Golv, väggar och tak är kontaktytor, så planet stannar mot väggen. Distansen räknas till
       första nedslaget, på golvet eller i en vägg.
-    - Golvet har linjer för basket (rött), volleyboll (gult), badminton (blått) och
-      handboll/innebandy (svart), och distanslinjer från kastpunkten varje meter.
-    - Väggarna har träpaneler, och salen har korgar, handbollsmål, ribbstolar, bänkar,
-      fönster, tak med lampor och mattor.
+    - Golvet är ett blått sportgolv med linjer för handboll (vitt), basket (rött), volleyboll
+      (gult) och badminton (grönt), och distanslinjer från kastpunkten varje meter.
+    - Väggarna har träpaneler upp till 2,6 m och ljus vägg ovanför. Salen har limträbalkar och
+      lampor i taket, höga fönster, korgar, handbollsmål mot kortväggarna, ribbstolar, bänkar,
+      dörrar och mattor.
   - **Månen:** g = 1,62 och ingen atmosfär (ρ = 0). Inget lyft, inget motstånd och ingen
     tillskottsmassa, så planet flyger en ren kastparabel. Testerna jämför med den analytiska
     parabeln.
@@ -866,7 +868,7 @@ Resultat med standardkonfigurationen (släpp från 10 m, olika kastfarter):
       nytt ark vikt likadant. Att ladda en modell eller börja om tar också bort askan.
 - **Kontaktytor:** `GroundConfig.planes` är en lista av plan (fritt där n·x ≥ d). Båda
   simulatorerna löser kontakt mot alla plan med samma impulsmodell.
-- **Topplistor per plats och spelläge.** Gymnastiksalens listor behåller de gamla nycklarna, och
+- **Topplistor per plats och spelläge.** Sporthallens listor behåller gymnastiksalens gamla nycklar, och
   uppspelningar sker på den plats där kastet gjordes.
 - **WebGL-fel:** om grafiken inte kan startas, eller går förlorad, visar sidan ett meddelande i
   stället för en tom yta.
@@ -1300,7 +1302,7 @@ Resultat med standardkonfigurationen (släpp från 10 m, olika kastfarter):
   inga kullerbyttor.
 - **Orsak:** när en spets slår i vid ungefär 9 m/s stoppar friktionen och plogningen den tvärt.
   Spetsen har liten effektiv massa, så planets fart blir snurr kring den, 1 300–2 700 °/s. Samma
-  sak händer i gymnastiksalen. På Månen bromsar ingen luft snurren efteråt, och nästa hörn som slår
+  sak händer i sporthallen. På Månen bromsar ingen luft snurren efteråt, och nästa hörn som slår
   i lyfter planet i den svaga tyngden. Varje kontakt varar bara ett steg, så dammets dämpning av
   rotationen hinner nästan inte verka.
 - **Prövat utan att det räckte:**
@@ -1470,7 +1472,7 @@ Resultat med standardkonfigurationen (släpp från 10 m, olika kastfarter):
     Först villkoret på farten nedåt gav tillbaka de långa glidningarna, eftersom papper som rörde
     sig långsamt nedåt men fort i sidled fick golvets fulla friktion och spetsen grep igen.
   - Dammet tar upp snurren så länge papper är i lagret (`spinDampingPerS`, som förut).
-  - Båda simulatorerna. Gymnastiksalen och Solen har inget lager.
+  - Båda simulatorerna. Sporthallen och Solen har inget lager.
 - **Utfall** (12 kast med spridning, 14 m/s, 45° uppåt; glider = från första nedslaget till vila):
 
   | | Typiskt | Längst | Hoppar högst (tyngdpunkt) |
@@ -1486,3 +1488,47 @@ Resultat med standardkonfigurationen (släpp från 10 m, olika kastfarter):
   - Andra lager prövades: 1 cm gav fortfarande kast på 17 m, 2 cm på 5,5 m, 3 cm inga över 1 m.
 - **Testet** för hårda landningar på Månen är påslaget igen och kontrollerar också två kast med
   spridning (där felet syntes), i stelt och flexibelt papper.
+
+## 42. Plana dartar fortsätter framåt, och spelet viker snett
+- **Användarens iakttagelse:** riktiga dartar med plana vingar tappar sällan helt stabiliteten och
+  lyftkraften som i spelet. De är ostadiga i roll: efter några meter börjar de rolla mot 90°,
+  tappar lyft och höjd men fortsätter framåt eller i en vid sväng. Uppvikta eller nedvikta spetsar,
+  W, dihedral och lite anhedral gör dem stadigare i roll, så de flyger längre. För mycket anhedral
+  vänder planet upp och ned, och för mycket dihedral tappar lyft men flyger rakt tills det tar mark.
+- **Vad spelet gjorde** (16 kast per fall med spridning, 7 och 10 m/s, 10° uppåt, flexibelt
+  papper; "vrider sig" = sidglidning över 40°): den plana darten rollade nästan aldrig. Den vred
+  nosen runt i 5–9 av 16 kast, kölen kom på tvären mot luften och bromsade, och planet tycktes
+  stanna. 15° dihedral vinglade med 60–90° i roll och slog runt i 10 av 16 kast vid 10 m/s.
+- **Orsak:** med 60 % av kölens sidokraft utspridd (§39) var den plana darten fortfarande neutral
+  eller instabil i girled (Cnβ ≈ 0).
+- **Prövat:**
+  - Hela sidokraften utspridd (`keelSideSpread` = 1): inga plan vrider sig runt, dihedral flyger
+    rakt, men den exakt vikta plana darten flyger också rakt.
+  - Sneda veck (§38) med 1°: alla plan rollar runt, med eller utan fenor. Med 0,3° (ungefär 1 mm
+    på ett 20 cm långt veck) tippar plana dartar ibland.
+  - Kölens sidokraft dubblad (vingen som spegelplan för kölen): Clβ ändras bara 0,002–0,004.
+  - I modellen ger spetsarna mest riktningsstabilitet (Cnβ +0,05) men lite rollstabilitet
+    (Clβ −0,012 uppvikta, +0,005 nedvikta, mot −0,004 för plana vingar). W (−0,036) och dihedral
+    (−0,026 vid 5°) rätar upp planet i roll.
+- **Valt (användarens val):** `keelSideSpread` = 1 och sneda veck i spelet (`scatter.foldLineDeg`
+  = 0,3°, `prepare(…, { crooked: true })` i kastläget). Snedheten beror på designens steg, så
+  samma plan är lika snett varje kast. Ändrar man vikningen blir det snett på ett nytt sätt.
+  Uppspelningar från topplistan flygs också med det sneda planet.
+- **Utfall** med båda ändringarna, 16 kast med olika snedhet per fall, 7 / 10 m/s:
+
+  | Plan | Tippar (lutar över 60° eller slår runt) | Vrider sig runt |
+  |---|---|---|
+  | Plana vingar | 1 / 1 | 1 / 3 (förut 5 / 9) |
+  | 5° dihedral | 1 / 2 | 0 |
+  | 15° dihedral | 2 / 2 (förut 6 / 12) | 0 |
+  | Spetsar uppvikta | 2 / 6 | 0 |
+  | Spetsar nedvikta | 3 / 6 | 0 |
+  | W | 0 / 3 | 0 |
+  | 5° anhedral | 1 / 3 | 9 / 7 |
+  | 15° anhedral | 15 / 16 (slår runt) | 1 / 0 |
+
+- **Kvar:** plan med spetsar tippar lika ofta som plana vingar eller oftare, tvärtom mot
+  användarens prov. Modellen saknar något som gör spetsarna till rollstöd. Förinställningen Dart
+  råkar vara nästan rakt vikt (lutar högst 18° i 10 kast), så den tippar sällan.
+- **Test:** den plana darten vrider inte nosen runt (sidglidning under 40°) i 12 kast med
+  spridning (`tests/validation/flight.test.ts`). Testet för kölen kräver nu svag riktningsstabilitet.

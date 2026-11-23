@@ -29,11 +29,11 @@ export interface AeroConfig {
    * A keel under a wing: the share of its attached-flow side force spread evenly along it; the
    * rest is loaded from its leading edge like any surface. Semi-empirical, chosen with the player.
    * Slender-body theory puts a bare keel's side force at the nose, where it deepens (0); a wing on
-   * top is an end plate that adds side force where it widens, which on a dart is mostly the front
-   * half (§36). With 0 the flat dart was so directionally unstable that its nose swung 100–180°
-   * round within a second and it all but stopped in the air; real flat darts tip over sideways
-   * and sink while still moving forward. With 1 (§30) it was directionally stable. 0.6 halves
-   * the swinging round and keeps planes with turned-up or turned-down tips or a W steady.
+   * top is an end plate that adds side force where it widens, which on a dart is mostly the rear
+   * (§30, §36). With 0 or 0.6 the flat dart's nose swung round within a second, the keel went
+   * broadside and the plane seemed to stop in the air; the player sees real flat darts keep going
+   * forward and tip over sideways instead. With 1 the flat dart is weakly directionally stable
+   * (Cnβ ≈ +0.008) and tips over only when it is folded crooked (scatter.foldLineDeg, §42).
    */
   keelSideSpread: number;
   /**
@@ -234,6 +234,8 @@ export interface ScatterConfig {
   /**
    * Each fold line turned in its plane, left and right independently (prepare with crooked:
    * true). Fixed per folded plane, not per throw: a crooked plane veers the same way each time.
+   * 0.3° is about 1 mm over a 20 cm fold. With 1° every plane rolled over, with fins or without;
+   * with 0.3° a flat dart now and then tips over, a W or dihedral rarely (§42).
    */
   foldLineDeg: number;
 }
@@ -253,7 +255,7 @@ export const DEFAULT_CONFIG: PhysicsConfig = {
     CN90: 1.2,
     CDedge: 0.005,
     airViscosity: 1.8e-5,
-    keelSideSpread: 0.6,
+    keelSideSpread: 1,
     rotationalLift: 1,
     oswaldE: 0.8,
     sepCopShift: 0.16,
@@ -302,7 +304,7 @@ export const DEFAULT_CONFIG: PhysicsConfig = {
   logInterval: 1 / 60,
   // doubled at the player's request (the planes flew too alike and too steadily), the roll at
   // release three times the first guess (more wobble in roll)
-  scatter: { bankDeg: 8, yawDeg: 6, pitchDeg: 4, rollRateDeg: 120, yawRateDeg: 40, pitchRateDeg: 50, creaseDeg: 3, foldLineDeg: 1 },
+  scatter: { bankDeg: 8, yawDeg: 6, pitchDeg: 4, rollRateDeg: 120, yawRateDeg: 40, pitchRateDeg: 50, creaseDeg: 3, foldLineDeg: 0.3 },
   maxTime: 30,
 };
 

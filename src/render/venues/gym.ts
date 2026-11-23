@@ -4,86 +4,92 @@ import { FLOOR_DEPTH, canvas, distanceOverlay, seeded, texture } from './common'
 import type { VenueLook } from './common';
 
 /*
- * A Swedish school sports hall (gymnastiksal): light wooden floor with court markings, walls of
- * vertical pine boards, wall bars along one side, benches, baskets and handball goals at both
- * ends, high windows and ceiling lights. The plane is thrown from x = 0 towards +X.
+ * A Swedish sports hall (sporthall): blue sports floor with court markings for handball,
+ * basketball, volleyball and badminton, wooden panels up to head height and light walls above,
+ * glulam beams under the ceiling, baskets and handball goals at both ends, wall bars and benches
+ * along one side and high windows along the other. The plane is thrown from x = 0 towards +X.
  */
 
-const L = GYM.frontX - GYM.backX; // 30 m
-const W = 2 * GYM.halfWidth; // 16 m
-const H = GYM.height; // 7 m
+const L = GYM.frontX - GYM.backX; // 46 m
+const W = 2 * GYM.halfWidth; // 26 m
+const H = GYM.height; // 9 m
 const CX = (GYM.frontX + GYM.backX) / 2; // hall centre (x)
+/** Height of the wooden panels on the walls (m). */
+const PANEL_H = 2.6;
 
-/** Floor: light beech strips and the court lines of a multi-sport hall. */
+/** Floor: blue polyurethane sports floor and the court lines of a multi-sport hall. */
 function floorTexture(): THREE.CanvasTexture {
-  const ppm = 64;
+  const ppm = 48;
   const { c, g } = canvas(L * ppm, W * ppm);
   const X = (x: number) => (x - GYM.backX) * ppm;
   const Z = (z: number) => (z + GYM.halfWidth) * ppm;
-  const rnd = seeded(7);
-  // wooden strips along the hall
-  const strip = 0.07 * ppm;
-  for (let y = 0; y < c.height; y += strip) {
-    let x = -rnd() * 2 * ppm;
-    while (x < c.width) {
-      const len = (1.2 + rnd() * 1.8) * ppm;
-      const l = 76 + rnd() * 7;
-      g.fillStyle = `hsl(${33 + rnd() * 5}, ${38 + rnd() * 10}%, ${l}%)`;
-      g.fillRect(x, y, len, strip);
-      g.fillStyle = 'rgba(120,85,50,0.18)';
-      g.fillRect(x, y, 1, strip);
-      x += len;
-    }
-    g.fillStyle = 'rgba(120,85,50,0.12)';
-    g.fillRect(0, y, c.width, 1);
-  }
-  for (let i = 0; i < 9000; i++) {
-    g.fillStyle = `rgba(110,75,40,${0.04 + rnd() * 0.06})`;
-    g.fillRect(rnd() * c.width, rnd() * c.height, 2 + rnd() * 10, 1);
+  // mulberry32: the hall's simple LCG puts pairs of numbers on a lattice, and on a plain floor
+  // the mottling then shows up as a grid of lines
+  let seed = 7;
+  const rnd = () => {
+    seed = (seed + 0x6d2b79f5) >>> 0;
+    let t = Math.imul(seed ^ (seed >>> 15), seed | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+  g.fillStyle = '#5f86b8';
+  g.fillRect(0, 0, c.width, c.height);
+  // a cast floor: no strips, only faint mottling and wear
+  for (let i = 0; i < 20000; i++) {
+    const l = rnd() < 0.5 ? 0 : 255;
+    g.fillStyle = `rgba(${l},${l},${l},${0.01 + rnd() * 0.02})`;
+    g.beginPath();
+    g.arc(rnd() * c.width, rnd() * c.height, (0.03 + rnd() * 0.2) * ppm, 0, 2 * Math.PI);
+    g.fill();
   }
 
-  const line = (color: string, width: number, draw: () => void) => {
+  const line = (color: string, width: number, draw: () => void, dash: number[] = []) => {
     g.strokeStyle = color;
     g.lineWidth = width * ppm;
+    g.setLineDash(dash.map((d) => d * ppm));
     g.beginPath();
     draw();
     g.stroke();
+    g.setLineDash([]);
   };
   const rect = (x0: number, z0: number, x1: number, z1: number) => g.rect(X(x0), Z(z0), X(x1) - X(x0), Z(z1) - Z(z0));
   const circle = (x: number, z: number, r: number, a0 = 0, a1 = 2 * Math.PI) => {
     g.moveTo(X(x) + r * ppm * Math.cos(a0), Z(z) + r * ppm * Math.sin(a0));
     g.arc(X(x), Z(z), r * ppm, a0, a1);
   };
-
-  // handball / floorball (black): the whole floor with 6 m goal areas
-  line('#2a2a2a', 0.05, () => {
-    rect(GYM.backX + 0.5, -GYM.halfWidth + 0.5, GYM.frontX - 0.5, GYM.halfWidth - 0.5);
-    g.moveTo(X(CX), Z(-GYM.halfWidth + 0.5));
-    g.lineTo(X(CX), Z(GYM.halfWidth - 0.5));
-    for (const [gx, dir] of [
-      [GYM.backX + 0.5, 1],
-      [GYM.frontX - 0.5, -1],
-    ] as const) {
-      // goal area: quarter circles of 6 m round the posts (z = ±1.5) joined by a straight line
-      const pts: [number, number][] = [];
-      for (let k = 0; k <= 16; k++) {
-        const a = (Math.PI / 2) * (k / 16);
-        pts.push([gx + dir * 6 * Math.sin(a), -1.5 - 6 * Math.cos(a)]);
-      }
-      for (let k = 0; k <= 16; k++) {
-        const a = (Math.PI / 2) * (k / 16);
-        pts.push([gx + dir * 6 * Math.cos(a), 1.5 + 6 * Math.sin(a)]);
-      }
-      pts.forEach(([x, z], i) => (i ? g.lineTo(X(x), Z(z)) : g.moveTo(X(x), Z(z))));
+  /** Handball area line: quarter circles of radius r round the posts (z = ±1.5) and a straight line. */
+  const area = (gx: number, dir: 1 | -1, r: number) => {
+    const pts: [number, number][] = [];
+    for (let k = 0; k <= 16; k++) {
+      const a = (Math.PI / 2) * (k / 16);
+      pts.push([gx + dir * r * Math.sin(a), -1.5 - r * Math.cos(a)]);
     }
+    for (let k = 0; k <= 16; k++) {
+      const a = (Math.PI / 2) * (k / 16);
+      pts.push([gx + dir * r * Math.cos(a), 1.5 + r * Math.sin(a)]);
+    }
+    pts.forEach(([x, z], i) => (i ? g.lineTo(X(x), Z(z)) : g.moveTo(X(x), Z(z))));
+  };
+
+  // handball (white): 40 × 20 m with 6 m goal areas and dashed 9 m lines
+  const hx0 = CX - 20;
+  const hx1 = CX + 20;
+  line('#f4f4f2', 0.05, () => {
+    rect(hx0, -10, hx1, 10);
+    g.moveTo(X(CX), Z(-10));
+    g.lineTo(X(CX), Z(10));
+    area(hx0, 1, 6);
+    area(hx1, -1, 6);
   });
+  line('#f4f4f2', 0.05, () => {
+    area(hx0, 1, 9);
+    area(hx1, -1, 9);
+  }, [0.15, 0.15]);
   // basketball (red): 28 × 15 m centred in the hall
   const bx0 = CX - 14;
   const bx1 = CX + 14;
-  line('#c8322b', 0.05, () => {
+  line('#d2352c', 0.05, () => {
     rect(bx0, -7.5, bx1, 7.5);
-    g.moveTo(X(CX), Z(-7.5));
-    g.lineTo(X(CX), Z(7.5));
     circle(CX, 0, 1.8);
     for (const [base, dir] of [
       [bx0, 1],
@@ -105,22 +111,25 @@ function floorTexture(): THREE.CanvasTexture {
     }
   });
   // volleyball (yellow): 18 × 9 m with attack lines
-  line('#e2b51c', 0.05, () => {
+  line('#f0c419', 0.05, () => {
     rect(CX - 9, -4.5, CX + 9, 4.5);
     for (const d of [-3, 3]) {
       g.moveTo(X(CX + d), Z(-4.5));
       g.lineTo(X(CX + d), Z(4.5));
     }
   });
-  // badminton (blue): two courts across the hall
-  line('#2f6fd0', 0.04, () => {
-    for (const cz of [-3.8, 3.8]) {
-      rect(CX - 6.7, cz - 3.05, CX + 6.7, cz + 3.05);
-      g.moveTo(X(CX - 1.98), Z(cz - 3.05));
-      g.lineTo(X(CX - 1.98), Z(cz + 3.05));
-      g.moveTo(X(CX + 1.98), Z(cz - 3.05));
-      g.lineTo(X(CX + 1.98), Z(cz + 3.05));
-    }
+  // badminton (green): four courts, two in each half of the hall
+  line('#3f9a5a', 0.04, () => {
+    for (const cx of [CX - 12, CX + 12])
+      for (const cz of [-4, 4]) {
+        rect(cx - 6.7, cz - 3.05, cx + 6.7, cz + 3.05);
+        g.moveTo(X(cx), Z(cz - 3.05));
+        g.lineTo(X(cx), Z(cz + 3.05));
+        for (const d of [-1.98, 1.98]) {
+          g.moveTo(X(cx + d), Z(cz - 3.05));
+          g.lineTo(X(cx + d), Z(cz + 3.05));
+        }
+      }
   });
   return texture(c);
 }
@@ -257,59 +266,74 @@ function bench(length: number): THREE.Group {
 export function buildGym(): VenueLook {
   const grp = new THREE.Group();
 
-  const floor = new THREE.Mesh(new THREE.PlaneGeometry(L, W), new THREE.MeshStandardMaterial({ map: floorTexture(), roughness: 0.55, ...FLOOR_DEPTH }));
+  const floor = new THREE.Mesh(new THREE.PlaneGeometry(L, W), new THREE.MeshStandardMaterial({ map: floorTexture(), roughness: 0.45, ...FLOOR_DEPTH }));
   floor.rotation.x = -Math.PI / 2;
   floor.position.set(CX, 0, 0);
   floor.receiveShadow = true;
   grp.add(floor);
   grp.add(
-    distanceOverlay({ length: GYM.frontX - 1, step: 1, labelStep: 1, majorStep: 5, halfWidth: 2.2, color: '#ffffff', ink: '#ffffff', outline: 'rgba(30,25,20,0.85)' }),
+    distanceOverlay({ length: GYM.frontX - 1, step: 1, labelStep: 1, majorStep: 5, halfWidth: 2.2, color: '#ffffff', ink: '#ffffff', outline: 'rgba(20,30,50,0.85)' }),
   );
 
-  // walls of vertical boards (each faces into the hall)
+  // walls: vertical wooden boards up to PANEL_H, light painted wall above (each faces into the hall)
   const boards = boardTexture();
   const wallTile = 0.9; // metres per texture repeat
-  const side = (len: number) => board([len, H], [len / wallTile, 1], boards);
-  const back = side(W);
-  back.position.set(GYM.backX, H / 2, 0);
-  back.rotation.y = Math.PI / 2;
-  const front = side(W);
-  front.position.set(GYM.frontX, H / 2, 0);
-  front.rotation.y = -Math.PI / 2;
-  const left = side(L);
-  left.position.set(CX, H / 2, -GYM.halfWidth);
-  const right = side(L);
-  right.position.set(CX, H / 2, GYM.halfWidth);
-  right.rotation.y = Math.PI;
-  for (const w of [back, front, left, right]) w.receiveShadow = true;
-  grp.add(back, front, left, right);
+  const upperMat = new THREE.MeshStandardMaterial({ color: '#ece8de', roughness: 0.9 });
+  const wall = (len: number, x: number, z: number, rotY: number) => {
+    const lower = board([len, PANEL_H], [len / wallTile, 1], boards);
+    lower.position.set(x, PANEL_H / 2, z);
+    lower.rotation.y = rotY;
+    const upper = new THREE.Mesh(new THREE.PlaneGeometry(len, H - PANEL_H), upperMat);
+    upper.position.set(x, (H + PANEL_H) / 2, z);
+    upper.rotation.y = rotY;
+    lower.receiveShadow = upper.receiveShadow = true;
+    grp.add(lower, upper);
+  };
+  wall(W, GYM.backX, 0, Math.PI / 2);
+  wall(W, GYM.frontX, 0, -Math.PI / 2);
+  wall(L, CX, -GYM.halfWidth, 0);
+  wall(L, CX, GYM.halfWidth, Math.PI);
+  // a wooden rail where the panels end
+  const railMat = new THREE.MeshStandardMaterial({ color: '#b9874c', roughness: 0.6 });
+  for (const z of [-GYM.halfWidth + 0.03, GYM.halfWidth - 0.03]) {
+    const rail = new THREE.Mesh(new THREE.BoxGeometry(L, 0.08, 0.06), railMat);
+    rail.position.set(CX, PANEL_H, z);
+    grp.add(rail);
+  }
+  for (const x of [GYM.backX + 0.03, GYM.frontX - 0.03]) {
+    const rail = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.08, W), railMat);
+    rail.position.set(x, PANEL_H, 0);
+    grp.add(rail);
+  }
 
-  // ceiling, beams and lights
-  const ceiling = new THREE.Mesh(new THREE.PlaneGeometry(L, W), new THREE.MeshStandardMaterial({ color: '#d9d4c8', roughness: 0.9 }));
+  // ceiling of light acoustic panels, glulam beams across the hall and rows of lights between them
+  const ceiling = new THREE.Mesh(new THREE.PlaneGeometry(L, W), new THREE.MeshStandardMaterial({ color: '#e4e2dc', roughness: 0.95 }));
   ceiling.rotation.x = Math.PI / 2;
   ceiling.position.set(CX, H, 0);
   grp.add(ceiling);
-  const beamMat = new THREE.MeshStandardMaterial({ color: '#c79a62', roughness: 0.7 });
+  const beamMat = new THREE.MeshStandardMaterial({ color: '#c98f4e', roughness: 0.6 });
   const lightMat = new THREE.MeshBasicMaterial({ color: '#fffaf0' });
-  for (let x = GYM.backX + 2.5; x < GYM.frontX; x += 5) {
-    const beam = new THREE.Mesh(new THREE.BoxGeometry(0.25, 0.45, W), beamMat);
-    beam.position.set(x, H - 0.22, 0);
+  const span = 6;
+  for (let x = GYM.backX + span / 2; x < GYM.frontX; x += span) {
+    const beam = new THREE.Mesh(new THREE.BoxGeometry(0.4, 0.9, W), beamMat);
+    beam.position.set(x, H - 0.45, 0);
     grp.add(beam);
-    for (const z of [-4.5, 0, 4.5]) {
-      const lamp = new THREE.Mesh(new THREE.BoxGeometry(1.4, 0.05, 0.3), lightMat);
-      lamp.position.set(x + 2.5, H - 0.5, z);
+    if (x + span / 2 >= GYM.frontX) continue;
+    for (let z = -GYM.halfWidth + 3; z <= GYM.halfWidth - 3; z += 4) {
+      const lamp = new THREE.Mesh(new THREE.BoxGeometry(1.6, 0.06, 0.25), lightMat);
+      lamp.position.set(x + span / 2, H - 0.3, z);
       grp.add(lamp);
     }
   }
 
-  // high windows on the left wall
+  // high windows along the left wall
   const glass = new THREE.MeshBasicMaterial({ color: '#dfeefa' });
-  const frame = new THREE.MeshStandardMaterial({ color: '#8a6a45' });
-  for (let x = GYM.backX + 3; x < GYM.frontX - 2; x += 4) {
-    const fr = new THREE.Mesh(new THREE.BoxGeometry(3.2, 1.7, 0.05), frame);
-    fr.position.set(x + 1.5, 5.4, -GYM.halfWidth + 0.03);
-    const gl = new THREE.Mesh(new THREE.PlaneGeometry(3, 1.5), glass);
-    gl.position.set(x + 1.5, 5.4, -GYM.halfWidth + 0.06);
+  const frame = new THREE.MeshStandardMaterial({ color: '#f4f4f0' });
+  for (let x = GYM.backX + span / 2 + 0.8; x + 4.4 < GYM.frontX; x += span) {
+    const fr = new THREE.Mesh(new THREE.BoxGeometry(4.4, 1.9, 0.05), frame);
+    fr.position.set(x + 2.2, H - 2, -GYM.halfWidth + 0.03);
+    const gl = new THREE.Mesh(new THREE.PlaneGeometry(4.2, 1.7), glass);
+    gl.position.set(x + 2.2, H - 2, -GYM.halfWidth + 0.06);
     grp.add(fr, gl);
   }
 
@@ -321,14 +345,14 @@ export function buildGym(): VenueLook {
   endBasketF.position.set(GYM.frontX - 0.05, 3.05, 0);
   endBasketF.rotation.y = -Math.PI / 2;
   grp.add(endBasketB, endBasketF);
-  for (const x of [CX - 7, CX + 7]) {
+  for (const x of [CX - 12, CX, CX + 12]) {
     const b = basket(0.6);
-    b.position.set(x, 3.4, GYM.halfWidth - 0.05);
+    b.position.set(x, 3.6, GYM.halfWidth - 0.05);
     b.rotation.y = Math.PI;
     grp.add(b);
   }
 
-  // handball goals against both end walls
+  // handball goals pushed back against the end walls (the throw line is the near goal line)
   const gB = goal();
   gB.position.set(GYM.backX + 0.45, 0, 0);
   gB.rotation.y = Math.PI / 2;
@@ -338,32 +362,40 @@ export function buildGym(): VenueLook {
   grp.add(gB, gF);
 
   // wall bars and benches along the right wall
-  const bars = wallBars(22);
-  bars.position.set(GYM.backX + 4, 0, GYM.halfWidth - 0.12);
+  const bars = wallBars(40);
+  bars.position.set(CX - 18, 0, GYM.halfWidth - 0.12);
   grp.add(bars);
-  for (const x of [CX - 6, CX + 1, CX + 8]) {
+  for (const x of [CX - 15, CX - 5, CX + 5, CX + 15]) {
     const b = bench(4);
     b.position.set(x, 0, GYM.halfWidth - 0.6);
     grp.add(b);
   }
 
-  // mats leaning against the back wall, a door in the front wall
+  // mats leaning against the back wall, doors in the front and left walls
   const matColors = ['#c8322b', '#2c4fa8', '#2c4fa8'];
   matColors.forEach((col, i) => {
     const mat = new THREE.Mesh(new THREE.BoxGeometry(0.15, 1.8, 1.0), new THREE.MeshStandardMaterial({ color: col, roughness: 0.7 }));
-    mat.position.set(GYM.backX + 0.12, 0.9, -5 + i * 1.1);
+    mat.position.set(GYM.backX + 0.12, 0.9, -7 + i * 1.1);
     mat.rotation.z = -0.06;
     grp.add(mat);
   });
-  const door = new THREE.Mesh(new THREE.BoxGeometry(0.06, 2.1, 1.0), new THREE.MeshStandardMaterial({ color: '#e5b53a', roughness: 0.6 }));
-  door.position.set(GYM.frontX - 0.03, 1.05, -5.5);
-  grp.add(door);
+  const doorMat = new THREE.MeshStandardMaterial({ color: '#3a3a3a', roughness: 0.6 });
+  for (const z of [-8, 8]) {
+    const door = new THREE.Mesh(new THREE.BoxGeometry(0.06, 2.1, 1.2), doorMat);
+    door.position.set(GYM.frontX - 0.03, 1.05, z);
+    grp.add(door);
+  }
+  for (const x of [CX - 10, CX + 10]) {
+    const door = new THREE.Mesh(new THREE.BoxGeometry(1.2, 2.1, 0.06), doorMat);
+    door.position.set(x, 1.05, -GYM.halfWidth + 0.03);
+    grp.add(door);
+  }
 
   return {
     group: grp,
-    background: new THREE.Color('#c8a777'),
+    background: new THREE.Color('#d6cdbb'),
     fog: null,
-    key: { color: '#fff4e2', intensity: 1.6, offset: new THREE.Vector3(-1.5, 6, 1.5) },
-    fill: { sky: '#fff6e8', ground: '#b48a5a', intensity: 1.35 },
+    key: { color: '#fff6e8', intensity: 1.6, offset: new THREE.Vector3(-1.5, 6, 1.5) },
+    fill: { sky: '#fff8ee', ground: '#7d95b4', intensity: 1.4 },
   };
 }

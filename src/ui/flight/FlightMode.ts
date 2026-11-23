@@ -50,6 +50,8 @@ const fmt = (x: number, d = 2) => {
 const AIM_KEY = 'paperplanes.aim.v1';
 /** Physics shared by every venue (each venue sets its own gravity, air and surfaces). */
 const BASE = DEFAULT_CONFIG;
+/** Planes in the game are folded by hand: each fold a little off, the same way for the same design. */
+const CROOKED = { crooked: true } as const;
 
 interface Slider {
   key: keyof LaunchParams;
@@ -166,7 +168,7 @@ export class FlightMode {
     // earlier throws): a damaged plane still waiting from the last visit must not replace it
     this.pending = null;
     try {
-      this.mine = prepare(design, this.cfg);
+      this.mine = prepare(design, this.cfg, CROOKED);
     } catch (e) {
       this.mine = null;
       $('aim-info').textContent = `Kunde inte bygga flygplanet: ${String(e)}`;
@@ -219,8 +221,8 @@ export class FlightMode {
     this.lastTarget.set(0, this.launch.heightM, 0);
     if (!rebuild || !this.mine) return;
     try {
-      this.mine = prepare(this.mine.design, this.cfg);
-      if (this.pending) this.pending = prepare(this.pending.design, this.cfg);
+      this.mine = prepare(this.mine.design, this.cfg, CROOKED);
+      if (this.pending) this.pending = prepare(this.pending.design, this.cfg, CROOKED);
     } catch {
       /* keep the plane as it was */
     }
@@ -333,7 +335,7 @@ export class FlightMode {
     try {
       // replayed where it was thrown
       if ((entry.venue ?? 'gym') !== this.venue) this.setVenue(entry.venue ?? 'gym', false);
-      const p = prepare(entry.design, this.cfg);
+      const p = prepare(entry.design, this.cfg, CROOKED);
       this.replaying = entry;
       this.use(p);
       this.fv.setTarget(entry.target);
@@ -420,7 +422,7 @@ export class FlightMode {
       if (r.ops.length) {
         const design: DesignFile = { ...this.mine.design, ops: [...this.mine.design.ops, ...r.ops] };
         try {
-          this.pending = prepare(design, this.cfg);
+          this.pending = prepare(design, this.cfg, CROOKED);
           this.onDamage?.(r.ops);
           // show all of the damage on the plane where it came to rest
           this.showDamaged(this.pending.model);
@@ -841,7 +843,7 @@ export class FlightMode {
     const wasBurned = this.burned;
     const design: DesignFile = { ...p.design, ops: p.design.ops.filter((o) => !o.id.startsWith('dmg-')) };
     try {
-      this.mine = prepare(design, this.cfg);
+      this.mine = prepare(design, this.cfg, CROOKED);
     } catch (e) {
       alert(`Kunde inte reparera: ${String(e)}`);
       return;

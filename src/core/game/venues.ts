@@ -25,20 +25,21 @@ export interface Venue {
 }
 
 /**
- * School sports hall (gymnastiksal), 30 × 16 m, 7 m to the ceiling. The plane is thrown from
- * 3 m in front of one end wall, along the middle of the hall towards the other end.
+ * Sports hall (sporthall), 46 × 26 m with 9 m to the ceiling: a full-size handball court
+ * (40 × 20 m) with room round it, as in a Swedish municipal hall. The plane is thrown from 3 m
+ * in front of one end wall, along the middle of the hall towards the other end.
  */
 export const GYM = {
   backX: -3,
-  frontX: 27,
-  halfWidth: 8,
-  height: 7,
+  frontX: 43,
+  halfWidth: 13,
+  height: 9,
 } as const;
 
 export const VENUES: Record<VenueId, Venue> = {
   gym: {
     id: 'gym',
-    name: 'Gymnastiksal',
+    name: 'Sporthall',
     g: 9.81,
     rho: 1.225,
     planes: [

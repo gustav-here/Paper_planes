@@ -88,8 +88,8 @@ Webbläsarspel: vik ett pappersflygplan av ett A4 och kasta det. Flygbeteendet s
 - Editorn visar modellen med återfjädring och skador. Verktygen arbetar i den vikta modellen
   via `ToolContext.hitPaper` (som returnerar en frame) och `setFrame`. Rita aldrig verktygsgrafik
   direkt i visningskoordinater.
-- Platser (`core/game/venues.ts`: gymnastiksal, Månen, Solen) sätter g, ρ och kontaktytor via
-  `venueConfig`. Gymnastiksalen är standard. Inget i fysiken får bero på vilken plats det är,
+- Platser (`core/game/venues.ts`: sporthall 46 × 26 × 9 m, Månen, Solen) sätter g, ρ och kontaktytor via
+  `venueConfig`. Sporthallen (id `gym`) är standard. Inget i fysiken får bero på vilken plats det är,
   utöver de parametrarna. Det gäller också markens friktion, studs och plogning
   (`ploughKgPerM`: lös regolit på Månen bromsar med ρ·A·v_t², oberoende av g), dammets
   dämpning av rotationen (`spinDampingPerS`: inga kullerbyttor på Månen, enligt användarens val) och
@@ -107,9 +107,12 @@ Webbläsarspel: vik ett pappersflygplan av ett A4 och kasta det. Flygbeteendet s
 - Lyftlutningen per element tar med strimlans pilvinkel mot flödet (DATCOM-form av Helmbold).
 - Vingar ovanpå en köl får ingen extra dihedral i sidglidning (köleffekten är borttagen på
   användarens begäran, se PLAN.md §34).
-- En köl under en vinge får 60 % av sin sidokraft jämnt fördelad längs sig och resten från framkanten
-  (`aero.keelSideSpread`, halvempiriskt, valt med användaren). Darten med plana vingar är svagt
-  riktningsinstabil; spetsar som viks upp eller ned är fenor (PLAN.md §36, §39).
+- En köl under en vinge får hela sin sidokraft jämnt fördelad längs sig (`aero.keelSideSpread` = 1,
+  halvempiriskt, valt med användaren). Darten med plana vingar är svagt riktningsstabil och vrider
+  inte nosen runt; spetsar som viks upp eller ned är fenor (PLAN.md §36, §39, §42).
+- Spelet viker planen lite snett (`prepare(…, { crooked: true })`, `scatter.foldLineDeg` = 0,3°),
+  på samma sätt för samma design. Det är det som får plana dartar att tippa åt sidan. Tester och
+  vindtunneln viker exakt (PLAN.md §38, §42).
 - Rotationslyft (`aero.rotationalLift`, Kramer-effekten): ett element som roterar kring sin
   spännvidd får lyft som om anfallsvinkeln togs vid ¾ korda, också när strömningen släppt
   (Pesavento & Wang). Planet tippar lättare runt när lyftcentrum ligger framför tyngdpunkten.

@@ -214,3 +214,31 @@ describe('validation', { timeout: 240_000 }, () => {
     expect(hard).toBeGreaterThanOrEqual(firm);
   });
 });
+
+/*
+ * Flat darts keep going forward. With the keel's side force loaded at its front the flat dart's
+ * nose swung round within a second, the keel went broadside and the plane seemed to stop in the
+ * air; the player sees real ones tip over sideways while still moving forward (§42).
+ */
+describe('a flat dart in flight', () => {
+  /** Largest sideslip (deg) in one throw, flexible paper as in the game. */
+  const maxSideslip = (p: ReturnType<typeof prepare>, speed: number, seed: number) => {
+    const s = createSimulator(p, cfg, { speed, elevationDeg: 10, headingDeg: 0, heightM: 1.6, scatterSeed: seed });
+    let worst = 0;
+    while (!s.done && !s.log.firstImpact) {
+      s.step();
+      const v = s.worldVelocity();
+      const sp = V.length(v);
+      if (s.t < 0.1 || sp < 0.5) continue;
+      const right = Q.rotate(s.panelPoses()[0].q, p.af.right);
+      worst = Math.max(worst, (Math.abs(Math.asin(Math.max(-1, Math.min(1, V.dot(v, right) / sp)))) * 180) / Math.PI);
+    }
+    return worst;
+  };
+
+  it('does not swing its nose round in throws a little off', () => {
+    const p = prepare({ ...makeDart(), flexible: true }, cfg);
+    for (const speed of [8, 11])
+      for (let seed = 1; seed <= 6; seed++) expect(maxSideslip(p, speed, seed * 7919), `${speed} m/s, seed ${seed}`).toBeLessThan(40);
+  });
+});
