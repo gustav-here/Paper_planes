@@ -53,6 +53,8 @@ export interface FlexAirframe {
   model: PaperModel;
   /** Bending shapes of the large flat panels (see bendModes.ts). */
   modes: PanelModes[];
+  /** Rest amplitudes of the bending shapes: the paper's own curl (restCurl), or none (flat). */
+  restBend?: number[];
 }
 
 export function buildFlexAirframe(model: PaperModel, rigid: Airframe, cfg: PhysicsConfig): FlexAirframe {
@@ -146,6 +148,8 @@ export class MultiBodySim implements Simulator {
   private k: number;
   /** Bending amplitudes (m), all panels' shapes in order. */
   private qm: number[];
+  /** Rest amplitudes of the bending shapes (the paper's curl; zeros when flat). */
+  private qmRest: number[];
   private nm: number;
   private joints: JointSpec[] = [];
   /** Joints on the way from the root to each panel. */
@@ -183,7 +187,9 @@ export class MultiBodySim implements Simulator {
     this.k = set.hinges.length;
     this.nm = fx.modes.reduce((s, m) => s + m.shapes.length, 0);
     this.n = 6 + this.k + this.nm;
-    this.qm = new Array<number>(this.nm).fill(0);
+    this.qmRest = fx.restBend && fx.restBend.length === this.nm ? [...fx.restBend] : new Array<number>(this.nm).fill(0);
+    // the paper starts in its own curled shape
+    this.qm = [...this.qmRest];
     this.modesOf = set.panels.map((_, i) => fx.modes.find((m) => m.panel === i) ?? null);
     this.hingeMid = set.hinges.map((hg) => V.addScaled(hg.point, hg.axis, V.dot(V.sub(set.panels[hg.child].com, hg.point), hg.axis)));
     const nel = fx.af.mesh.elements.length;
@@ -669,7 +675,7 @@ export class MultiBodySim implements Simulator {
           for (let l = 0; l < m; l++) M[(base + k) * n + base + l] += aug.bend[k * m + l];
           // gravity on the bent paper; the elastic restoring force of the plate
           rhs[base + k] += pm.Spaper[k] * V.dot(g, nW);
-          for (let l = 0; l < m; l++) rhs[base + k] -= pm.K[k * m + l] * (this.qm[pm.first + l] + this.cfg.paper.creaseDampingS * u[base + l]);
+          for (let l = 0; l < m; l++) rhs[base + k] -= pm.K[k * m + l] * (this.qm[pm.first + l] - this.qmRest[pm.first + l] + this.cfg.paper.creaseDampingS * u[base + l]);
           // beyond the linear range the shape stiffens (the paper cannot stretch)
           rhs[base + k] -= limitStiffness(pm, k, this.qm[pm.first + k], this.cfg.paper) * this.qm[pm.first + k];
         }

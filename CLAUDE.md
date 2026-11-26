@@ -124,6 +124,9 @@ Webbläsarspel: vik ett pappersflygplan av ett A4 och kasta det. Flygbeteendet s
   användarens kast, eftersom ingen fysisk källa hittades. Det är ett kraftpar utan nettokraft, nos upp
   mot ovansidan, och luften trycker det platt i fart (`paperCm0FlattenPa` = 10 Pa). Teoritester för
   plan platta stänger av det (PLAN.md §43).
+- Papperets egen skevhet (`scatter.paperCurlPerM` = 1/m, PLAN.md §44): i spelet vilar varje böjbar
+  panel med en liten slumpad krökning, lika för samma design. Det är den som får plana dartar att
+  glida över åt sidan; vikta spetsar och W gör panelerna styvare och mindre skeva.
 - Störda beräkningar av luftens dämpning (finita differenser) får aldrig förnya kordacachen
   (`AeroOptions.frozenCache`), annars exploderar flexibla flygningar.
 - Papper som återfjädringen tvinnat vid ett gem (smala remsor) är en yta för luften, med en

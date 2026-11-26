@@ -5,7 +5,8 @@ import { DEFAULT_CONFIG } from '../../../src/core/physics/config';
 import type { PhysicsConfig } from '../../../src/core/physics/config';
 import { createSimulator, prepare } from '../../../src/core/physics/factory';
 import { MultiBodySim } from '../../../src/core/physics/multibody';
-import { Poly, deflectionAt, limitStiffness } from '../../../src/core/physics/bendModes';
+import { Poly, deflectionAt, limitStiffness, restCurl } from '../../../src/core/physics/bendModes';
+import { makeConfig } from '../../../src/core/physics/config';
 import { facetVertices } from '../../../src/core/paper/model';
 import * as Q from '../../../src/core/math/quat';
 import * as V from '../../../src/core/math/vec3';
@@ -199,5 +200,41 @@ describe('bending shapes', () => {
     }
     expect(steepest).toBeLessThanOrEqual(Math.tan((paper.bendingLimitSlopeDeg * Math.PI) / 180) + 1e-9);
     expect(deflectionAt(pm, q, pm.origin).w).toBeLessThanOrEqual(lim);
+  });
+});
+
+describe('the paper curls by itself (scatter.paperCurlPerM)', () => {
+  it('a free sheet rests in exactly the curvature it is given', () => {
+    const p = prepare({ ...flatSheet, flexible: true }, DEFAULT_CONFIG);
+    const pm = p.flex!.modes[0];
+    for (const kappa of [
+      [1, 0, 0],
+      [0, 1, 0],
+      [0, 0, 1],
+    ]) {
+      const seq = [...kappa];
+      const q = restCurl([pm], () => seq.shift()!, 0.5);
+      const at = (u: number, v: number) => pm.shapes.reduce((s, P, k) => s + q[k] * P.wuu(u, v), 0);
+      const uu = at(0.03, -0.02);
+      const vv = pm.shapes.reduce((s, P, k) => s + q[k] * P.wvv(0.03, -0.02), 0);
+      const uv = pm.shapes.reduce((s, P, k) => s + q[k] * P.wuv(0.03, -0.02), 0);
+      expect(uu).toBeCloseTo(0.5 * kappa[0], 6);
+      expect(vv).toBeCloseTo(0.5 * kappa[1], 6);
+      expect(uv).toBeCloseTo(0.5 * kappa[2], 6);
+    }
+  });
+
+  it('only a hand-folded plane curls, the same way for the same design', () => {
+    const cfg = makeConfig({ scatter: { ...DEFAULT_CONFIG.scatter, paperCurlPerM: 0.5 } });
+    const d = { ...makeDart(), flexible: true };
+    expect(prepare(d, cfg).flex!.restBend).toBeUndefined();
+    const a = prepare(d, cfg, { crooked: true }).flex!.restBend!;
+    const b = prepare(d, cfg, { crooked: true }).flex!.restBend!;
+    expect(a.length).toBeGreaterThan(0);
+    expect(a).toEqual(b);
+    expect(Math.max(...a.map(Math.abs))).toBeGreaterThan(0);
+    // and the simulation starts from the curled shape
+    const sim = createSimulator(prepare(d, cfg, { crooked: true }), cfg, LAUNCH) as MultiBodySim;
+    expect(sim.maxBendingM()).toBeGreaterThan(0);
   });
 });

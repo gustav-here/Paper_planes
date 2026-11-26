@@ -1,4 +1,5 @@
 import * as V from '../math/vec3';
+import { invert } from '../math/linalg';
 import type { Vec3 } from '../math/vec3';
 import { canonicalNormal, facetArea, facetContains, facetNormal, facetVertices } from '../paper/model';
 import type { Facet, PaperModel } from '../paper/model';
@@ -79,6 +80,11 @@ export interface PanelModes {
   Spaper: number[];
   /** Bending stiffness (m × m). */
   K: number[];
+  /**
+   * Generalized force of a uniform rest curvature (m × 3): f = Kcurv · (κuu, κvv, κuv), the same
+   * plate energy as K with the rest shape's curvatures in place of a second shape's.
+   */
+  Kcurv: number[];
   /** Amplitude of each shape at which its steepest slope reaches the paper's limit (m). */
   limit: number[];
   /** Aero elements of the panel: index, shape values and in-plane slopes (model frame). */
@@ -446,6 +452,20 @@ export function buildPanelModes(
     const m = shapes.length;
     if (!m) return;
     const K = stiffnessOf(shapes);
+    const Kcurv = new Array<number>(m * 3).fill(0);
+    for (let ip = 0; ip < pts.length; ip++) {
+      const a = paper.bendingStiffness * pts[ip].a * stackW[ip];
+      const [u, v] = local(pts[ip].p);
+      shapes.forEach((P, k) => {
+        const uu = P.wuu(u, v);
+        const vv = P.wvv(u, v);
+        const uv = P.wuv(u, v);
+        // B(φ, w_r) with w_r,uu = κuu, w_r,vv = κvv, w_r,uv = κuv
+        Kcurv[k * 3] += a * (uu + vv - (1 - POISSON) * vv);
+        Kcurv[k * 3 + 1] += a * (uu + vv - (1 - POISSON) * uu);
+        Kcurv[k * 3 + 2] += a * 2 * (1 - POISSON) * uv;
+      });
+    }
     /*
      * The panel's whole inertia — rigid motion of the panel frame (v, ω about its CoM) and the
      * bending amplitudes — from the same mass points, so the matrix is always positive definite:
@@ -499,7 +519,7 @@ export function buildPanelModes(
       }
       return tanMax / g;
     });
-    out.push({ panel: pi, origin: o, eu, ev, normal: n, shapes, first, Maug, Spaper, K, limit, elements });
+    out.push({ panel: pi, origin: o, eu, ev, normal: n, shapes, first, Maug, Spaper, K, Kcurv, limit, elements });
     first += m;
   });
   return out;
@@ -510,6 +530,28 @@ export function buildPanelModes(
  * corners, so its edges and its inside must be able to touch the floor too. Points along every
  * facet edge and spread over the inside, about `spacing` apart.
  */
+/**
+ * Rest amplitudes of the bending shapes for a paper that curls by itself: each panel gets a
+ * uniform curvature (κuu, κvv, κuv) from `next` × `sigmaPerM`, and rests in the shape of least
+ * plate energy relative to it (K q = Kcurv κ). A free panel takes the curl; shapes held by
+ * straight creases take less. One entry per shape, in the order of the generalized coordinates.
+ */
+export function restCurl(modes: PanelModes[], next: () => number, sigmaPerM: number): number[] {
+  const out: number[] = [];
+  for (const pm of modes) {
+    const m = pm.shapes.length;
+    const kappa = [next() * sigmaPerM, next() * sigmaPerM, next() * sigmaPerM];
+    const f = Array.from({ length: m }, (_, k) => pm.Kcurv[k * 3] * kappa[0] + pm.Kcurv[k * 3 + 1] * kappa[1] + pm.Kcurv[k * 3 + 2] * kappa[2]);
+    const Kinv = invert(pm.K, m);
+    for (let k = 0; k < m; k++) {
+      let q = 0;
+      for (let l = 0; l < m; l++) q += Kinv[k * m + l] * f[l];
+      out.push(q);
+    }
+  }
+  return out;
+}
+
 export function bendingContacts(model: PaperModel, set: PanelSet, modes: PanelModes[], spacing: number): { panel: number; facet: number; p: Vec3 }[] {
   const byId = new Map(model.facets.map((f) => [f.id, f]));
   const out: { panel: number; facet: number; p: Vec3 }[] = [];

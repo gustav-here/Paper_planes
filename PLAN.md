@@ -1591,3 +1591,41 @@ Resultat med standardkonfigurationen (släpp från 10 m, olika kastfarter):
   q = `paperCm0FlattenPa`, inget i avlöst flöde. Testet för hårda kast kräver nu att planet oftare
   blir instabilt (stallar eller rollar över 45°) ju hårdare det kastas, inte att det stallar oftare.
   Teoritesten för plan platta körs utan momentet.
+
+## 44. Papperets egen skevhet, och varför plana dartar rollar av
+- **Användarens iakttagelser:** plan 1 (plana vingar) glider jämnt över åt ena sidan, oftast men
+  inte alltid åt samma håll. Plan 2 och 3 (spetsar upp/ned) vinglar lite men håller kursen.
+  Ojämnheter i planet betyder mer än små skillnader i kastet. Ett perfekt vikt och kastat plan i
+  stilla luft skulle troligen flyga rakare.
+- **Stabilitetsanalys** (stelt plan, linjäriserat kring stadig glidning, med medföljande luft):
+  alla sidmoder är stabila för plan 1, 2, 3, W och glidplanet. Spiralen halveras på ~1 s och
+  gungningen (dutch roll) på 0,1–0,3 s. Y-planet dyker brant (49°), och plan 5 är instabilt i roll
+  (fördubblas på 0,1 s). Den plana darten är alltså lika stabil åt sidan som planen med spetsar;
+  de svepta vingarna rätar upp den (Clβ ≈ −0,04, mer ju mer lyft). Ett litet konstant rollmoment
+  (ΔCl = 0,001) lutade plan 1 45° efter 1 s men plan 2 och 3 66° och 113°.
+- **Slutsats:** skillnaden ligger i hur ojämnt planen är vikta, inte i luften. Plana vingar har
+  stora fria pappersytor som slår sig; en vikt spets eller ett W gör vingen styvare och mindre.
+  Kastspridning och sneda veck (`foldLineDeg`) räcker inte: med 0,6° sneda veck rollade plan 3
+  i 20 av 20 kast men plan 1 bara i 4.
+- **Valt (användarens val):** `scatter.paperCurlPerM` = 1 (1/m). Varje böjbar panel vilar med en
+  liten slumpad jämn krökning (längs, tvärs och vridning), lika för samma design och bara i spelet
+  (`prepare(…, { crooked: true })`). Viloformen är den med minst plattenergi mot krökningen
+  (K q = Kcurv κ, `restCurl`): ett fritt ark tar krökningen helt, en panel som hålls rak av veck
+  mindre, och små paneler (spetsar, fenor) är stela. 1/m lyfter ändarna på en 20 cm lång vinge
+  ungefär 5 mm.
+- **Utfall** (20 kast, nytt handvikt exemplar per kast, 6 m/s rakt fram; "rakt" = sträcka innan
+  planet lutar 20°):
+
+  | Plan | Rakt utan / med skevhet | Lutar över 45° | Användaren |
+  |---|---|---|---|
+  | 1, plana vingar | 4,0 / 1,7 m | 4 → 7 av 20 | rakt 2–3 m, rollar sedan |
+  | 1 med gem | 4,2 / 2,1 m | 0 → 3 | något rakare, fortfarande instabil |
+  | 2, spetsar upp | 7,4 / 7,0 m | 0 → 2 | stabil |
+  | 3, spetsar ned | 4,8 / 4,6 m | 2 → 2 | stabil |
+  | W | 1,3 / 2,7 m | 1 → 1 | stabil |
+  | Glidplan utan spetsar | 13,9 / 1,8 m | 1 → 5 | tippar som plan 1 |
+
+- **Kvar:** plan 1 lutar fortfarande bara över 45° i ungefär en tredjedel av kasten. Plan 5
+  lägger sig inte upp och ned. Plan 2, 3 och 6 når inte 10 m.
+- **Test:** ett fritt ark vilar i exakt den krökning det ges, och krökningen finns bara för ett
+  handvikt plan, likadan för samma design (`tests/core/physics/bendModes.test.ts`).

@@ -257,6 +257,14 @@ export interface ScatterConfig {
    * with 0.3° a flat dart now and then tips over, a W or dihedral rarely (§42).
    */
   foldLineDeg: number;
+  /**
+   * EMPIRICAL (PLAN.md §44): the paper's own curl, 1/m. Every bending panel rests with a small
+   * uniform curvature (along, across and twist), drawn per folded plane like foldLineDeg. Paper
+   * handled and folded by hand is never flat; a free flat wing takes the curl in full, a panel
+   * held straight by folds less (its rest shape is the least-energy fit, see restCurl). The user's
+   * flat darts slide off to one side, mostly the same way; tips, W and dihedral hold.
+   */
+  paperCurlPerM: number;
 }
 
 export const DEFAULT_CONFIG: PhysicsConfig = {
@@ -325,7 +333,7 @@ export const DEFAULT_CONFIG: PhysicsConfig = {
   logInterval: 1 / 60,
   // doubled at the player's request (the planes flew too alike and too steadily), the roll at
   // release three times the first guess (more wobble in roll)
-  scatter: { bankDeg: 8, yawDeg: 6, pitchDeg: 4, rollRateDeg: 120, yawRateDeg: 40, pitchRateDeg: 50, creaseDeg: 3, foldLineDeg: 0.3 },
+  scatter: { bankDeg: 8, yawDeg: 6, pitchDeg: 4, rollRateDeg: 120, yawRateDeg: 40, pitchRateDeg: 50, creaseDeg: 3, foldLineDeg: 0.3, paperCurlPerM: 1 },
   maxTime: 30,
 };
 

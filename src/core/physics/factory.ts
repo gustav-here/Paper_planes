@@ -7,6 +7,8 @@ import type { Airframe } from './airframe';
 import type { PhysicsConfig } from './config';
 import type { ControlInput } from './controls';
 import type { LaunchParams } from './launch';
+import { scatterNumbers } from './launch';
+import { restCurl } from './bendModes';
 import { FlightSim } from './simulation';
 import { MultiBodySim, buildFlexAirframe } from './multibody';
 import type { FlexAirframe } from './multibody';
@@ -45,7 +47,11 @@ export function prepare(design: DesignFile, cfg: PhysicsConfig, opts: PrepareOpt
   // flexible paper: the strip between two facing cut ends becomes a hinge edge
   if (design.flexible) model = splitAtTabs(model, slitTabs(model));
   const af = buildAirframe(model, design.orientation, cfg, design.ops);
-  return { design, model, folded, af, flex: design.flexible ? buildFlexAirframe(model, af, cfg) : null };
+  const flex = design.flexible ? buildFlexAirframe(model, af, cfg) : null;
+  // a hand-folded plane is not flat either: every bending panel rests a little curled, the same
+  // way for the same design (scatter.paperCurlPerM, PLAN.md §44)
+  if (flex && opts.crooked && cfg.scatter.paperCurlPerM > 0) flex.restBend = restCurl(flex.modes, scatterNumbers(seed ^ 0x27d4eb2f), cfg.scatter.paperCurlPerM);
+  return { design, model, folded, af, flex };
 }
 
 /** The right simulator for a design: rigid (default) or flexible paper (stage 6). */
