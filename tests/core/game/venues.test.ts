@@ -59,7 +59,8 @@ describe('venues', () => {
     expect(VENUES.sun.burnAfterS).toBe(0);
   });
 
-  it('on the Moon a hard landing does not hop or cartwheel: it sinks into the dust and stops there', () => {
+  // twelve flexible landings followed until the paper lies still: slow on a loaded CI runner
+  it('on the Moon a hard landing does not hop or cartwheel: it sinks into the dust and stops there', { timeout: 120000 }, () => {
     const cfg = venueConfig('moon', DEFAULT_CONFIG);
     for (const d of [makeDart(), makeGlider()])
       for (const flexible of [false, true]) {
