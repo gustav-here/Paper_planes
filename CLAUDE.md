@@ -120,6 +120,12 @@ Webbläsarspel: vik ett pappersflygplan av ett A4 och kasta det. Flygbeteendet s
   spännvidd får lyft som om anfallsvinkeln togs vid ¾ korda, också när strömningen släppt
   (Pesavento & Wang). Planet tippar lättare runt när lyftcentrum ligger framför tyngdpunkten.
   Se PLAN.md §32.
+- Papperets eget nosuppåt-moment (`aero.paperCm0` = 0,032) är **empiriskt** och kalibrerat mot
+  användarens kast, eftersom ingen fysisk källa hittades. Det är ett kraftpar utan nettokraft, nos upp
+  mot ovansidan, och luften trycker det platt i fart (`paperCm0FlattenPa` = 10 Pa). Teoritester för
+  plan platta stänger av det (PLAN.md §43).
+- Störda beräkningar av luftens dämpning (finita differenser) får aldrig förnya kordacachen
+  (`AeroOptions.frozenCache`), annars exploderar flexibla flygningar.
 - Papper som återfjädringen tvinnat vid ett gem (smala remsor) är en yta för luften, med en
   framkant (`mergeTwisted`). Spelarens egna veck slås aldrig ihop: bitarna måste ha samma
   vikhistorik, eller skilja högst 3°.

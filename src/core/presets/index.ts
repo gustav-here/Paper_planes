@@ -143,11 +143,15 @@ export const DART_TRIM: TrimOptions = { elevatorDeg: 0, elevatorChord: 0.02 };
 export const GLIDER_TRIM: TrimOptions = { elevatorDeg: 0, elevatorChord: 0.02 };
 /** Small elevators as a person would make them (tests of flaps and controls use these). */
 export const ELEVATOR_TRIM: TrimOptions = { elevatorDeg: 10, elevatorChord: 0.02 };
-/** Trim without cuts: the wings' outer trailing corners folded up (chosen so both glide steadily). */
-export const DART_REFLEX: ReflexOptions = { size: 0.04, angleDeg: 30 };
+/**
+ * Trim without cuts: the wings' outer trailing corners folded up (chosen so both glide steadily).
+ * Lowered from 30° when paper got its own nose-up moment (aero.paperCm0, PLAN.md §43), so the
+ * trim angle stays about where it was.
+ */
+export const DART_REFLEX: ReflexOptions = { size: 0.04, angleDeg: 20 };
 /** A dart that glides steadily: 10° dihedral and turned-up corners (the validation tests use it). */
 export const trimmedDart = () => makeDart(0.025, 80, DART_TRIM, DART_REFLEX);
-export const GLIDER_REFLEX: ReflexOptions = { size: 0.03, angleDeg: 30 };
+export const GLIDER_REFLEX: ReflexOptions = { size: 0.03, angleDeg: 5 };
 export const NO_REFLEX: ReflexOptions = { size: 0, angleDeg: 0 };
 
 /**

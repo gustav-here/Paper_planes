@@ -32,8 +32,10 @@ describe('chordwise loading', () => {
 
   it('flat plate: centre of pressure ≈ ¼ chord at small α, → ½ chord near 90°', () => {
     const c = 0.297;
+    // thin-plate theory: without the empirical moment of real paper (aero.paperCm0)
+    const plate = makeConfig({ aero: { paperCm0: 0 } });
     const cop = (alpha: number) => {
-      const p = tunnelPoint(flat, DEFAULT_CONFIG, 5, alpha);
+      const p = tunnelPoint(flat, plate, 5, alpha);
       // normal force along +y (up), pitching moment about the CoM (plate centre)
       const Fn = V.dot(p.force, flat.up);
       const M = V.dot(p.torque, flat.right);
@@ -294,5 +296,45 @@ describe('twisted paper at a clip', () => {
     // (a few mm remain: the clip holds the creases shut, so the shape itself differs a little;
     // with every strip its own leading edge it moved 23 mm)
     expect(Math.abs(col(clipped) - col(plain))).toBeLessThan(0.005);
+  });
+});
+
+describe('empirical paper moment (aero.paperCm0)', () => {
+  it('is a pure couple: no net force, nose-up moment q·Cm0·c·S on the flat sheet', () => {
+    const k = 0.02;
+    const U = 6;
+    const off = makeConfig({ aero: { paperCm0: 0 } });
+    const on = makeConfig({ aero: { paperCm0: k, paperCm0FlattenPa: 0 } });
+    for (const alpha of [0, 3]) {
+      const a = tunnelPoint(flat, off, U, alpha);
+      const b = tunnelPoint(flat, on, U, alpha);
+      const q = 0.5 * off.rho * U * U;
+      const expected = q * k * 0.297 * (0.297 * 0.21);
+      // the force pair cancels over the chord
+      expect(V.length(V.sub(b.force, a.force))).toBeLessThan(0.02 * expected / 0.297);
+      // nose-up about the right axis (positive, as the centre-of-pressure test above uses it)
+      const dM = V.dot(V.sub(b.torque, a.torque), flat.right);
+      expect(dM / expected).toBeGreaterThan(0.95);
+      expect(dM / expected).toBeLessThan(1.05);
+    }
+  });
+
+  it('is flattened by the air: half the moment at q = paperCm0FlattenPa', () => {
+    const U = 6;
+    const qU = 0.5 * DEFAULT_CONFIG.rho * U * U;
+    const moment = (flatten: number) => {
+      const off = tunnelPoint(flat, makeConfig({ aero: { paperCm0: 0 } }), U, 0);
+      const on = tunnelPoint(flat, makeConfig({ aero: { paperCm0: 0.02, paperCm0FlattenPa: flatten } }), U, 0);
+      return V.dot(V.sub(on.torque, off.torque), flat.right);
+    };
+    expect(moment(qU) / moment(0)).toBeCloseTo(0.5, 2);
+  });
+
+  it('acts on neither walls nor the separated flow: none at 90°', () => {
+    const off = makeConfig({ aero: { paperCm0: 0 } });
+    const on = makeConfig({ aero: { paperCm0: 0.02 } });
+    const a = tunnelPoint(flat, off, 6, 90);
+    const b = tunnelPoint(flat, on, 6, 90);
+    expect(V.length(V.sub(b.torque, a.torque))).toBeLessThan(1e-9);
   });
 });

@@ -166,6 +166,11 @@ export interface AeroOptions {
   elementForces?: Float64Array;
   /** Only evaluate these surfaces (the others are skipped and left untouched in the outputs). */
   only?: Set<number>;
+  /**
+   * Keep the chord cache as it is (no refresh for a turned flow). For finite differences: a
+   * refresh inside a perturbed evaluation would compare two chord partitions, not two rates.
+   */
+  frozenCache?: boolean;
 }
 
 /** Recompute chord coordinates and aspect ratio of one surface for in-plane flow direction w2. */
@@ -286,7 +291,7 @@ export function evaluateAero(
   cache: AeroCache,
   opts: AeroOptions = {},
 ): AeroResult {
-  const { debug, poses, perSurface, deform, elementForces, only } = opts;
+  const { debug, poses, perSurface, deform, elementForces, only, frozenCache } = opts;
   const force: Vec3 = [0, 0, 0];
   const torque: Vec3 = [0, 0, 0];
   const els = af.mesh.elements;
@@ -330,7 +335,7 @@ export function evaluateAero(
       // chord geometry is evaluated in the surface's rest frame
       const w3 = P ? M3.mulVec(M3.transpose(P.R), V.scale(inPlane, 1 / ipl)) : V.scale(inPlane, 1 / ipl);
       const w2: Vec2 = [V.dot(w3, s.e1), V.dot(w3, s.e2)];
-      if (!c.dir || c.dir[0] * w2[0] + c.dir[1] * w2[1] < cosCache) updateSurfaceCache(af, s.id, w2, w3, c, cfg.keelSideSpread);
+      if (!c.dir || (!frozenCache && c.dir[0] * w2[0] + c.dir[1] * w2[1] < cosCache)) updateSurfaceCache(af, s.id, w2, w3, c, cfg.keelSideSpread);
     }
     const AR = c.aspect;
     const a = (cfg.a0 * AR) / (2 + Math.sqrt(AR * AR + 4));
@@ -398,6 +403,19 @@ export function evaluateAero(
         const gRot = (1 - sig) * 0.5 * (c.gAtt[i] + c.gEll[i]) + sig * c.gEll[i];
         const dCL = (cfg.rotationalLift * aSw * spanRate * c.chord[i]) / (2 * speed);
         L = V.addScaled(L, V.cross(span, uh), qa * gRot * dCL);
+      }
+      if (cfg.paperCm0 !== 0 && !uniform && c.chord[i] > 0) {
+        // empirical zero-lift moment of real paper (config.paperCm0): a force pair with zero net
+        // force, 6(1 − 2ξ) along the chord, whose moment per area is q·Cm0·c, nose-up to the top side
+        const nUp = V.dot(n, af.up);
+        let eUp = V.rejectFrom(V.scale(n, nUp >= 0 ? 1 : -1), uh);
+        const lu = V.length(eUp);
+        if (lu > 1e-9) {
+          eUp = V.scale(eUp, 1 / lu);
+          const flat = cfg.paperCm0FlattenPa > 0 ? 1 / (1 + q / cfg.paperCm0FlattenPa) : 1;
+          const dl = qa * (1 - sig) * cfg.paperCm0 * flat * Math.abs(nUp) * 6 * (1 - 2 * c.xiMid[i]);
+          L = V.addScaled(L, eUp, dl);
+        }
       }
       const D = V.scale(eD, qa * (gbar * (CD - CD0) + CD0));
       const F = V.add(L, D);

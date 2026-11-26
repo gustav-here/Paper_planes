@@ -45,6 +45,25 @@ export interface AeroConfig {
    * and drives one whose centre of lift is ahead of it.
    */
   rotationalLift: number;
+  /**
+   * EMPIRICAL (PLAN.md §43): zero-lift pitching moment of real folded paper, per unit of each
+   * element's area × local chord, nose-up towards the plane's top side (×|n·up|, so walls and
+   * fins get none). A perfectly flat plate has none, and a flat dart would then trim at zero lift
+   * and dive. Real darts with straight trailing edges glide, and taped smooth they even pitch up
+   * and stall. We could not find the cause (ruled out: trailing-edge curl, in-flight bending, paper
+   * thickness, sprung nose flaps, release attitude, centre of mass, the neutral point); this
+   * constant is calibrated against the user's throws so the seven test planes behave as observed.
+   * It acts as a zero-net-force pair (up at the leading edge, down at the trailing edge), fading out
+   * with the stall blend.
+   */
+  paperCm0: number;
+  /**
+   * EMPIRICAL (PLAN.md §43): dynamic pressure (Pa) at which the air has flattened the paper's
+   * moment to half: Cm0,eff = paperCm0 / (1 + q / paperCm0FlattenPa). If the moment comes from a
+   * slight shape of the paper (camber), the air presses that shape flat at speed; real hard throws
+   * fly hardly further than normal ones. 0 = never flattened.
+   */
+  paperCm0FlattenPa: number;
   /** Oswald span efficiency for induced drag. */
   oswaldE: number;
   /** Centre-of-pressure shift for separated flow: x_cp = 0.5 − Δ·cos α
@@ -257,6 +276,8 @@ export const DEFAULT_CONFIG: PhysicsConfig = {
     airViscosity: 1.8e-5,
     keelSideSpread: 1,
     rotationalLift: 1,
+    paperCm0: 0.032,
+    paperCm0FlattenPa: 10,
     oswaldE: 0.8,
     sepCopShift: 0.16,
     elementSizeM: 0.01,

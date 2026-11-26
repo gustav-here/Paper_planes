@@ -1537,3 +1537,57 @@ Resultat med standardkonfigurationen (släpp från 10 m, olika kastfarter):
   råkar vara nästan rakt vikt (lutar högst 18° i 10 kast), så den tippar sällan.
 - **Test:** den plana darten vrider inte nosen runt (sidglidning under 40°) i 12 kast med
   spridning (`tests/validation/flight.test.ts`). Testet för kölen kräver nu svag riktningsstabilitet.
+
+## 43. Papperets eget nosuppåt-moment (empiriskt), och flexibla flygningar som stannade i luften
+- **Användarens prov** (sju plan och glidplanet, normala kast och hårda kast):
+  - Plan 1, plana vingar: flyger rakt 2–3 m, rollar sedan och tappar lyft, landar 4–6 m bort
+    och 1–2 m åt sidan. Hårda kast går inte mycket längre, de svänger av tidigare.
+  - Plan 2 och 3 (spetsar upp/ned): stabila, ofta över 10 m.
+  - Plan 4 (Y-form bakifrån): rakt och stabilt men tappar snabbt höjd, ~4 m även i hårda kast,
+    utan att stiga eller loopa.
+  - Plan 5 (anhedral): vänder sig upp och ned efter ~2 m.
+  - Plan 6 (W): som 2 och 3. Grunt W som plan 1, djupt W som plan 4.
+  - Plan 7 (stora fenor): håller kurs och höjd men tappar fart och stallar.
+  - Glidplan med uppvikta spetsar: tappar fart, instabilt i hårda kast.
+  - Ju hårdare kast, desto mer instabilt (sämre precision, små fel i vikningen väger tyngre).
+  - Bakkanten är rak, tyngdpunkten ligger 159 mm från nosen, tejpad köl gör nästan ingen skillnad.
+- **Vad spelet gjorde:** alla dartar flög nästan ballistiskt, ~4 m vid 6 m/s. En helt plan
+  platta har inget moment vid noll lyft (Cm0 = 0), så den plana darten trimmar vid CL ≈ 0 och
+  dyker. För att glida i 5–6 m/s behöver den Cm0 ≈ +0,01.
+- **Prövat och uteslutet** som källa till momentet: uppböjd bakkant (den är rak), böjning i
+  flykten (±0,001), papperets tjocklek (−0,0002), nosflikar som fjädrar ut (nos ned), nosuppåt
+  vid släpp (+0,3–0,7 m), tyngdpunkten och neutralpunkten (den riktiga ligger ännu längre bak).
+- **Valt (användarens val: "kalibrera mot mina resultat"):** ett empiriskt moment,
+  `aero.paperCm0` = 0,032, som ett kraftpar utan nettokraft, 6(1 − 2ξ) längs kordan, nos upp
+  mot planets ovansida (×|n·up|, så väggar och fenor får inget) och avtonat med stallblandningen.
+  Det försvagas när luften trycker platt papperet: Cm0,eff = paperCm0 / (1 + q / 10 Pa)
+  (`aero.paperCm0FlattenPa`). Vid 6 m/s är det ≈ 0,01, vid 11 m/s ungefär tre gånger svagare.
+  Med jämnt 0,01 flög hårda kast 15–16 m.
+- **Utfall** (20 kast per fall med spridning, flexibelt papper, snett vikt, rakt fram från
+  1,6 m; median i meter, 6 m/s / 11 m/s):
+
+  | Plan | Utan moment | Med moment | Användaren |
+  |---|---|---|---|
+  | 1, plana vingar | 4,0 / 7,3 | 5,5 / 11,6 | 4–6 / inte mycket längre |
+  | 1 med gem i nosen | 3,7 / 6,6 | 4,2 / 7,6 | något rakare |
+  | 2, spetsar upp | 4,3 / 7,6 | 7,2 / 11,7 | över 10 |
+  | 3, spetsar ned | 4,2 / 7,0 | 6,4 / 10,8 | över 10 |
+  | 4, Y 60° | 3,6 / 6,6 | 3,8 / 7,1 | ~4 / ~4 |
+  | 6, W | 4,0 / 7,2 | 6,1 / 14,6 | som 2 och 3 |
+  | 7, stora fenor | 5,2 / 13,3 | 6,8 / 11,2 | stallar |
+  | Glidplan, spetsar upp | 10,1 / 15,0 | 7,8 / 3,6, instabilt | tappar fart, instabilt |
+
+- **Kvar:** plan 2, 3 och 6 når inte 10 m. Plan 1 rollar för sällan (3 av 20), Y-planet för
+  ofta (14 av 20), plan 5 snurrar runt i stället för att stanna upp och ned, och plan 7 stallar
+  inte i normala kast. Rollbeteendet är nästa steg.
+- **Förinställningarna** blev övertrimmade (trim nära stall). Geometrin ändrad som med riktigt
+  papper: testdartens uppvikta bakhörn 30° → 20°, glidplanets 30° → 5°.
+- **Flexibla flygningar som stannade i luften:** luftens dämpning räknas med störda
+  hastigheter (finita differenser). En sådan störd beräkning kunde förnya kordacachen, så
+  kolumnen jämförde två kordaindelningar i stället för två hastigheter och blev enorm.
+  Hastigheterna exploderade och flygningen avbröts i luften. Nu använder de störda
+  beräkningarna grundberäkningens korda (`AeroOptions.frozenCache`).
+- **Test:** kraftparet ger ingen nettokraft och momentet q·Cm0·c·S, hälften vid
+  q = `paperCm0FlattenPa`, inget i avlöst flöde. Testet för hårda kast kräver nu att planet oftare
+  blir instabilt (stallar eller rollar över 45°) ju hårdare det kastas, inte att det stallar oftare.
+  Teoritesten för plan platta körs utan momentet.

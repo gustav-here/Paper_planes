@@ -184,34 +184,48 @@ describe('validation', { timeout: 240_000 }, () => {
     expect(Math.max(...landings.map((p) => Math.abs(p[2])))).toBeGreaterThan(0.1);
   });
 
-  it('the harder the throw, the likelier the plane climbs and stalls, but not every time', () => {
+  /*
+   * The user's real throws: the harder the throw, the less stable the plane, mostly because a hard
+   * throw is less precise and small faults in the folds matter more. It climbs into a stall or rolls
+   * off to one side; not necessarily the one more than the other (§43).
+   */
+  it('the harder the throw, the more often the plane goes unstable: it stalls or rolls off', () => {
     const p = prepare(trimmedDart(), cfg);
     const af = p.af;
-    const stalls = (speed: number) => {
-      let n = 0;
+    const throws = (speed: number) => {
+      let stalls = 0;
+      let unstable = 0;
       for (let seed = 1; seed <= 16; seed++) {
         const s = createSimulator(p, cfg, { speed, elevationDeg: 0, headingDeg: 0, heightM: 1.6, scatterSeed: seed * 104729 });
         let stalled = false;
+        let rolled = false;
         while (!s.done && !s.log.firstImpact) {
           s.step();
           const q = s.panelPoses()[0].q;
           const v = V.normalize(s.worldVelocity());
-          const alpha = Math.atan2(-V.dot(v, Q.rotate(q, af.up)), V.dot(v, Q.rotate(q, af.nose)));
+          const up = Q.rotate(q, af.up);
+          const alpha = Math.atan2(-V.dot(v, up), V.dot(v, Q.rotate(q, af.nose)));
           if (alpha > (25 * Math.PI) / 180 && s.speed() < 0.6 * speed) stalled = true;
+          const right = Q.rotate(q, af.right);
+          if (Math.abs(Math.atan2(right[1], up[1])) > Math.PI / 4) rolled = true;
         }
-        if (stalled) n++;
+        if (stalled) stalls++;
+        if (stalled || rolled) unstable++;
       }
-      return n;
+      return { stalls, unstable };
     };
-    const gentle = stalls(5);
-    // (thrown at 13 and 15 m/s: with its flat wings it may veer off to one side before it climbs)
-    const firm = stalls(13);
-    const hard = stalls(15);
-    expect(gentle).toBe(0);
-    // thrown firmly it sometimes climbs into a stall, not always; harder, more often
-    expect(firm).toBeGreaterThan(0);
-    expect(firm).toBeLessThan(16);
-    expect(hard).toBeGreaterThanOrEqual(firm);
+    const gentle = throws(5);
+    const medium = throws(8);
+    const firm = throws(13);
+    // a gentle throw glides on: no stall, and it seldom rolls off
+    expect(gentle.stalls).toBe(0);
+    expect(gentle.unstable).toBeLessThanOrEqual(2);
+    expect(medium.unstable).toBeGreaterThanOrEqual(gentle.unstable);
+    // thrown firmly it nearly always goes unstable, and it sometimes climbs into a stall, not always
+    expect(firm.unstable).toBeGreaterThan(medium.unstable);
+    expect(firm.unstable).toBeGreaterThanOrEqual(12);
+    expect(firm.stalls).toBeGreaterThan(0);
+    expect(firm.stalls).toBeLessThan(16);
   });
 });
 

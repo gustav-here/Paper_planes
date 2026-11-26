@@ -456,7 +456,8 @@ export class MultiBodySim implements Simulator {
     const elemF = base ? Float64Array.from(base.elemF) : new Float64Array(af.mesh.elements.length * 3);
     // the shape is set once per step; only the rates change between evaluations
     this.fillDeformRates(u);
-    evaluateAero(af, vb, wb, this.cfg.aero, this.cfg.rho, this.cache, { poses, perSurface: per, debug, deform: this.deform, elementForces: elemF, only });
+    // a perturbed evaluation (with a base) must use the same chord partition as the base
+    evaluateAero(af, vb, wb, this.cfg.aero, this.cfg.rho, this.cache, { poses, perSurface: per, debug, deform: this.deform, elementForces: elemF, only, frozenCache: !!base });
     return { per, elemF };
   }
 
