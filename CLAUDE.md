@@ -85,6 +85,9 @@ Webbläsarspel: vik ett pappersflygplan av ett A4 och kasta det. Flygbeteendet s
 - Böjformer (`physics/bendModes.ts`): stora plana paneler böjer sig själva med några släta former
   (extra frihetsgrader). Luften verkar på den böjda ytan, och kastläget ritar den böjd. Bortom
   35° lutning styvnar formerna, eftersom papper inte kan töjas. Se PLAN.md §26.
+- Viklinjens ändar kan flyttas tills vecket görs. En vikning som släpps vid 0° (under 5°) eller
+  avbryts med "Ändra vikning" (`ToolContext.foldEditButton`) ger inget veck; linjen blir
+  redigerbar igen.
 - Editorn visar modellen med återfjädring och skador. Verktygen arbetar i den vikta modellen
   via `ToolContext.hitPaper` (som returnerar en frame) och `setFrame`. Rita aldrig verktygsgrafik
   direkt i visningskoordinater.

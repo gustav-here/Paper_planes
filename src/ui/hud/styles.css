@@ -213,6 +213,43 @@ select option {
   display: none;
 }
 
+/* "Ändra vikning": shown while a fold is dragged, centred just above the hint */
+.fold-edit {
+  position: absolute;
+  left: 50%;
+  bottom: 86px;
+  transform: translateX(-50%);
+  padding: 7px 16px;
+  background: var(--panel);
+  border: 1px solid rgba(255, 194, 26, 0.55);
+  border-radius: 999px;
+  font-size: 13px;
+  white-space: nowrap;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.35);
+  touch-action: manipulation;
+}
+
+.fold-edit[hidden] {
+  display: none;
+}
+
+.fold-edit:hover,
+.fold-edit.armed {
+  background: #ffc21a;
+  border-color: #ffc21a;
+  color: #1b1d22;
+}
+
+/* narrow screens: the options panel and the view ball sit where the button goes; neither can be
+   used while a fold is dragged, so they step aside until it is released */
+@media (max-width: 700px) {
+  body.folding .options,
+  body.folding .view-ball,
+  body.folding .view-buttons {
+    visibility: hidden;
+  }
+}
+
 .status {
   position: absolute;
   left: 10px;
@@ -386,6 +423,7 @@ body.mode-flight .tools,
 body.mode-flight .options,
 body.mode-flight .physics-panel,
 body.mode-flight .hint,
+body.mode-flight .fold-edit,
 body.mode-flight .status,
 body.mode-flight .snap-dot,
 body.mode-flight .view-ball,

@@ -36,6 +36,19 @@ type State =
       hoverPick?: Vec3 | null;
       /** The fold as it would be made where the mouse is (the line may move into another plane). */
       hoverGrab?: Grab | null;
+      /** Line end under the mouse (it can be dragged to move the line). */
+      hoverEnd?: 0 | 1 | null;
+    }
+  | {
+      /** Dragging one end of the fold line to put the line right before folding. */
+      k: 'moving';
+      p0: Vec3;
+      p1: Vec3;
+      N: Vec3;
+      end: 0 | 1;
+      /** The line before the drag (restored by Esc or if the line would get too short). */
+      from: { p0: Vec3; p1: Vec3 };
+      snapper: Snapper;
     }
   | {
       k: 'angling';
@@ -72,10 +85,35 @@ const SCOPE_NAMES: Record<FoldOp['scope'], string> = { top: 'Översta flik', all
 
 const kindOf = (signed: number): FoldKind => (signed >= 0 ? 'valley' : 'mountain');
 
+/** Smallest fold (deg) that makes a crease; released below it, the fold line is edited again. */
+export const MIN_FOLD_DEG = 5;
+/** Shortest fold line (m) a moved end may leave. */
+const MIN_LINE_M = 0.003;
+/** How close (screen px) a press must be to a line end to take hold of it. */
+export const END_GRAB_PX = 14;
+
+/** The line end (0 = p0, 1 = p1) nearest the mouse within `radius` screen pixels, or null. */
+export function lineEndAt(ends: readonly ([number, number] | null)[], mouse: readonly [number, number], radius = END_GRAB_PX): 0 | 1 | null {
+  let best: 0 | 1 | null = null;
+  let bestD = radius;
+  for (let i = 0; i < 2; i++) {
+    const p = ends[i];
+    if (!p) continue;
+    const d = Math.hypot(p[0] - mouse[0], p[1] - mouse[1]);
+    if (d <= bestD) {
+      bestD = d;
+      best = i as 0 | 1;
+    }
+  }
+  return best;
+}
+
 /**
  * Fold tool: draw a line → press on the side that should fold → drag up for a valley fold
  * (towards you) or down for a mountain fold (away from you), passing through zero in the same
- * drag; the paper animates live (5°–180°) → release to commit.
+ * drag; the paper animates live (5°–180°) → release to commit. Until the fold is made the line's
+ * ends can be dragged to put it right; releasing at 0° (or pressing "Ändra vikning") goes back
+ * to that.
  */
 export class FoldTool implements Tool {
   private s: State = { k: 'idle' };
@@ -113,6 +151,8 @@ export class FoldTool implements Tool {
 
   private reset() {
     this.clearHover();
+    this.ctx.foldEditButton(null);
+    this.ctx.setCursor('');
     this.s = { k: 'idle' };
     this.draw.reset();
     this.ctx.overlay.clear();
@@ -150,6 +190,15 @@ export class FoldTool implements Tool {
       return;
     }
     if (s.k === 'ready') {
+      const end = this.endAt(s, e);
+      if (end !== null) {
+        this.clearHover();
+        this.s = { k: 'moving', p0: s.p0, p1: s.p1, N: s.N, end, from: { p0: s.p0, p1: s.p1 }, snapper: new Snapper(this.ctx.model(), { point: s.p0, normal: s.N }) };
+        this.ctx.setCursor('grabbing');
+        this.ctx.hint('Dra änden dit vecket ska gå och släpp. Shift: utan fästpunkter. Esc ångrar flytten.');
+        this.drawOverlay();
+        return;
+      }
       const g = this.grab(s, e);
       if (!g) return;
       const { side, pick } = g;
@@ -170,8 +219,9 @@ export class FoldTool implements Tool {
       }
       this.s = { k: 'angling', p0: g.p0, p1: g.p1, N: g.N, side, pick, startY: e.clientY, signed: 0, fatal, limit, blocked, stopped: false, through, pushed: false };
       this.ctx.hint(
-        fatal ?? 'Dra uppåt för dalveck (mot dig), nedåt för bergsveck (bort från dig). Släpp för att vika. Esc avbryter.',
+        fatal ?? 'Dra uppåt för dalveck (mot dig), nedåt för bergsveck (bort från dig). Släpp för att vika, eller vid 0° för att flytta linjen.',
       );
+      this.ctx.foldEditButton(() => this.editLine());
       this.drawOverlay();
     }
   }
@@ -203,7 +253,35 @@ export class FoldTool implements Tool {
       }
       return;
     }
+    if (s.k === 'moving') {
+      const raw = rayPlane(this.ctx.ray(e), { point: s.from.p0, normal: s.N });
+      if (!raw) return;
+      const other = s.end === 0 ? s.p1 : s.p0;
+      const r = s.snapper.snap(raw, this.ctx.mouse(e), (p) => this.ctx.toScreen(p), other, e.shiftKey);
+      this.ctx.snapDot(r.kind === 'point' || r.kind === 'edge' ? this.ctx.toScreen(r.point) : null, r.kind);
+      if (s.end === 0) s.p0 = r.point;
+      else s.p1 = r.point;
+      this.ctx.setCursor('grabbing');
+      this.drawOverlay();
+      return;
+    }
     if (s.k === 'ready') {
+      const end = this.endAt(s, e);
+      if (end !== null) {
+        s.hoverGrab = null;
+        s.hoverSide = null;
+        s.hoverPick = null;
+        this.updateHover(s);
+        if (s.hoverEnd !== end) this.ctx.hint('Dra i änden för att flytta viklinjen.');
+        s.hoverEnd = end;
+        this.ctx.setCursor('grab');
+        this.drawOverlay();
+        return;
+      }
+      if (s.hoverEnd != null) {
+        s.hoverEnd = null;
+        this.readyHint();
+      }
       const g = this.grab(s, e);
       s.hoverGrab = g;
       s.hoverSide = g?.side ?? null;
@@ -237,6 +315,11 @@ export class FoldTool implements Tool {
       }
       return;
     }
+    if (s.k === 'moving') {
+      const ok = V.dist(s.p0, s.p1) > MIN_LINE_M;
+      this.toReady(ok ? s.p0 : s.from.p0, ok ? s.p1 : s.from.p1, s.N);
+      return;
+    }
     if (s.k === 'angling') {
       this.ctx.angleLabel(null);
       this.ctx.setPreview(null);
@@ -244,16 +327,26 @@ export class FoldTool implements Tool {
       const angle = Math.abs(s.signed);
       const error = s.fatal ?? (angle >= 0.5 || s.stopped ? s.blocked[kind] : null);
       if (error) this.ctx.toast(error, 'error');
-      if (angle >= 5 && !error) {
+      if (angle >= MIN_FOLD_DEG && !error) {
         const op: FoldOp = { ...this.makeOp(s, kind, Math.round(angle * 10) / 10, this.ctx.nextId('v')), ...(s.pushed ? { through: true } : {}) };
         if (this.ctx.commit(op)) {
           this.reset();
           return;
         }
       }
+      // no crease (released at 0°, too small or blocked): the line can be put right and folded again
       this.toReady(s.p0, s.p1, s.N);
       void e;
     }
+  }
+
+  /** Give up the fold being dragged without a crease; the line's ends can be moved again. */
+  private editLine() {
+    const s = this.s;
+    if (s.k !== 'angling') return;
+    this.ctx.setPreview(null);
+    this.ctx.angleLabel(null);
+    this.toReady(s.p0, s.p1, s.N);
   }
 
   key(e: KeyboardEvent): boolean {
@@ -262,12 +355,10 @@ export class FoldTool implements Tool {
       return true;
     }
     if (e.key === 'Escape') {
-      if (this.s.k === 'angling') {
-        const s = this.s;
-        this.ctx.setPreview(null);
-        this.ctx.angleLabel(null);
-        this.toReady(s.p0, s.p1, s.N);
-      } else this.reset();
+      const s = this.s;
+      if (s.k === 'angling') this.editLine();
+      else if (s.k === 'moving') this.toReady(s.from.p0, s.from.p1, s.N);
+      else this.reset();
       return true;
     }
     return false;
@@ -275,6 +366,8 @@ export class FoldTool implements Tool {
 
   private toReady(p0: Vec3, p1: Vec3, N: Vec3) {
     this.draw.reset();
+    this.ctx.foldEditButton(null);
+    this.ctx.setCursor('');
     this.s = { k: 'ready', p0, p1, N, hoverSide: null };
     this.hoverKey = '';
     this.readyHint();
@@ -283,7 +376,12 @@ export class FoldTool implements Tool {
 
   private readyHint() {
     const name = SCOPE_NAMES[this.ctx.options.foldScope];
-    this.ctx.hint(`Tryck på sidan som ska vikas och dra uppåt (dal) eller nedåt (berg). Lager: ${name} (byt med L eller i menyn). Esc avbryter.`);
+    this.ctx.hint(`Tryck på sidan som ska vikas, dra upp (dal) eller ned (berg). Ändarna kan flyttas. Lager: ${name} (L). Esc avbryter.`);
+  }
+
+  /** The line end under the mouse, if any. */
+  private endAt(s: { p0: Vec3; p1: Vec3 }, e: PointerEvent): 0 | 1 | null {
+    return lineEndAt([this.ctx.toScreen(s.p0), this.ctx.toScreen(s.p1)], this.ctx.mouse(e));
   }
 
   private hoverKey = '';
@@ -417,7 +515,7 @@ export class FoldTool implements Tool {
 
   private drawOverlay() {
     const s = this.s;
-    if (s.k !== 'ready' && s.k !== 'angling') return;
+    if (s.k !== 'ready' && s.k !== 'angling' && s.k !== 'moving') return;
     const ov = this.ctx.overlay;
     ov.clear();
     const style =
@@ -429,8 +527,14 @@ export class FoldTool implements Tool {
             ? 'fold'
             : kindOf(s.signed);
     ov.foldLine(s.p0, s.p1, style);
+    if (s.k !== 'angling') {
+      // the ends can be dragged until the fold is made
+      const hot = s.k === 'moving' ? s.end : (s.hoverEnd ?? null);
+      ov.handle(s.p0, '#ffc21a', hot === 0);
+      ov.handle(s.p1, '#ffc21a', hot === 1);
+    }
     const mid = V.lerp(s.p0, s.p1, 0.5);
-    const side = s.k === 'ready' ? s.hoverSide : s.side;
+    const side = s.k === 'ready' ? s.hoverSide : s.k === 'angling' ? s.side : null;
     if (side) ov.arrow(V.addScaled(mid, side, 0.004), side, s.N);
 
     // mirrored twin (shown through the paper if it lies on the hidden side)

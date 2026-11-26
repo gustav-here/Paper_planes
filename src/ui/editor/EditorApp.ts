@@ -380,6 +380,29 @@ export class EditorApp implements ToolContext {
     this.tools.fold.refresh();
   }
 
+  setCursor(cursor: string) {
+    this.stage.canvas.style.cursor = cursor;
+  }
+
+  /** What the "Ändra vikning" button does while a fold is dragged (null = hidden). */
+  private foldEdit: (() => void) | null = null;
+
+  foldEditButton(cancel: (() => void) | null) {
+    this.foldEdit = cancel;
+    const b = $<HTMLButtonElement>('fold-edit');
+    b.hidden = !cancel;
+    b.classList.remove('armed');
+    // narrow screens: panels that cannot be used during the drag make room for the button
+    document.body.classList.toggle('folding', !!cancel);
+  }
+
+  /** The pointer is over the "Ändra vikning" button (a drag released there gives up the fold). */
+  private overFoldEdit(e: PointerEvent): boolean {
+    if (!this.foldEdit) return false;
+    const r = $('fold-edit').getBoundingClientRect();
+    return e.clientX >= r.left && e.clientX <= r.right && e.clientY >= r.top && e.clientY <= r.bottom;
+  }
+
   toggleControl(opId: string) {
     const op = this.history.appliedOps.find((o) => o.id === opId);
     if (!op || op.type !== 'fold') return;
@@ -721,11 +744,22 @@ export class EditorApp implements ToolContext {
       this.highlightClip(this.clipGroup.children.length ? this.hitClip(e) : null);
       if (this.toolName === 'view') return;
       this.tools[this.toolName].move(e);
+      if (this.foldEdit) {
+        // dragged onto "Ändra vikning": releasing there gives up the fold, so show the paper flat
+        const over = this.overFoldEdit(e);
+        $('fold-edit').classList.toggle('armed', over);
+        if (over) {
+          this.setPreview(null);
+          this.angleLabel('Släpp för att ändra vikningen', this.mouse(e));
+        }
+      }
     });
     c.addEventListener('pointerup', (e) => {
       if (!this.active || e.button !== 0 || !this.pointerDown) return;
       this.pointerDown = false;
-      if (this.toolName !== 'view') this.tools[this.toolName].up(e);
+      if (this.toolName === 'view') return;
+      if (this.foldEdit && this.overFoldEdit(e)) this.foldEdit();
+      else this.tools[this.toolName].up(e);
     });
     c.addEventListener('pointerleave', () => this.snapDot(null));
   }
@@ -763,6 +797,11 @@ export class EditorApp implements ToolContext {
   }
 
   private bindDom() {
+    const foldEdit = $<HTMLButtonElement>('fold-edit');
+    foldEdit.onclick = () => {
+      foldEdit.blur();
+      this.foldEdit?.();
+    };
     document.querySelectorAll<HTMLButtonElement>('.tools button').forEach((b) => (b.onclick = () => this.setTool(b.dataset.tool as ToolName)));
 
     const scope = $<HTMLSelectElement>('fold-scope');

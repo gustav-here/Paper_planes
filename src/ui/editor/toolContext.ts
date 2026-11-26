@@ -69,6 +69,13 @@ export interface ToolContext {
   highlightClip(id: string | null): void;
   /** Next fold scope (Lager) in the menu order. */
   cycleFoldScope(): void;
+  /** Mouse cursor over the paper ('' = default). */
+  setCursor(cursor: string): void;
+  /**
+   * Show the "Ändra vikning" button while a fold is being dragged (null hides it). Pressing it,
+   * or releasing the drag on it, runs `cancel`.
+   */
+  foldEditButton(cancel: (() => void) | null): void;
 }
 
 export interface Tool {

@@ -77,16 +77,22 @@ export class Overlay {
     fat(s.color, s.width, s.opacity, s.gap > 0, 21);
   }
 
-  /** Small round marker at a line end. */
-  dot(p: Vec3, color: string) {
+  /** Small round marker at a line end (radius in screen pixels). */
+  dot(p: Vec3, color: string, radiusPx = 4.5, order = 22) {
     const m = new THREE.Mesh(
       new THREE.CircleGeometry(1, 20),
       new THREE.MeshBasicMaterial({ color, depthTest: false, transparent: true }),
     );
     m.position.set(...p);
-    m.userData.screenDot = true;
-    m.renderOrder = 22;
+    m.userData.screenDot = radiusPx;
+    m.renderOrder = order;
     this.add(m);
+  }
+
+  /** Draggable line end: a ringed knob that grows under the cursor. */
+  handle(p: Vec3, color: string, hot: boolean) {
+    this.dot(p, '#101418', hot ? 10 : 8, 23);
+    this.dot(p, hot ? '#ffffff' : color, hot ? 7.5 : 6, 24);
   }
 
   /** A fold/cut line with faint extensions showing that the line is infinite. */
@@ -132,7 +138,7 @@ export class Overlay {
         const dist = tmp.distanceTo(camera.position);
         const fov = (camera as THREE.PerspectiveCamera).fov ?? 40;
         const worldPerPx = (2 * dist * Math.tan(THREE.MathUtils.degToRad(fov / 2))) / Math.max(viewportHeight, 1);
-        o.scale.setScalar(worldPerPx * 4.5);
+        o.scale.setScalar(worldPerPx * (o.userData.screenDot as number));
         o.quaternion.copy(camera.quaternion);
         if (o.parent) o.quaternion.premultiply(o.parent.getWorldQuaternion(new THREE.Quaternion()).invert());
       } else if ((o as Line2).isLine2) {

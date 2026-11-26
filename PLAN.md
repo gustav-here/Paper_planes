@@ -251,6 +251,11 @@ platta koplanära staplar). Under vinkel-draget stannar animationen vid första 
 - **Vinkel:** håll nere musknappen och dra fram/tillbaka ⇒ vinkel 5°–180° med live-animation
   av pappret; snäpp vid 45/90/135/180 (Shift = fritt). Släpp ⇒ vecket sparas.
   Esc avbryter.
+- **Rätta viklinjen:** innan vecket görs kan linjens ändar dras till nya platser (med samma
+  snäpp). Släpps vikningen vid 0° (under 5°) blir det inget veck och linjen går att flytta
+  igen. Under vikningen visas knappen **"Ändra vikning"** mitt längst ned, ovanför
+  hjälptexten: ett tryck på den (eller att släppa draget på den) gör samma sak. På smal skärm
+  får alternativpanelen och 360-bollen ge plats medan vikningen pågår.
 - **Vända/rotera:** knappar "Vänd (runt långsida/kortsida)" och "Rotera 90°", animeras.
   Ändrar bara vyn, inte modellen.
 - **Ångra/gör om:** Ctrl/Cmd+Z, Shift+Ctrl/Cmd+Z, samt knappar.
